@@ -1,0 +1,22 @@
+[
+  {
+    "routeId": "demo-provider-identity",
+    "applicationCode": "stellar-enclosure-yuheng-test-http-provider",
+    "methodIdentity": "GET /api/providers/{requestId}",
+    "host": "providers.yuheng.demo",
+    "httpMethod": "GET",
+    "pathPattern": "/api/providers/{requestId}",
+    "accessZones": ["PUBLIC", "INTERNAL"],
+    "priority": 0
+  },
+  {
+    "routeId": "demo-rpc-echo",
+    "applicationCode": "stellar-enclosure-yuheng-test-rpc-provider",
+    "methodIdentity": "egon.yuheng.test.v1.EchoService/Echo",
+    "host": "rpc.yuheng.demo",
+    "httpMethod": "POST",
+    "pathPattern": "/rpc/echo",
+    "accessZones": ["INTERNAL"],
+    "priority": 0
+  }
+]

@@ -1,0 +1,254 @@
+package top.egon.cola.component.yuheng.admin.rule.service;
+
+import org.junit.jupiter.api.Test;
+import top.egon.cola.component.yuheng.admin.rule.domain.dto.GatewayDdcPublicationCommand;
+import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
+import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
+import top.egon.cola.component.tianshu.model.management.DdcManagementConfig;
+import top.egon.cola.component.tianshu.model.management.DdcManagementConfigClientInstance;
+import top.egon.cola.component.tianshu.model.management.DdcManagementConfigDeleteRequest;
+import top.egon.cola.component.tianshu.model.management.DdcManagementConfigQuery;
+import top.egon.cola.component.tianshu.model.management.DdcManagementConfigUpsertRequest;
+import top.egon.cola.component.tianshu.model.management.DdcManagementInstanceQuery;
+import top.egon.cola.component.tianshu.model.management.DdcManagementPublishRequest;
+import top.egon.cola.component.tianshu.model.management.DdcManagementPublishResult;
+import top.egon.cola.component.tianshu.model.management.DdcManagementPublishStatus;
+import top.egon.cola.component.tianshu.model.management.DdcManagementPublishTask;
+import top.egon.cola.component.tianshu.model.management.DdcManagementScopeBinding;
+import top.egon.cola.component.tianshu.model.management.DdcManagementScopeQuery;
+import top.egon.cola.component.tianshu.model.management.DdcManagementServiceCatalog;
+import top.egon.cola.component.tianshu.model.management.DdcManagementServiceQuery;
+import top.egon.cola.component.tianshu.model.management.DdcManagementServiceSnapshot;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class GatewayDdcRulePublisherTest {
+
+    @Test
+    void publishesExactlyOneFullyResolvedArtifact() {
+        RecordingClient client = new RecordingClient();
+        GatewayDdcRulePublisher publisher =
+                new GatewayDdcRulePublisher(client);
+        String changeId = SnowflakeIdGenerator.nextId();
+        GatewayDdcPublicationCommand command =
+                new GatewayDdcPublicationCommand(
+                        "infra",
+                        "test",
+                        "ge",
+                        "yuheng.rules.chunk.release-1.0",
+                        "yuheng:\n  rules:\n    chunk:\n"
+                                + "      release-1:\n        '0': value\n",
+                        1L,
+                        changeId,
+                        "admin",
+                        Duration.ofSeconds(30)
+                );
+
+        DdcManagementPublishResult result = publisher.publish(command);
+
+        assertThat(result.status())
+                .isEqualTo(DdcManagementPublishStatus.SUCCESS);
+        assertThat(client.requests).singleElement().satisfies(request -> {
+            assertThat(request.bizCode()).isEqualTo("infra");
+            assertThat(request.appCode())
+                    .isEqualTo("ge");
+            assertThat(request.content())
+                    .contains("release-1");
+            assertThat(request.expectedVersion()).isEqualTo(1L);
+            assertThat(request.timeoutMs()).isEqualTo(30_000L);
+            assertThat(request.operator()).isEqualTo("admin");
+            assertThat(request.changeId()).matches("\\d+");
+        });
+    }
+
+    @Test
+    void rejectsIncompleteOrNonSnowflakeCommands() {
+        assertThat(command(1L, SnowflakeIdGenerator.nextId()).changeId())
+                .matches("\\d+");
+        assertThatThrownBy(() -> command(null, SnowflakeIdGenerator.nextId()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("expectedVersion");
+        assertThatThrownBy(() -> command(1L, UUID.randomUUID().toString()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Snowflake");
+        assertThatThrownBy(() -> new GatewayDdcPublicationCommand(
+                " ",
+                "test",
+                "ge",
+                "yuheng.rules.active",
+                "{}",
+                1L,
+                SnowflakeIdGenerator.nextId(),
+                "admin",
+                Duration.ofSeconds(1)
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bizCode");
+    }
+
+    @Test
+    void preflightRequiresAnOnlineUnexpiredConfigClient() {
+        RecordingClient client = new RecordingClient();
+        client.targets = List.of(new DdcManagementConfigClientInstance(
+                "infra",
+                "test",
+                "ge",
+                "engine-1",
+                "lease-1",
+                "127.0.0.1",
+                18080,
+                "CONFIG_CLIENT",
+                "OFFLINE",
+                Instant.now(),
+                Instant.now(),
+                Instant.now().plusSeconds(30),
+                java.util.Map.of()
+        ));
+        GatewayDdcRulePublisher publisher =
+                new GatewayDdcRulePublisher(client);
+
+        assertThatThrownBy(() -> publisher.ensureReadyTarget(
+                new top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayPublicationScopeDTO("infra", "test", "ge", top.egon.cola.component.yuheng.contract.runtime.GatewayEngineRoleEnum.API_RPC)
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("YUHENG_RELEASE_NO_READY_TARGET: API_RPC");
+    }
+
+    private GatewayDdcPublicationCommand command(
+            Long expectedVersion,
+            String changeId) {
+        return new GatewayDdcPublicationCommand(
+                "infra",
+                "test",
+                "ge",
+                "yuheng.rules.active",
+                "{}",
+                expectedVersion,
+                changeId,
+                "admin",
+                Duration.ofSeconds(1)
+        );
+    }
+
+    private static final class RecordingClient
+            implements DdcManagementClient {
+
+        private final List<DdcManagementPublishRequest> requests =
+                new ArrayList<>();
+
+        private List<DdcManagementConfigClientInstance> targets = List.of(
+                new DdcManagementConfigClientInstance(
+                        "infra",
+                        "test",
+                        "ge",
+                        "engine-1",
+                        "lease-1",
+                        "127.0.0.1",
+                        18080,
+                        "CONFIG_CLIENT",
+                        "ONLINE",
+                        Instant.now(),
+                        Instant.now(),
+                        Instant.now().plusSeconds(30),
+                        java.util.Map.of()
+                )
+        );
+
+        @Override
+        public java.util.Optional<top.egon.cola.component.tianshu.model.management.DdcManagementBiz>
+                getBiz(top.egon.cola.component.tianshu.model.management.DdcManagementBizLookup lookup) {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public List<top.egon.cola.component.tianshu.model.management.DdcManagementBiz>
+                listBizs(top.egon.cola.component.tianshu.model.management.DdcManagementBizQuery query) {
+            return List.of();
+        }
+
+        @Override
+        public java.util.Optional<top.egon.cola.component.tianshu.model.management.DdcManagementApp>
+                getApp(String ddcApplicationId) {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public List<top.egon.cola.component.tianshu.model.management.DdcManagementApp>
+                listApps(top.egon.cola.component.tianshu.model.management.DdcManagementAppQuery query) {
+            return List.of();
+        }
+
+        @Override
+        public java.util.Optional<DdcManagementConfig> findConfig(
+                DdcManagementConfigQuery query) {
+            return java.util.Optional.empty();
+        }
+
+        @Override
+        public DdcManagementConfig upsert(
+                DdcManagementConfigUpsertRequest request) {
+            return null;
+        }
+
+        @Override
+        public void delete(DdcManagementConfigDeleteRequest request) {
+        }
+
+        @Override
+        public DdcManagementPublishResult publish(
+                DdcManagementPublishRequest request) {
+            requests.add(request);
+            return new DdcManagementPublishResult(
+                    request.changeId(),
+                    DdcManagementPublishStatus.SUCCESS,
+                    request.expectedVersion() + 1,
+                    "checksum",
+                    1,
+                    List.of(),
+                    null,
+                    Instant.now(),
+                    Instant.now(),
+                    Instant.now()
+            );
+        }
+
+        @Override
+        public DdcManagementPublishTask getPublishTask(String changeId) {
+            return null;
+        }
+
+        @Override
+        public DdcManagementPublishResult retry(String changeId) {
+            return null;
+        }
+
+        @Override
+        public List<DdcManagementConfigClientInstance> getConfigClients(
+                DdcManagementInstanceQuery query) {
+            return targets;
+        }
+
+        @Override
+        public List<DdcManagementScopeBinding> getScopeBindings(
+                DdcManagementScopeQuery query) {
+            return List.of();
+        }
+
+        @Override
+        public DdcManagementServiceCatalog getServiceKeys(
+                DdcManagementServiceQuery query) {
+            return null;
+        }
+
+        @Override
+        public DdcManagementServiceSnapshot getInstances(
+                DdcManagementServiceQuery query) {
+            return null;
+        }
+    }
+}

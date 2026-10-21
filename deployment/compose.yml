@@ -1,0 +1,481 @@
+name: stellar-enclosure-yuheng
+
+services:
+  postgres:
+    # The AI plane stores embeddings in a pgvector `vector` column. The application role never runs
+    # CREATE EXTENSION, so the image must already ship pgvector and the operator must create the
+    # extension inside each managed database before the first Admin start.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: yuheng
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - yuheng-postgres:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yuheng -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  tianshu-redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - yuheng-tianshu-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  rate-limit-redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - yuheng-rate-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka-native:3.9.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - yuheng-kafka:/tmp/kraft-combined-logs
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  tianshu-admin:
+    build:
+      context: ../../tianshu-service/stellar-enclosure-tianshu-admin
+    environment:
+      SERVER_PORT: 18080
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/run/egon-config/tianshu-rpc-credentials.yml
+      YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY}
+      YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY}
+      YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY}
+      YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY}
+      YUHENG_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ENV: ${YUHENG_ENV:-local}
+      YUHENG_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "1"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_ddc
+      SPRING_DATASOURCE_USERNAME: yuheng
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      EGON_COLA_COMPONENT_TIANSHU_ADMIN_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_ADMIN_REDIS_PORT: 6379
+      TIANSHU_RPC_PORT: 19080
+      TIANSHU_RPC_DEVELOPMENT_PLAINTEXT: "true"
+      TIANSHU_RPC_RUNTIME_ACCESS_KEY: ${TIANSHU_RUNTIME_ACCESS_KEY}
+      TIANSHU_RPC_RUNTIME_SECRET_KEY: ${TIANSHU_RUNTIME_SECRET_KEY}
+      TIANSHU_RPC_REGISTRY_ACCESS_KEY: ${TIANSHU_REGISTRY_ACCESS_KEY}
+      TIANSHU_RPC_REGISTRY_SECRET_KEY: ${TIANSHU_REGISTRY_SECRET_KEY}
+      TIANSHU_RPC_MANAGEMENT_ACCESS_KEY: ${TIANSHU_MANAGEMENT_ACCESS_KEY}
+      TIANSHU_RPC_MANAGEMENT_SECRET_KEY: ${TIANSHU_MANAGEMENT_SECRET_KEY}
+    volumes:
+      - ./tianshu-rpc-credentials.yml:/run/egon-config/tianshu-rpc-credentials.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tianshu-redis:
+        condition: service_healthy
+    ports:
+      - "18070:18080"
+      - "19080:19080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18080;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-admin:
+    build:
+      context: ../stellar-enclosure-yuheng-admin
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      SERVER_PORT: 18080
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "2"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_admin
+      SPRING_DATASOURCE_USERNAME: yuheng
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      YUHENG_ADMIN_TIANSHU_ENABLED: "true"
+      YUHENG_ADMIN_TIANSHU_API_RPC_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ADMIN_TIANSHU_API_RPC_APP_CODE: ge
+      YUHENG_ADMIN_TIANSHU_MCP_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ADMIN_TIANSHU_MCP_APP_CODE: gme
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///tianshu-admin:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_MANAGEMENT_ACCESS_KEY: ${TIANSHU_MANAGEMENT_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_MANAGEMENT_SECRET_KEY: ${TIANSHU_MANAGEMENT_SECRET_KEY}
+      YUHENG_ADMIN_SECRETS_MASTER_KEY_BASE64: ${YUHENG_MASTER_KEY_BASE64}
+      YUHENG_ADMIN_SECURITY_HMAC_SECRET_BASE64: ${YUHENG_ADMIN_JWT_HMAC_SECRET_BASE64}
+      YUHENG_ADMIN_OBSERVABILITY_KAFKA_ENABLED: "true"
+      YUHENG_ADMIN_OBSERVABILITY_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tianshu-admin:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    ports:
+      - "18080:18080"
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-biz-gateway:
+    build:
+      context: ../stellar-enclosure-yuheng-biz-gateway
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      SERVER_PORT: 18083
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "10"
+      EGON_COLA_COMPONENT_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway
+      YUHENG_ENGINE_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway
+      YUHENG_ENGINE_TIANSHU_ADVERTISED_HOST: stellar-enclosure-yuheng-biz-gateway
+      YUHENG_ENGINE_RESOURCE_SERVER_ID: ${YUHENG_API_RESOURCE_SERVER_ID}
+      YUHENG_ENGINE_RESOURCE_URI: ${YUHENG_API_RESOURCE_URI}
+      TIANQUAN_SHOUBING_OAUTH_ISSUER: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+      TIANQUAN_SHOUBING_JWK_SET_URI: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+      EGON_COLA_COMPONENT_TIANSHU_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      EGON_COLA_COMPONENT_TIANSHU_APP_CODE: ge
+      EGON_COLA_COMPONENT_TIANSHU_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_TIANSHU_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///tianshu-admin:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_ACCESS_KEY: ${TIANSHU_RUNTIME_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_SECRET_KEY: ${TIANSHU_RUNTIME_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_ACCESS_KEY: ${TIANSHU_REGISTRY_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_SECRET_KEY: ${TIANSHU_REGISTRY_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_REGISTRY_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_PORT: 6379
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_YUHENG_GROUP_CODE: ${YUHENG_GROUP_CODE:-default}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_NODE_ID: stellar-enclosure-yuheng-biz-gateway
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_ADVERTISED_HOST: stellar-enclosure-yuheng-biz-gateway
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_SERVICE_NAME: ${YUHENG_RPC_SERVICE_NAME}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_GROUP: ${YUHENG_RPC_GROUP}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_VERSION: ${YUHENG_RPC_VERSION}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_DATA_DIRECTORY: /var/lib/egon-yuheng
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_TRAFFIC_REDIS_ENABLED: "true"
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_TRAFFIC_REDIS_ADDRESS: redis://rate-limit-redis:6379
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_KAFKA_ENABLED: "true"
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      tianshu-admin:
+        condition: service_started
+      rate-limit-redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - stellar-enclosure-yuheng-biz-gateway-lkg:/var/lib/egon-yuheng
+    ports:
+      - "127.0.0.1:18091:18081"
+      - "18082:18082"
+      - "127.0.0.1:18083:18083"
+      - "19090:19090"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18083;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-biz-gateway-2:
+    build:
+      context: ../stellar-enclosure-yuheng-biz-gateway
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      SERVER_PORT: 18083
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "11"
+      EGON_COLA_COMPONENT_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway-2
+      YUHENG_ENGINE_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway-2
+      YUHENG_ENGINE_TIANSHU_ADVERTISED_HOST: stellar-enclosure-yuheng-biz-gateway-2
+      YUHENG_ENGINE_RESOURCE_SERVER_ID: ${YUHENG_API_RESOURCE_SERVER_ID}
+      YUHENG_ENGINE_RESOURCE_URI: ${YUHENG_API_RESOURCE_URI}
+      TIANQUAN_SHOUBING_OAUTH_ISSUER: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+      TIANQUAN_SHOUBING_JWK_SET_URI: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+      EGON_COLA_COMPONENT_TIANSHU_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      EGON_COLA_COMPONENT_TIANSHU_APP_CODE: ge
+      EGON_COLA_COMPONENT_TIANSHU_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_TIANSHU_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///tianshu-admin:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_ACCESS_KEY: ${TIANSHU_RUNTIME_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_SECRET_KEY: ${TIANSHU_RUNTIME_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_ACCESS_KEY: ${TIANSHU_REGISTRY_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_SECRET_KEY: ${TIANSHU_REGISTRY_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_REGISTRY_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_PORT: 6379
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_YUHENG_GROUP_CODE: ${YUHENG_GROUP_CODE:-default}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_NODE_ID: stellar-enclosure-yuheng-biz-gateway-2
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_INSTANCE_ID: stellar-enclosure-yuheng-biz-gateway-2
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_ADVERTISED_HOST: stellar-enclosure-yuheng-biz-gateway-2
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_SERVICE_NAME: ${YUHENG_RPC_SERVICE_NAME}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_GROUP: ${YUHENG_RPC_GROUP}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_RPC_VERSION: ${YUHENG_RPC_VERSION}
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_DATA_DIRECTORY: /var/lib/egon-yuheng
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_TRAFFIC_REDIS_ENABLED: "true"
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_TRAFFIC_REDIS_ADDRESS: redis://rate-limit-redis:6379
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_KAFKA_ENABLED: "true"
+      EGON_COLA_COMPONENT_YUHENG_ENGINE_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      tianshu-admin:
+        condition: service_started
+      rate-limit-redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - stellar-enclosure-yuheng-biz-gateway-2-lkg:/var/lib/egon-yuheng
+    ports:
+      - "18181:18081"
+      - "18182:18082"
+      - "127.0.0.1:18183:18083"
+      - "19190:19090"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18083;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-mcp-gateway:
+    build:
+      context: ../stellar-enclosure-yuheng-mcp-gateway
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "12"
+      EGON_COLA_COMPONENT_TIANSHU_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      EGON_COLA_COMPONENT_TIANSHU_APP_CODE: gme
+      EGON_COLA_COMPONENT_TIANSHU_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_TIANSHU_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-mcp-gateway
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///tianshu-admin:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_SECRET_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_SECRET_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_PORT: 6379
+      YUHENG_MCP_ENGINE_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-mcp-gateway
+      YUHENG_MCP_ENGINE_TIANSHU_ADVERTISED_HOST: stellar-enclosure-yuheng-mcp-gateway
+      YUHENG_MCP_ENGINE_NODE_ID: stellar-enclosure-yuheng-mcp-gateway
+      YUHENG_MCP_ENGINE_GROUP_CODE: ${YUHENG_GROUP_CODE:-default}
+      YUHENG_MCP_ENGINE_ENV: ${YUHENG_ENV:-local}
+      YUHENG_MCP_ENGINE_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      YUHENG_MCP_ENGINE_DATA_DIRECTORY: /var/lib/egon-yuheng-mcp/rules
+      YUHENG_MCP_ENGINE_PORT: 18084
+      YUHENG_MCP_ENGINE_MANAGEMENT_PORT: 18085
+      YUHENG_MCP_ENGINE_DEVELOPMENT_PLAINTEXT: "true"
+      YUHENG_MCP_ENGINE_OUTBOUND_RPC_DEVELOPMENT_PLAINTEXT: "true"
+      YUHENG_MCP_ENGINE_RESOURCE_SERVER_ID: ${YUHENG_MCP_RESOURCE_SERVER_ID}
+      YUHENG_MCP_ENGINE_RESOURCE_URI: ${YUHENG_MCP_RESOURCE_URI}
+      TIANQUAN_SHOUBING_OAUTH_ISSUER: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+      TIANQUAN_SHOUBING_JWK_SET_URI: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+      YUHENG_MCP_POSTGRES_URL: jdbc:postgresql://postgres:5432/gateway_admin
+      YUHENG_MCP_POSTGRES_USER: yuheng
+      YUHENG_MCP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      YUHENG_MCP_REDIS_ADDRESS: redis://rate-limit-redis:6379
+      YUHENG_MCP_ARTIFACT_ROOT: /var/lib/egon-yuheng-mcp/artifacts
+    depends_on:
+      stellar-enclosure-yuheng-admin:
+        condition: service_started
+      tianshu-admin:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      rate-limit-redis:
+        condition: service_healthy
+    volumes:
+      - stellar-enclosure-yuheng-mcp-gateway-lkg:/var/lib/egon-yuheng-mcp
+      - ${YUHENG_MCP_ARTIFACT_DIRECTORY:?set YUHENG_MCP_ARTIFACT_DIRECTORY}:/var/lib/egon-yuheng-mcp/artifacts
+    ports:
+      - "127.0.0.1:18084:18084"
+      - "127.0.0.1:18085:18085"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18085;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-mcp-gateway-2:
+    build:
+      context: ../stellar-enclosure-yuheng-mcp-gateway
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "13"
+      EGON_COLA_COMPONENT_TIANSHU_ENABLED: "true"
+      EGON_COLA_COMPONENT_TIANSHU_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      EGON_COLA_COMPONENT_TIANSHU_APP_CODE: gme
+      EGON_COLA_COMPONENT_TIANSHU_ENV: ${YUHENG_ENV:-local}
+      EGON_COLA_COMPONENT_TIANSHU_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-mcp-gateway-2
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///tianshu-admin:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_RUNTIME_SECRET_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_REGISTRY_SECRET_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_REDIS_PORT: 6379
+      YUHENG_MCP_ENGINE_TIANSHU_INSTANCE_ID: stellar-enclosure-yuheng-mcp-gateway-2
+      YUHENG_MCP_ENGINE_TIANSHU_ADVERTISED_HOST: stellar-enclosure-yuheng-mcp-gateway-2
+      YUHENG_MCP_ENGINE_NODE_ID: stellar-enclosure-yuheng-mcp-gateway-2
+      YUHENG_MCP_ENGINE_GROUP_CODE: ${YUHENG_GROUP_CODE:-default}
+      YUHENG_MCP_ENGINE_ENV: ${YUHENG_ENV:-local}
+      YUHENG_MCP_ENGINE_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      YUHENG_MCP_ENGINE_DATA_DIRECTORY: /var/lib/egon-yuheng-mcp/rules
+      YUHENG_MCP_ENGINE_PORT: 18084
+      YUHENG_MCP_ENGINE_MANAGEMENT_PORT: 18085
+      YUHENG_MCP_ENGINE_DEVELOPMENT_PLAINTEXT: "true"
+      YUHENG_MCP_ENGINE_OUTBOUND_RPC_DEVELOPMENT_PLAINTEXT: "true"
+      YUHENG_MCP_ENGINE_RESOURCE_SERVER_ID: ${YUHENG_MCP_RESOURCE_SERVER_ID}
+      YUHENG_MCP_ENGINE_RESOURCE_URI: ${YUHENG_MCP_RESOURCE_URI}
+      TIANQUAN_SHOUBING_OAUTH_ISSUER: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+      TIANQUAN_SHOUBING_JWK_SET_URI: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+      YUHENG_MCP_POSTGRES_URL: jdbc:postgresql://postgres:5432/gateway_admin
+      YUHENG_MCP_POSTGRES_USER: yuheng
+      YUHENG_MCP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      YUHENG_MCP_REDIS_ADDRESS: redis://rate-limit-redis:6379
+      YUHENG_MCP_ARTIFACT_ROOT: /var/lib/egon-yuheng-mcp/artifacts
+    depends_on:
+      stellar-enclosure-yuheng-admin:
+        condition: service_started
+      tianshu-admin:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      rate-limit-redis:
+        condition: service_healthy
+    volumes:
+      - stellar-enclosure-yuheng-mcp-gateway-2-lkg:/var/lib/egon-yuheng-mcp
+      - ${YUHENG_MCP_ARTIFACT_DIRECTORY:?set YUHENG_MCP_ARTIFACT_DIRECTORY}:/var/lib/egon-yuheng-mcp/artifacts
+    ports:
+      - "127.0.0.1:18184:18084"
+      - "127.0.0.1:18185:18085"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18085;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  yuheng-data-plane-proxy:
+    image: haproxy:3.1-alpine
+    volumes:
+      - ./haproxy.data-plane.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - stellar-enclosure-yuheng-biz-gateway
+      - stellar-enclosure-yuheng-biz-gateway-2
+      - stellar-enclosure-yuheng-mcp-gateway
+      - stellar-enclosure-yuheng-mcp-gateway-2
+    ports:
+      - "18081:18081"
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-admin-web:
+    build:
+      context: ../../yuheng-web
+    environment:
+      PORT: 8080
+      YUHENG_ADMIN_API_BASE_URL: http://stellar-enclosure-yuheng-admin:18080
+      YUHENG_ADMIN_API_DEVELOPMENT_PLAINTEXT: "true"
+    depends_on:
+      stellar-enclosure-yuheng-admin:
+        condition: service_started
+    ports:
+      - "18090:8080"
+    restart: unless-stopped
+
+volumes:
+  yuheng-postgres:
+  yuheng-tianshu-redis:
+  yuheng-rate-redis:
+  yuheng-kafka:
+  stellar-enclosure-yuheng-biz-gateway-lkg:
+  stellar-enclosure-yuheng-biz-gateway-2-lkg:
+  stellar-enclosure-yuheng-mcp-gateway-lkg:
+  stellar-enclosure-yuheng-mcp-gateway-2-lkg:

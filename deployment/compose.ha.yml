@@ -1,0 +1,170 @@
+name: stellar-enclosure-yuheng
+
+# Overlay for dual control-plane and dual data-plane replicas. Compose it with the base file, and
+# with compose.llm.yml when the LLM engine plane is deployed too. This overlay validates stateless
+# dual Yuheng Admin only: Admin stays the writer of the managed DDL, and the runner either finds the
+# installed prefix identical or fails the start (REBUILD_REQUIRED / MANIFEST_PREFIX_MISMATCH), so a
+# second replica never widens the schema by itself. PostgreSQL, Redis and Kafka remain single-node
+# and are not claimed to be highly available here.
+services:
+  tianshu-admin:
+    profiles: ["ha"]
+
+  tianshu-admin-2:
+    profiles: ["ha"]
+    build:
+      context: ../../tianshu-service/stellar-enclosure-tianshu-admin
+    environment:
+      SERVER_PORT: 18080
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/run/egon-config/tianshu-rpc-credentials.yml
+      YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_ACCESS_KEY}
+      YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY: ${YUHENG_MCP_TIANSHU_RUNTIME_SECRET_KEY}
+      YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_ACCESS_KEY}
+      YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY: ${YUHENG_MCP_TIANSHU_REGISTRY_SECRET_KEY}
+      YUHENG_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ENV: ${YUHENG_ENV:-local}
+      YUHENG_NAMESPACE: ${YUHENG_NAMESPACE:-default}
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "3"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_ddc
+      SPRING_DATASOURCE_USERNAME: yuheng
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      EGON_COLA_COMPONENT_TIANSHU_ADMIN_REDIS_HOST: tianshu-redis
+      EGON_COLA_COMPONENT_TIANSHU_ADMIN_REDIS_PORT: 6379
+      TIANSHU_RPC_PORT: 19080
+      TIANSHU_RPC_DEVELOPMENT_PLAINTEXT: "true"
+      TIANSHU_RPC_RUNTIME_ACCESS_KEY: ${TIANSHU_RUNTIME_ACCESS_KEY}
+      TIANSHU_RPC_RUNTIME_SECRET_KEY: ${TIANSHU_RUNTIME_SECRET_KEY}
+      TIANSHU_RPC_REGISTRY_ACCESS_KEY: ${TIANSHU_REGISTRY_ACCESS_KEY}
+      TIANSHU_RPC_REGISTRY_SECRET_KEY: ${TIANSHU_REGISTRY_SECRET_KEY}
+      TIANSHU_RPC_MANAGEMENT_ACCESS_KEY: ${TIANSHU_MANAGEMENT_ACCESS_KEY}
+      TIANSHU_RPC_MANAGEMENT_SECRET_KEY: ${TIANSHU_MANAGEMENT_SECRET_KEY}
+    volumes:
+      - ./tianshu-rpc-credentials.yml:/run/egon-config/tianshu-rpc-credentials.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tianshu-redis:
+        condition: service_healthy
+    ports:
+      - "18170:18080"
+      - "19180:19080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/18080;
+          printf "GET /actuator/health/readiness HTTP/1.0\r\n\r\n" >&3;
+          grep -q " 200 " <&3'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-admin:
+    profiles: ["ha"]
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+
+  stellar-enclosure-yuheng-admin-2:
+    profiles: ["ha"]
+    build:
+      context: ../stellar-enclosure-yuheng-admin
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      SERVER_PORT: 18080
+      EGON_COLA_COMPONENT_ID_MACHINE_ID: "4"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gateway_admin
+      SPRING_DATASOURCE_USERNAME: yuheng
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      YUHENG_ADMIN_TIANSHU_ENABLED: "true"
+      YUHENG_ADMIN_TIANSHU_API_RPC_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ADMIN_TIANSHU_API_RPC_APP_CODE: ge
+      YUHENG_ADMIN_TIANSHU_MCP_BIZ_CODE: ${YUHENG_BIZ_CODE}
+      YUHENG_ADMIN_TIANSHU_MCP_APP_CODE: gme
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+      EGON_COLA_COMPONENT_TIANSHU_RPC_LOAD_BALANCING_POLICY: round_robin
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_DEVELOPMENT_PLAINTEXT: "true"
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_MANAGEMENT_ACCESS_KEY: ${TIANSHU_MANAGEMENT_ACCESS_KEY}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_AUTH_MANAGEMENT_SECRET_KEY: ${TIANSHU_MANAGEMENT_SECRET_KEY}
+      YUHENG_ADMIN_SECRETS_MASTER_KEY_BASE64: ${YUHENG_MASTER_KEY_BASE64}
+      YUHENG_ADMIN_SECURITY_HMAC_SECRET_BASE64: ${YUHENG_ADMIN_JWT_HMAC_SECRET_BASE64}
+      YUHENG_ADMIN_OBSERVABILITY_KAFKA_ENABLED: "true"
+      YUHENG_ADMIN_OBSERVABILITY_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tianshu-admin:
+        condition: service_started
+      tianshu-admin-2:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    ports:
+      - "18180:18080"
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  stellar-enclosure-yuheng-biz-gateway:
+    profiles: ["ha"]
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+
+  stellar-enclosure-yuheng-biz-gateway-2:
+    profiles: ["ha"]
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+
+  stellar-enclosure-yuheng-mcp-gateway:
+    profiles: ["ha"]
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+
+  stellar-enclosure-yuheng-mcp-gateway-2:
+    profiles: ["ha"]
+    environment:
+      TIANSHU_TENANT_ID: ${TIANSHU_TENANT_ID:?set TIANSHU_TENANT_ID}
+      TIANSHU_REDIS_USERNAME: ${TIANSHU_REDIS_USERNAME:?set TIANSHU_REDIS_USERNAME}
+      EGON_COLA_COMPONENT_TIANSHU_RPC_TARGET: dns:///control-plane-proxy:19080
+
+  yuheng-data-plane-proxy:
+    profiles: ["ha"]
+
+  stellar-enclosure-yuheng-admin-web:
+    profiles: ["ha"]
+    environment:
+      YUHENG_ADMIN_API_BASE_URL: http://control-plane-proxy:18080
+
+  control-plane-proxy:
+    profiles: ["ha"]
+    image: haproxy:3.1-alpine
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - tianshu-admin
+      - tianshu-admin-2
+      - stellar-enclosure-yuheng-admin
+      - stellar-enclosure-yuheng-admin-2
+    ports:
+      - "18270:18070"
+      - "18280:18080"
+      - "19280:19080"
+    healthcheck:
+      test:
+        - CMD
+        - haproxy
+        - -c
+        - -f
+        - /usr/local/etc/haproxy/haproxy.cfg
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped

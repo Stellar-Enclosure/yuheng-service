@@ -1,0 +1,107 @@
+package top.egon.cola.component.yuheng.mcp.engine.config;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class McpGatewayEnginePropertiesTest {
+
+    private static final String PREFIX = "egon.cola.component.yuheng.mcp-engine.";
+    private final ApplicationContextRunner runner = new ApplicationContextRunner()
+            .withUserConfiguration(PropertiesConfiguration.class);
+
+    @Test
+    void bindsImmutableBootstrapDefaultsWithoutRemappingLegacyMcpKeys() {
+        runner.withPropertyValues(validValues())
+                .withPropertyValues("egon.cola.component.yuheng.engine.mcp.issuer=https://issuer.example.test")
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    var properties = context.getBean(McpGatewayEngineProperties.class);
+                    assertEquals(18084, properties.listener().port());
+                    assertEquals(18085, properties.managementPort());
+                    assertEquals("mcp-node-1", properties.nodeId());
+                    assertEquals(Duration.ofSeconds(5), properties.outbound().requestTimeout());
+                    assertNull(properties.outbound().httpTls());
+                    assertTrue(McpGatewayEngineProperties.class.isRecord());
+                    assertEquals("data/mcp-node-1", properties.dataDirectory());
+                });
+    }
+
+    @Test
+    void rejectsMissingIdentityBeforeAnyListenerCanStart() {
+        for (String identity : List.of("yuheng-group-code", "env", "namespace",
+                "node-id", "instance-id", "data-directory")) {
+            runner.withPropertyValues(validValues()).withPropertyValues(PREFIX + identity + "=")
+                    .run(context -> assertNotNull(context.getStartupFailure(), identity));
+        }
+        runner.withPropertyValues(PREFIX + "yuheng-group-code=orders",
+                        PREFIX + "env=local", PREFIX + "namespace=default",
+                        PREFIX + "instance-id=instance-1", PREFIX + "data-directory=data/mcp",
+                        PREFIX + "listener.tls.development-plaintext=true",
+                        PREFIX + "outbound.rpc-tls.development-plaintext=true")
+                .run(context -> assertNotNull(context.getStartupFailure()));
+    }
+
+    @Test
+    void rejectsUnsafePathsPortsDurationsAndConfigurableRoles() {
+        for (String invalid : List.of(
+                "data-directory=/", "data-directory=.", "data-directory=../outside",
+                "listener.port=-1", "management-port=65536", "management-port=18084",
+                "listener.drain-timeout=0s", "outbound.request-timeout=-1s",
+                "outbound.max-connections=0", "active-health.maximum-concurrency=0",
+                "role=API_RPC")) {
+            runner.withPropertyValues(validValues()).withPropertyValues(PREFIX + invalid)
+                    .run(context -> assertNotNull(context.getStartupFailure(), invalid));
+        }
+    }
+
+    @Test
+    void requiresExplicitPlaintextOrCompleteTlsConfiguration() {
+        runner.withPropertyValues(validValues())
+                .withPropertyValues(PREFIX + "listener.tls.development-plaintext=false")
+                .run(context -> assertNotNull(context.getStartupFailure()));
+        runner.withPropertyValues(validValues())
+                .withPropertyValues(PREFIX + "listener.tls.enabled=true",
+                        PREFIX + "listener.tls.development-plaintext=false")
+                .run(context -> assertNotNull(context.getStartupFailure()));
+    }
+
+    @Test
+    void bindsOptionalHttpUpstreamIdentityWithoutChangingRpcTransport() {
+        runner.withPropertyValues(validValues()).withPropertyValues(
+                PREFIX + "outbound.http-tls.enabled=true",
+                PREFIX + "outbound.http-tls.certificate-chain-path=certificate.pem",
+                PREFIX + "outbound.http-tls.private-key-path=private-key.pem",
+                PREFIX + "outbound.http-tls.trust-certificate-collection-path=ca.pem",
+                PREFIX + "outbound.http-tls.client-certificate-required=true")
+                .run(context -> {
+                    assertNull(context.getStartupFailure());
+                    var outbound = context.getBean(McpGatewayEngineProperties.class).outbound();
+                    assertTrue(outbound.httpTls().enabled());
+                    assertEquals("certificate.pem", outbound.httpTls().certificateChainPath());
+                    assertEquals("ca.pem", outbound.httpTls().trustCertificateCollectionPath());
+                    assertTrue(outbound.rpcTls().developmentPlaintext());
+                });
+    }
+
+    private String[] validValues() {
+        return new String[]{
+                PREFIX + "yuheng-group-code=orders", PREFIX + "env=local",
+                PREFIX + "namespace=default", PREFIX + "node-id=mcp-node-1",
+                PREFIX + "instance-id=mcp-instance-1", PREFIX + "data-directory=./data/mcp-node-1",
+                PREFIX + "listener.tls.development-plaintext=true",
+                PREFIX + "outbound.rpc-tls.development-plaintext=true"
+        };
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(McpGatewayEngineProperties.class)
+    static class PropertiesConfiguration {
+    }
+}

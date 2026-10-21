@@ -1,0 +1,163 @@
+package top.egon.cola.component.yuheng.admin.credential.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
+import top.egon.cola.component.yuheng.openapi.annotation.EgonGatewayPolicy;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import top.egon.cola.component.yuheng.admin.credential.domain.dto.GatewayCredentialRotateRequestDTO;
+import top.egon.cola.component.yuheng.admin.credential.service.GatewayCredentialService;
+import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
+import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
+
+import java.time.Duration;
+import java.util.List;
+
+/**
+ * 中文说明：{@code GatewayCredentialController} 是接口控制器，位于当前 Gateway 模块的相关包中，负责网关凭证控制器相关的职责与边界。
+ * English summary: {@code GatewayCredentialController} is a gateway credential controller controller in the current Gateway module; it owns the gateway credential controller-related responsibility and boundary.
+ *
+ * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
+ */
+@lombok.extern.slf4j.Slf4j
+@lombok.RequiredArgsConstructor
+@RestController("gatewayCredentialController")
+@RequestMapping("/api/v1/yuheng/admin/applications/{applicationId}/credentials")
+@PreAuthorize("hasAuthority('SCOPE_yuheng:read') and (hasAnyAuthority('CAP_yuheng:read','CAP_*'))")
+@Tag(name = "yuheng-admin")
+@EgonApiCatalog(
+        businessDomainCode = "xingyuan",
+        businessDomainName = "平台治理域",
+        entityDomainCode = "yuheng-admin",
+        entityDomainName = "Gateway Admin 管理实体域",
+        interfaceGroupCode = "yuheng-admin")
+public class GatewayCredentialController {
+
+    /**
+     * 中文说明：保存 服务 对应的状态、依赖或配置值；字段类型为 {@code GatewayCredentialService}，由 {@code GatewayCredentialController} 在其生命周期内读取或更新。
+     * English summary: Holds the state, dependency, or configuration represented by service; its type is {@code GatewayCredentialService}, and {@code GatewayCredentialController} reads or updates it during its lifecycle.
+     *
+     * 用法 / Usage: 该字段通过 {@code GatewayCredentialController} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayCredentialController}; do not couple callers to its representation when the owning type exposes an API.
+     */
+    @org.springframework.beans.factory.annotation.Qualifier("gatewayCredentialService")
+    private final GatewayCredentialService service;
+
+
+    /**
+     * 中文说明：执行 list 操作；该方法是 {@code GatewayCredentialController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
+     * English summary: Executes the list operation; this method is the invocation entry point on {@code GatewayCredentialController} and performs the corresponding runtime, management, or protocol work.
+     *
+     * 用法 / Usage: 调用方式 / Usage: {@code GatewayCredentialController.list(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
+     * @param applicationId 参数 applicationId；parameter application id。
+     * @return 返回 list 的处理结果；returns the result of the operation.
+     */
+    @Operation(operationId = "admin.gatewayCredentialController.list")
+    @EgonGatewayPolicy(
+            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @GetMapping
+    public List<top.egon.cola.component.yuheng.admin.credential.domain.vo.GatewayCredentialVO> list(
+            @PathVariable String applicationId) {
+        return service.list(applicationId);
+    }
+
+    /**
+     * 中文说明：执行 create 操作；该方法是 {@code GatewayCredentialController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
+     * English summary: Executes the create operation; this method is the invocation entry point on {@code GatewayCredentialController} and performs the corresponding runtime, management, or protocol work.
+     *
+     * 用法 / Usage: 调用方式 / Usage: {@code GatewayCredentialController.create(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
+     * @param applicationId 参数 applicationId；parameter application id。
+     * @param actor 参数 actor；parameter actor。
+     * @return 返回 create 的处理结果；returns the result of the operation.
+     */
+    @Operation(operationId = "admin.gatewayCredentialController.create")
+    @EgonGatewayPolicy(
+            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('SCOPE_yuheng:credentials:write') and (hasAnyAuthority('CAP_yuheng:credentials:write','CAP_*'))")
+    public top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO create(
+            @PathVariable String applicationId,
+            AdminActor actor) {
+        return service.create(applicationId, actor, audit());
+    }
+
+    /**
+     * 中文说明：执行 rotate 操作；该方法是 {@code GatewayCredentialController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
+     * English summary: Executes the rotate operation; this method is the invocation entry point on {@code GatewayCredentialController} and performs the corresponding runtime, management, or protocol work.
+     *
+     * 用法 / Usage: 调用方式 / Usage: {@code GatewayCredentialController.rotate(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
+     * @param applicationId 参数 applicationId；parameter application id。
+     * @param keyId 参数 键Id；parameter key id。
+     * @param request 参数 请求；parameter request。
+     * @param actor 参数 actor；parameter actor。
+     * @return 返回 rotate 的处理结果；returns the result of the operation.
+     */
+    @Operation(operationId = "admin.gatewayCredentialController.rotate")
+    @EgonGatewayPolicy(
+            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @PostMapping("/{keyId}/rotate")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('SCOPE_yuheng:credentials:write') and (hasAnyAuthority('CAP_yuheng:credentials:write','CAP_*'))")
+    public top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO rotate(
+            @PathVariable String applicationId,
+            @PathVariable String keyId,
+            @Valid @RequestBody GatewayCredentialRotateRequestDTO request,
+            AdminActor actor) {
+        return service.rotate(
+                applicationId,
+                keyId,
+                Duration.ofMinutes(request.overlapMinutes()),
+                actor,
+                audit()
+        );
+    }
+
+    /**
+     * 中文说明：执行 revoke 操作；该方法是 {@code GatewayCredentialController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
+     * English summary: Executes the revoke operation; this method is the invocation entry point on {@code GatewayCredentialController} and performs the corresponding runtime, management, or protocol work.
+     *
+     * 用法 / Usage: 调用方式 / Usage: {@code GatewayCredentialController.revoke(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
+     * @param applicationId 参数 applicationId；parameter application id。
+     * @param keyId 参数 键Id；parameter key id。
+     * @param actor 参数 actor；parameter actor。
+     * @return 返回 revoke 的处理结果；returns the result of the operation.
+     */
+    @Operation(operationId = "admin.gatewayCredentialController.revoke")
+    @EgonGatewayPolicy(
+            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @PostMapping("/{keyId}/revoke")
+    @PreAuthorize("hasAuthority('SCOPE_yuheng:credentials:write') and (hasAnyAuthority('CAP_yuheng:credentials:write','CAP_*'))")
+    public top.egon.cola.component.yuheng.admin.credential.domain.vo.GatewayCredentialVO revoke(
+            @PathVariable String applicationId,
+            @PathVariable String keyId,
+            AdminActor actor) {
+        return service.revoke(
+                applicationId,
+                keyId,
+                actor,
+                audit()
+        );
+    }
+
+    /**
+     * 中文说明：执行 审计 操作；该方法是 {@code GatewayCredentialController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
+     * English summary: Executes the audit operation; this method is the invocation entry point on {@code GatewayCredentialController} and performs the corresponding runtime, management, or protocol work.
+     *
+     * 用法 / Usage: 调用方式 / Usage: {@code GatewayCredentialController.audit(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
+     * @return 返回 审计 的处理结果；returns the result of the operation.
+     */
+    private RequestAuditContext audit() {
+        return RequestAuditContext.current();
+    }
+
+
+}

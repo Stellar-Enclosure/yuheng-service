@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: stellar-enclosure-yuheng-test-rpc-consumer
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+
+server:
+  port: 0
+  shutdown: graceful
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+egon:
+  cola:
+    component:
+      id:
+        enabled: false
+      tianshu:
+        tenant-id: ${TIANSHU_TENANT_ID:}
+        redis:
+          username: ${TIANSHU_REDIS_USERNAME:}
+        enabled: false
+        rpc:
+          target: ${TIANSHU_RPC_TARGET:dns:///127.0.0.1:19080}
+          load-balancing-policy: round_robin
+          tls:
+            development-plaintext: ${TIANSHU_RPC_DEVELOPMENT_PLAINTEXT:true}
+          auth:
+            runtime:
+              access-key: ${TIANSHU_RPC_RUNTIME_ACCESS_KEY:}
+              secret-key: ${TIANSHU_RPC_RUNTIME_SECRET_KEY:}
+            registry:
+              access-key: ${TIANSHU_RPC_REGISTRY_ACCESS_KEY:}
+              secret-key: ${TIANSHU_RPC_REGISTRY_SECRET_KEY:}
+        registry:
+          enabled: false
+      rpc:
+        enabled: false
+        consumer:
+          enabled: false
+          yuheng-service-name: egon-yuheng-rpc
+          yuheng-group: default
+          yuheng-version: 1.0.0

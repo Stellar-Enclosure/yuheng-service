@@ -1,0 +1,12 @@
+[
+  {
+    "applicationCode": "stellar-enclosure-yuheng-test-http-provider",
+    "displayName": "Yuheng Demo HTTP Providers",
+    "description": "MVC and WebFlux demo providers"
+  },
+  {
+    "applicationCode": "stellar-enclosure-yuheng-test-rpc-provider",
+    "displayName": "Yuheng Demo RPC Provider",
+    "description": "Egon RPC demo provider"
+  }
+]
