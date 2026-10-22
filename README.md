@@ -1,6 +1,37 @@
 # yuheng-service
 
-Stellar Enclosure Java modules. All first-party modules start at **0.0.1**.
+[English](README.md) | [中文](README.zh-CN.md)
+
+HTTP/RPC, MCP and LLM gateways with a management control plane and browser Edge/BFF for Stellar Enclosure. All first-party modules start at **0.0.1**.
+
+## Current capabilities
+
+- Manage applications, credentials, gateway groups, interface catalogs and OpenAPI definitions; edit/validate route and policy drafts, publish immutable releases, compare versions, retry and roll back.
+- Forward HTTP→HTTP, HTTP→RPC and RPC→RPC requests using Tianshu provider discovery, health checks, balancing and bounded retries; apply routing, authentication, traffic policies and tracing.
+- Manage MCP servers, tools, resources, prompts, remote providers/mounts, approvals and the existing task extensions; provide an independent MCP data plane.
+- Configure LLM channels/model policies and serve chat completion, embedding, response, message and model endpoints. The business gateway also contains streaming/multipart/WebSocket proxy support.
+- Provide browser OIDC login, server-side OAuth token storage, BFF session/CSRF/logout and token relay through the Edge gateway. Expose runtime projections, dashboards and observability APIs from Admin.
+
+## Modules
+
+| Entry | Responsibility |
+|---|---|
+| [Contract](stellar-enclosure-yuheng-contract/) and [Core](stellar-enclosure-yuheng-core/) | Shared rule/release/provider contracts and routing/filter/security models. |
+| [MCP Core](stellar-enclosure-yuheng-mcp-core/) and [Runtime Core](stellar-enclosure-yuheng-runtime-core/) | Shared MCP runtime primitives and non-executable engine traffic/resilience logic. |
+| [Biz Gateway](stellar-enclosure-yuheng-biz-gateway/) | Executable Reactor Netty HTTP/RPC data plane. |
+| [MCP Gateway](stellar-enclosure-yuheng-mcp-gateway/) | Executable MCP data plane. |
+| [Edge Gateway](stellar-enclosure-yuheng-edge-gateway/) | Browser-facing Spring Cloud Gateway/OIDC/BFF entry point. |
+| [LLM Gateway](stellar-enclosure-yuheng-llm-gateway/) | Executable model invocation gateway. |
+| [Admin](stellar-enclosure-yuheng-admin/) | Persistent management control plane, rule compilation, release and management APIs. |
+| [Starter](stellar-enclosure-yuheng-starter/) | Provider definition reporting and Yuheng metadata contribution to Tianshu HTTP registration. |
+| [OpenAPI Starter](stellar-enclosure-yuheng-starter-openapi/), [WebMVC adapter](stellar-enclosure-yuheng-starter-openapi-webmvc/), [WebFlux adapter](stellar-enclosure-yuheng-starter-openapi-webflux/) | Provider OpenAPI reporting with framework-specific adapters. |
+| [Test reactor](stellar-enclosure-yuheng-test/) | Provider/consumer examples and topology verification. |
+
+## Integration and boundaries
+
+[yuheng-web](https://github.com/Stellar-Enclosure/yuheng-web) owns the console. Tianshu owns registry/configuration state; Shoubing owns OAuth identity and resource-bound tokens; downstream services apply Jianshen user authorization or local SERVICE-scope checks. Knowledge bases and Wiki are owned by [yaoguang-service](https://github.com/Stellar-Enclosure/yaoguang-service), not Yuheng Admin.
+
+The current MCP task protocol is an Egon extension, not evidence of standard MCP Tasks compatibility; see the [protocol boundary](README.zh-CN.md#mcp-扩展边界). Source/build checks do not establish live release propagation, provider routing or OAuth behavior. Use the [integration guide](docs/developer-integration.md), [deployment guide](deployment/README.md) and [performance scenarios](performance/README.md) for their separate validation steps.
 
 ## Build
 

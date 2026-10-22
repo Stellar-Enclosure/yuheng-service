@@ -7,7 +7,18 @@ Netty 数据面、Spring Boot 管理控制面、面向 Provider 的上报 starte
 Provider 租约运行时。Admin 通过 Tianshu 发布不可变规则版本；Engine 发现 Provider、
 选择健康实例，并转发 HTTP 和 unary RPC 流量。
 
-企业知识库与 LLM Wiki 已迁入 [Yaoguang](../stellar-enclosure-yaoguang/README.md)。LLM Gateway 及渠道、模型配置继续由 Yuheng 持有，前端仍复用现有管理界面。
+企业知识库与 LLM Wiki 已迁入 [yaoguang-service](https://github.com/Stellar-Enclosure/yaoguang-service) 与 [yaoguang-web](https://github.com/Stellar-Enclosure/yaoguang-web)。LLM Gateway 及渠道、模型配置继续由 Yuheng 持有，前端由独立 [yuheng-web](https://github.com/Stellar-Enclosure/yuheng-web) 维护。
+
+## 功能入口
+
+| 能力 | 当前实现 |
+|---|---|
+| 网关治理 | 应用/凭据、网关分组、接口目录/OpenAPI、路由/策略草稿、版本发布/差异/重试/回滚 |
+| 业务数据面 | HTTP→HTTP、HTTP→RPC、RPC→RPC 转发，Provider 发现、健康检查、流量与弹性治理 |
+| MCP | 独立数据面与 Server、Tool、Resource、Prompt、远程 Provider/挂载及既有任务扩展管理 |
+| LLM | 渠道与模型配置，Chat Completion、Embedding、Response、Message 和模型 API |
+| 浏览器接入 | 独立 Edge OIDC 客户端、服务端 Token 保管、BFF Session/CSRF/Logout 与 Token Relay |
+| 可观测 | 运行时投影、仪表盘、调用 Trace 与管理审计 |
 
 ## 架构
 
@@ -41,6 +52,8 @@ Pub/Sub 仍承载变更通知。其他普通 RPC 服务仍由 Tianshu 支撑，�
 | `stellar-enclosure-yuheng-runtime-core` | 两种 Engine 角色共享的非可执行运行时能力：流量整形、弹性治理和已编译操作处理 | 否 |
 | `stellar-enclosure-yuheng-biz-gateway` | 可执行 HTTP/RPC 数据面、监听器、上游客户端、健康检查和遥测 | 否 |
 | `stellar-enclosure-yuheng-mcp-gateway` | 可执行的第二种 Engine 角色（`McpGatewayEngineApplication`），承载 MCP 数据面 | 否 |
+| `stellar-enclosure-yuheng-edge-gateway` | 浏览器统一入口，Spring Cloud Gateway/OIDC/BFF Session 与 Token Relay | 否 |
+| `stellar-enclosure-yuheng-llm-gateway` | 可执行模型调用网关 | 否 |
 | `stellar-enclosure-yuheng-admin` | 可执行管理控制面、持久化、规则编译、鉴权和 OpenAPI | 否 |
 | `stellar-enclosure-yuheng-starter` | Provider 接口定义上报，并向 Tianshu HTTP 注册贡献 Yuheng 元数据 | 是 |
 | `stellar-enclosure-yuheng-starter-openapi` | 与框架无关的 Provider OpenAPI 治理扩展 | 是 |
@@ -48,9 +61,8 @@ Pub/Sub 仍承载变更通知。其他普通 RPC 服务仍由 Tianshu 支撑，�
 | `stellar-enclosure-yuheng-starter-openapi-webflux` | OpenAPI 治理扩展的 Spring WebFlux 适配器 | 是 |
 | `stellar-enclosure-yuheng-test` | 真实 HTTP/RPC Provider、Consumer 和拓扑验证 | 否 |
 
-Admin Web 是与 Yuheng 源码同目录的私有 React 应用，路径为
-`stellar-enclosure-yuheng/stellar-enclosure-yuheng-admin-web`；它不是 Maven
-子模块。详见 [前端 README](stellar-enclosure-yuheng-admin-web/README.zh-CN.md)。
+Admin Web 是独立 `yuheng-web` 仓库的私有 React 应用，不是本 reactor 的 Maven 子模块。
+详见 [前端 README](https://github.com/Stellar-Enclosure/yuheng-web/blob/main/README.zh-CN.md)。
 
 ## 运行能力
 
@@ -131,11 +143,11 @@ Yuheng 接口定义上报、只需注册 HTTP 服务的应用，才直接依赖
 HTTP 注册 Java 类型已迁入 `top.egon.cola.component.tianshu.http.registration`，Yuheng
 类型继续位于 `top.egon.cola.component.yuheng`。
 
-执行 JVM 专项验证：
+先按[仓库构建说明](README.md#build)准备跨仓库依赖，在 `yuheng-service` 根目录执行 JVM 专项验证：
 
 ```bash
 ./mvnw -B -ntp \
-  -pl stellar-enclosure-platform/stellar-enclosure-yuheng/stellar-enclosure-yuheng-test \
+  -pl stellar-enclosure-yuheng-test \
   -am test
 ```
 
@@ -145,11 +157,11 @@ Testcontainers；当 `PATH` 中存在 `initdb`、`postgres` 和 `redis-server` �
 
 ```bash
 ./mvnw -B -ntp \
-  -pl stellar-enclosure-platform/stellar-enclosure-yuheng/stellar-enclosure-yuheng-test/stellar-enclosure-yuheng-test-suite \
+  -pl stellar-enclosure-yuheng-test/stellar-enclosure-yuheng-test-suite \
   -am -Pyuheng-live verify
 
 ./mvnw -B -ntp \
-  -pl stellar-enclosure-platform/stellar-enclosure-yuheng/stellar-enclosure-yuheng-test/stellar-enclosure-yuheng-test-suite \
+  -pl stellar-enclosure-yuheng-test/stellar-enclosure-yuheng-test-suite \
   -am -Pyuheng-live -Dgateway.live.infrastructure=local verify
 ```
 
@@ -160,7 +172,7 @@ Testcontainers；当 `PATH` 中存在 `initdb`、`postgres` 和 `redis-server` �
 | [Yuheng + Tianshu + RPC 联调](docs/developer-integration.zh-CN.md) | 端到端 Demo 命令、成功判据、故障演练和证据边界 |
 | [本地部署](deployment/README.zh-CN.md) | Compose 构建、端口、Ready、HA 样例、TLS/mTLS 和启停顺序 |
 | [性能和故障演练](performance/README.zh-CN.md) | k6 smoke/baseline、长稳、资源采样和固定故障场景 |
-| [Admin Web](stellar-enclosure-yuheng-admin-web/README.zh-CN.md) | React 构建、测试、浏览器鉴权和 API Origin 配置 |
+| [Admin Web](https://github.com/Stellar-Enclosure/yuheng-web/blob/main/README.zh-CN.md) | React 构建、测试、浏览器鉴权和 API Origin 配置 |
 
 ## 边界
 
@@ -171,9 +183,9 @@ Testcontainers；当 `PATH` 中存在 `initdb`、`postgres` 和 `redis-server` �
 - Yuheng 不包含通用账号系统或外部 IAM。Admin Web 经平台统一身份以 CSRF 保护的 Cookie
   会话登录，Yuheng Admin 依据 `GET /api/v1/auth/bootstrap` 返回的 Actor 和 capability
   边界执行鉴权。
-- OpenAI Route Profile 只是传输配置预设，不是 AI 业务平台。Yuheng 不统计 Token、
-  不计费、不管理 Prompt 或会话、不执行 RAG/Agent 编排或 Function Calling，也不做
-  业务模型选择；它只识别请求、匹配路由、承载协议并透明转发字节。
+- Biz Gateway 的 OpenAI Route Profile 是透明传输预设，负责匹配路由、承载协议和转发字节；
+  不能把它当作 RAG/Agent 编排或 Prompt 管理。独立 LLM Gateway 与 Admin 的渠道/模型配置是
+  另一组能力；知识库、Wiki 和检索问答由 Yaoguang 提供。
 - 流式组件测试只证明进程内 Yuheng 边界，不证明公网 OpenAI、外部/私有 CA TLS、
   多进程基础设施，或外层 Nginx/Ingress 的 Flush 与缓存行为。
 - 实现和部署契约仍在演进；当前版本证据以专项测试和下方运维文档为准。
