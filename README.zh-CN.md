@@ -177,3 +177,7 @@ Testcontainers；当 `PATH` 中存在 `initdb`、`postgres` 和 `redis-server` �
 - 流式组件测试只证明进程内 Yuheng 边界，不证明公网 OpenAI、外部/私有 CA TLS、
   多进程基础设施，或外层 Nginx/Ingress 的 Flush 与缓存行为。
 - 实现和部署契约仍在演进；当前版本证据以专项测试和下方运维文档为准。
+
+## 独立仓库发布
+
+发布范围、前置配置、校验与发布命令见 [仓库 README](README.md#publish-to-maven-central)。应用和测试示例不发布到 Maven Central，前端站点保持 `private: true`。

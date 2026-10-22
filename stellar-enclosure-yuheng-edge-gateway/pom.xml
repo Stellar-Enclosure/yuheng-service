@@ -16,6 +16,10 @@
     <name>stellar-enclosure-yuheng-edge-gateway</name>
     <description>OAuth2 and BFF edge gateway for Stellar Enclosure Yuheng.</description>
 
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
