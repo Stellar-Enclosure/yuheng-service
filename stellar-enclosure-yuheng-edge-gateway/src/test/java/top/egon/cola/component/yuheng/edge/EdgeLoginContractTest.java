@@ -953,13 +953,34 @@ class EdgeLoginContractTest {
         assertThat(properties).isNotNull();
         assertThat(properties.getProperty(GatewayProperties.PREFIX + ".routes[0].id"))
                 .isEqualTo("authorization-server");
+        int publicI18nIndex = -1;
+        int tianshuAdminIndex = -1;
         for (int index = 1; properties.containsKey(GatewayProperties.PREFIX + ".routes[" + index + "].id"); index++) {
             String prefix = GatewayProperties.PREFIX + ".routes[" + index + "]";
+            String routeId = properties.getProperty(prefix + ".id");
+            if ("tianshu-public-i18n".equals(routeId)) {
+                assertThat(publicI18nIndex).isEqualTo(-1);
+                publicI18nIndex = index;
+                assertThat(properties.getProperty(prefix + ".uri")).isEqualTo("${egon.yuheng.edge.resources.edge-tianshu.resource-uri}");
+                assertThat(properties.getProperty(prefix + ".predicates[0].name")).isEqualTo("Path");
+                assertThat(properties.getProperty(prefix + ".predicates[0].args.patterns")).isEqualTo("/api/v1/tianshu/i18n/public/bundle");
+                assertThat(properties.getProperty(prefix + ".predicates[0].args.matchTrailingSlash")).isEqualTo("false");
+                assertThat(properties.getProperty(prefix + ".predicates[1]")).isEqualTo("Method=GET");
+                assertThat(properties.getProperty(prefix + ".predicates[2]")).isNull();
+                assertThat(properties.getProperty(prefix + ".metadata.edge-registration-id")).isNull();
+                assertThat(properties.getProperty(prefix + ".filters[0]")).isEqualTo("RemoveRequestHeader=Authorization");
+                assertThat(properties.getProperty(prefix + ".filters[1]")).isEqualTo("RemoveRequestHeader=Cookie");
+                assertThat(properties.getProperty(prefix + ".filters[2]")).isEqualTo("RemoveRequestHeader=X-Egon-Tianshu-Tenant");
+                assertThat(properties.getProperty(prefix + ".filters[3]")).isNull();
+                continue;
+            }
+            if ("tianshu-admin".equals(routeId)) tianshuAdminIndex = index;
             String alias = properties.getProperty(prefix + ".metadata.edge-registration-id");
             assertThat(alias).isNotBlank();
             assertThat(properties.getProperty(prefix + ".filters[0]")).isEqualTo("EdgeResourceAuthorization=" + alias);
             assertThat(properties.getProperty("egon.yuheng.edge.resources." + alias + ".resource-server-id")).isNotBlank();
         }
+        assertThat(publicI18nIndex).isPositive().isLessThan(tianshuAdminIndex);
         assertThat(properties.getProperty("spring.cloud.gateway.routes[0].id")).isNull();
     }
 

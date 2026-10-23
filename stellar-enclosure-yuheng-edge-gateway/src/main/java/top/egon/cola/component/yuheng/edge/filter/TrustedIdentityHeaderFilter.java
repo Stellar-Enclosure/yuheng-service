@@ -2,6 +2,7 @@ package top.egon.cola.component.yuheng.edge.filter;
 
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -13,6 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import top.egon.cola.component.yuheng.edge.service.impl.EdgeSessionBindingComponent;
@@ -52,6 +55,18 @@ public class TrustedIdentityHeaderFilter implements GlobalFilter, Ordered {
                 .headers(headers -> UNTRUSTED_IDENTITY_HEADERS.forEach(headers::remove))
                 .build();
         ServerWebExchange sanitized = exchange.mutate().request(request).build();
+        Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        if (route != null && "tianshu-public-i18n".equals(route.getId())
+                && route.getMetadata().get("edge-registration-id") == null
+                && HttpMethod.GET.equals(request.getMethod())
+                && "/api/v1/tianshu/i18n/public/bundle".equals(request.getPath().value())) {
+            // The static login catalog is tenant-independent and must not forward ambient credentials.
+            return chain.filter(sanitized.mutate().request(request.mutate().headers(headers -> {
+                headers.remove(HttpHeaders.AUTHORIZATION);
+                headers.remove(HttpHeaders.COOKIE);
+                headers.remove("X-Egon-Tianshu-Tenant");
+            }).build()).build());
+        }
         boolean configuredPath = bindings != null && bindings.resourcesContainPath(request.getPath().value());
         if (!isApiPath(request.getPath().value()) && !configuredPath) {
             return chain.filter(sanitized);

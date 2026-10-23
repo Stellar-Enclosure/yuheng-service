@@ -290,6 +290,18 @@ spring:
                 - Path=/api/v1/auth/about
               filters:
                 - EdgeResourceAuthorization=edge-jianshen
+            - id: tianshu-public-i18n
+              uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+              predicates:
+                - name: Path
+                  args:
+                    patterns: /api/v1/tianshu/i18n/public/bundle
+                    matchTrailingSlash: false
+                - Method=GET
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RemoveRequestHeader=Cookie
+                - RemoveRequestHeader=X-Egon-Tianshu-Tenant
             - id: tianshu-admin
               uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
               metadata:
