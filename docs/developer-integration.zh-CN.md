@@ -8,7 +8,7 @@
 
 ## 前置与证据边界
 
-需要 JDK 21、Docker Compose、`curl`、`jq`、`openssl`，以及可用的 Maven Wrapper。
+需要 JDK 25、Docker Compose、`curl`、`jq`、`openssl`，以及可用的 Maven Wrapper。
 复制环境文件并替换所有示例密钥：
 
 ```bash

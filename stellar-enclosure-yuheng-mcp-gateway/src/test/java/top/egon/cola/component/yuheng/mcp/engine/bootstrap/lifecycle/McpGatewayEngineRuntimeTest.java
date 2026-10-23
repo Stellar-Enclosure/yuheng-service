@@ -1,7 +1,7 @@
 package top.egon.cola.component.yuheng.mcp.engine.bootstrap.lifecycle;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.health.contributor.Health;
 import top.egon.cola.component.yuheng.mcp.engine.http.service.McpGatewayHttpServer;
 import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpRuntimeHealthIndicator;
 import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;

@@ -14,7 +14,7 @@ class GatewayEngineApplicationConfigurationTest {
         loader.setResources(new ClassPathResource("application.yml"));
 
         assertEquals(
-                "org.redisson.spring.starter.RedissonAutoConfigurationV2",
+                "org.redisson.spring.starter.RedissonAutoConfigurationV4",
                 loader.getObject().getProperty(
                         "spring.autoconfigure.exclude[0]"
                 )

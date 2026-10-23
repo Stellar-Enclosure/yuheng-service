@@ -186,11 +186,11 @@ public class EdgeSecurityConfiguration {
     }
 
     @Bean(name = "edgeSecurityAuditHealthIndicator")
-    public org.springframework.boot.actuate.health.HealthIndicator edgeSecurityAuditHealthIndicator(
+    public org.springframework.boot.health.contributor.HealthIndicator edgeSecurityAuditHealthIndicator(
             @Qualifier("idpSecurityAuditReady") java.util.function.BooleanSupplier ready) {
         if (!ready.getAsBoolean()) { throw new IllegalStateException("EDGE_SECURITY_AUDIT_NOT_READY"); }
-        return () -> ready.getAsBoolean() ? org.springframework.boot.actuate.health.Health.up().build()
-                : org.springframework.boot.actuate.health.Health.down().build();
+        return () -> ready.getAsBoolean() ? org.springframework.boot.health.contributor.Health.up().build()
+                : org.springframework.boot.health.contributor.Health.down().build();
     }
 
     @Bean(name = "edgeAuthorizationRequestRepository")

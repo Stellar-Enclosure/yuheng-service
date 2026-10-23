@@ -48,7 +48,7 @@ class GatewayOpenApiWebMvcContractTest {
                 Map.entry("springdoc.group-configs[0].group", "inventory"),
                 Map.entry("springdoc.group-configs[0].paths-to-match[0]", "/orders"),
                 Map.entry("egon.cola.component.id.enabled", false),
-                Map.entry("spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV2,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration")
+                Map.entry("spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV4,org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration")
         ), TestApplication.class);
     }
 

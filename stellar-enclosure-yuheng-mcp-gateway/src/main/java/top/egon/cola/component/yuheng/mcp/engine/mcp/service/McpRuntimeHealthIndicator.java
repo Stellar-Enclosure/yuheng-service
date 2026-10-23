@@ -1,7 +1,7 @@
 package top.egon.cola.component.yuheng.mcp.engine.mcp.service;
 
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeRemoteProvider;
 import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
 import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;

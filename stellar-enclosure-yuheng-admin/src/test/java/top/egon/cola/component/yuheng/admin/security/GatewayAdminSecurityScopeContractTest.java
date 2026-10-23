@@ -65,11 +65,11 @@ class GatewayAdminSecurityScopeContractTest {
                 var invocation = mock(MethodInvocation.class);
                 when(invocation.getMethod()).thenReturn(method); when(invocation.getThis()).thenReturn(target);
                 var manager = new PreAuthorizeAuthorizationManager();
-                assertThat(manager.check(() -> authentication("CAP_" + permission), invocation).isGranted())
+                assertThat(manager.authorize(() -> authentication("CAP_" + permission), invocation).isGranted())
                         .as("missing OAuth scope on " + type.getSimpleName() + "." + method.getName()).isFalse();
-                assertThat(manager.check(() -> authentication("SCOPE_" + permission), invocation).isGranted()).isFalse();
-                assertThat(manager.check(() -> authentication("CAP_" + permission, "SCOPE_" + permission), invocation).isGranted()).isTrue();
-                assertThat(manager.check(() -> authentication("CAP_*", "SCOPE_" + permission), invocation).isGranted()).isTrue();
+                assertThat(manager.authorize(() -> authentication("SCOPE_" + permission), invocation).isGranted()).isFalse();
+                assertThat(manager.authorize(() -> authentication("CAP_" + permission, "SCOPE_" + permission), invocation).isGranted()).isTrue();
+                assertThat(manager.authorize(() -> authentication("CAP_*", "SCOPE_" + permission), invocation).isGranted()).isTrue();
                 checkedMethods++;
             }
         }

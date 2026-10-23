@@ -35,7 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
-import org.springframework.boot.autoconfigure.security.SecurityProperties;
+import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.Ordered;
@@ -478,7 +478,7 @@ class GatewayPersistenceContextTest {
         GatewayPersistenceContextFilter filter = new GatewayPersistenceContextFilter(context);
 
         assertThat(GatewayPersistenceContextFilter.FILTER_ORDER)
-                .isGreaterThan(SecurityProperties.DEFAULT_FILTER_ORDER)
+                .isGreaterThan(SecurityFilterProperties.DEFAULT_FILTER_ORDER)
                 .isLessThan(Ordered.LOWEST_PRECEDENCE);
         Boolean skipsAsyncDispatch = ReflectionTestUtils.invokeMethod(filter, "shouldNotFilterAsyncDispatch");
         assertThat(skipsAsyncDispatch).isFalse();

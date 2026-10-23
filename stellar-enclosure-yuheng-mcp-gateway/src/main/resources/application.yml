@@ -1,4 +1,9 @@
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+    codecs:
+      preferred-json-mapper: jackson2
   application:
     name: egon-cola-stellar-enclosure-yuheng-mcp-gateway
   profiles:
@@ -13,7 +18,7 @@ spring:
     password: ${YUHENG_MCP_POSTGRES_PASSWORD:postgres}
   autoconfigure:
     exclude:
-      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
   lifecycle:
     timeout-per-shutdown-phase: 20s
   flyway:

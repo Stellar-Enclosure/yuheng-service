@@ -1,7 +1,7 @@
 package top.egon.cola.component.yuheng.test.mcp;
 
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.web.context.WebServerApplicationContext;
+import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import top.egon.cola.component.yuheng.test.mcp.remote.StableRemoteMcpApplication;
 
@@ -29,26 +29,15 @@ final class RemoteMcpFixtureServer implements AutoCloseable {
                 "--spring.config.name=yuheng-mcp-fixture",
                 "--spring.main.banner-mode=off",
                 "--spring.autoconfigure.exclude="
-                        + "org.springframework.boot.autoconfigure.jdbc."
-                        + "DataSourceAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.orm.jpa."
-                        + "HibernateJpaAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.flyway."
-                        + "FlywayAutoConfiguration,"
-                        + "org.redisson.spring.starter."
-                        + "RedissonAutoConfigurationV2,"
-                        + "org.springframework.boot.autoconfigure.security."
-                        + "servlet.SecurityAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.security."
-                        + "servlet.UserDetailsServiceAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.security."
-                        + "servlet.SecurityFilterAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.security."
-                        + "oauth2.resource.servlet."
-                        + "OAuth2ResourceServerAutoConfiguration,"
-                        + "org.springframework.boot.actuate.autoconfigure."
-                        + "security.servlet."
-                        + "ManagementWebSecurityAutoConfiguration",
+                        + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
+                        + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
+                        + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration,"
+                        + "org.redisson.spring.starter.RedissonAutoConfigurationV4,"
+                        + "org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration,"
+                        + "org.springframework.boot.security.autoconfigure.web.servlet.UserDetailsServiceAutoConfiguration,"
+                        + "org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterAutoConfiguration,"
+                        + "org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration,"
+                        + "org.springframework.boot.security.autoconfigure.actuate.web.servlet.ManagementWebSecurityAutoConfiguration",
                 "--egon.cola.component.id.machine-id=0",
                 "--egon.cola.component.tianshu.enabled=false",
                 "--management.endpoints.enabled-by-default=false"

@@ -4,11 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.PendingEntry;
+import org.redisson.api.stream.PendingEntry;
 import org.redisson.api.RScript;
 import org.redisson.api.RStream;
 import org.redisson.api.RedissonClient;
-import org.redisson.api.StreamMessageId;
+import org.redisson.api.stream.StreamMessageId;
 import org.redisson.api.stream.StreamCreateGroupArgs;
 import org.redisson.api.stream.StreamReadGroupArgs;
 import org.redisson.client.RedisException;
@@ -115,7 +115,7 @@ public class RedissonEdgeLogoutIntentStore implements EdgeLogoutIntentStore {
         Object result = redisson.getScript(StringCodec.INSTANCE).eval(
                 RScript.Mode.READ_WRITE,
                 BOUNDED_XADD_BATCH,
-                RScript.ReturnType.MULTI,
+                RScript.ReturnType.LIST,
                 List.of(properties.getLogout().getStream()),
                 arguments.toArray());
         if (!(result instanceof List<?> resultIds) || resultIds.size() != intents.size()) {
@@ -175,7 +175,7 @@ public class RedissonEdgeLogoutIntentStore implements EdgeLogoutIntentStore {
         redisson.getScript(StringCodec.INSTANCE).eval(
                 RScript.Mode.READ_WRITE,
                 ACK_AND_DELETE,
-                RScript.ReturnType.INTEGER,
+                RScript.ReturnType.LONG,
                 List.of(properties.getLogout().getStream()),
                 properties.getLogout().getConsumerGroup(),
                 messageId);

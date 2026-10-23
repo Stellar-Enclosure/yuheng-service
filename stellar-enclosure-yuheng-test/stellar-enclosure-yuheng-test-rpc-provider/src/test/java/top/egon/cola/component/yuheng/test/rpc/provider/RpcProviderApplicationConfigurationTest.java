@@ -17,7 +17,7 @@ class RpcProviderApplicationConfigurationTest {
                 "spring.autoconfigure.exclude[0]"
         )).isEqualTo(
                         "org.redisson.spring.starter."
-                                + "RedissonAutoConfigurationV2"
+                                + "RedissonAutoConfigurationV4"
                 );
     }
 }

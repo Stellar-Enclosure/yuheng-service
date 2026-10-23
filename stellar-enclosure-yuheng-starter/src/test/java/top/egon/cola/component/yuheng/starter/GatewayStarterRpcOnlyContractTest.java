@@ -103,7 +103,7 @@ class GatewayStarterRpcOnlyContractTest {
             throw new IOException("cannot read starter POM: " + starter, failure);
         }
         assertThat(pom)
-                .doesNotContain("spring-boot-starter-web")
+                .doesNotContain("spring-boot-starter-webmvc")
                 .doesNotContain("spring-boot-starter-webflux")
                 .doesNotContain("spring-webmvc")
                 .doesNotContain("spring-webflux")

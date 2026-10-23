@@ -7,6 +7,11 @@ server:
     key-store-type: PKCS12
 
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+    codecs:
+      preferred-json-mapper: jackson2
   application:
     name: stellar-enclosure-yuheng-edge-gateway
   session:

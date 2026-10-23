@@ -258,7 +258,7 @@ public class EdgeSessionBindingComponent {
             String actual = eval(RScript.ReturnType.VALUE, POINTER_SCRIPT, List.of(pointer), proposed, remaining(seed));
             var initial = decode(actual, POINTER_PURPOSE, pointer);
             requireUsable(initial, initial.getGeneration());
-            eval(RScript.ReturnType.INTEGER, INITIALIZE_SCRIPT, List.of(bindingKey(initial.getBindingId())), epoch(),
+            eval(RScript.ReturnType.LONG, INITIALIZE_SCRIPT, List.of(bindingKey(initial.getBindingId())), epoch(),
                     initial.getAbsoluteExpiresAt().toEpochMilli(), encode(initial, PURPOSE, initial.getBindingId()), retention(initial));
             var binding = requireUsable(readState(initial.getBindingId()), initial.getGeneration());
             session.getAttributes().put(BINDING_ID, binding.getBindingId()); session.getAttributes().put(GENERATION, binding.getGeneration());
@@ -297,7 +297,7 @@ public class EdgeSessionBindingComponent {
         new ValidationUtils(validator).validate(binding);
         String owner = UUID.randomUUID().toString();
         return Mono.defer(() -> Mono.fromCallable(() -> {
-            Number fence = eval(RScript.ReturnType.INTEGER, ACQUIRE_SCRIPT, List.of(bindingKey(binding.getBindingId()), leaseKey(binding.getBindingId())),
+            Number fence = eval(RScript.ReturnType.LONG, ACQUIRE_SCRIPT, List.of(bindingKey(binding.getBindingId()), leaseKey(binding.getBindingId())),
                     epoch(), binding.getGeneration(), clock.millis(), owner, properties.getRefresh().getLockLease().toMillis());
             if (fence == null || fence.longValue() < 0) { throw required(); }
             return fence.longValue() == 0 ? null : new LifecycleLease(binding.getBindingId(), owner, binding.getGeneration(), fence.longValue());
@@ -308,7 +308,7 @@ public class EdgeSessionBindingComponent {
     }
 
     public Mono<Void> release(LifecycleLease lease) {
-        return Mono.fromRunnable(() -> eval(RScript.ReturnType.INTEGER, RELEASE_SCRIPT, List.of(leaseKey(lease.bindingId())), lease.owner()))
+        return Mono.fromRunnable(() -> eval(RScript.ReturnType.LONG, RELEASE_SCRIPT, List.of(leaseKey(lease.bindingId())), lease.owner()))
                 .subscribeOn(Schedulers.boundedElastic()).then();
     }
 
@@ -347,7 +347,7 @@ public class EdgeSessionBindingComponent {
         return Mono.fromRunnable(() -> {
             String key = authorizedKey(lease.bindingId());
             // Pinned Redisson 3.26 RMapCache format: StringCodec field/value and native dLc0 idle envelope.
-            Number changed = eval(RScript.ReturnType.INTEGER, CLIENT_WRITE_SCRIPT,
+            Number changed = eval(RScript.ReturnType.LONG, CLIENT_WRITE_SCRIPT,
                     List.of(bindingKey(lease.bindingId()), leaseKey(lease.bindingId()), key,
                             org.redisson.RedissonObject.prefixName("redisson__timeout__set", key),
                             org.redisson.RedissonObject.prefixName("redisson__idle__set", key),
@@ -380,7 +380,7 @@ public class EdgeSessionBindingComponent {
     public Mono<Void> clearClients(LifecycleLease lease) {
         return Mono.fromRunnable(() -> {
             String key = authorizedKey(lease.bindingId());
-            Number changed = eval(RScript.ReturnType.INTEGER, CLIENT_CLEAR_SCRIPT,
+            Number changed = eval(RScript.ReturnType.LONG, CLIENT_CLEAR_SCRIPT,
                     List.of(bindingKey(lease.bindingId()), leaseKey(lease.bindingId()), key,
                             org.redisson.RedissonObject.prefixName("redisson__timeout__set", key),
                             org.redisson.RedissonObject.prefixName("redisson__idle__set", key)),
@@ -393,7 +393,7 @@ public class EdgeSessionBindingComponent {
         if (field == null || !field.matches("[0-9a-f]{64}")) { return Mono.error(invalid("Edge client field is invalid")); }
         return Mono.fromRunnable(() -> {
             String key = authorizedKey(lease.bindingId());
-            Number changed = eval(RScript.ReturnType.INTEGER, CLIENT_REMOVE_SCRIPT,
+            Number changed = eval(RScript.ReturnType.LONG, CLIENT_REMOVE_SCRIPT,
                     List.of(bindingKey(lease.bindingId()), leaseKey(lease.bindingId()), key,
                             org.redisson.RedissonObject.prefixName("redisson__timeout__set", key),
                             org.redisson.RedissonObject.prefixName("redisson__idle__set", key)),
@@ -481,7 +481,7 @@ public class EdgeSessionBindingComponent {
     private Mono<Void> update(LifecycleLease lease, EdgeSessionBindingBO previous, EdgeSessionBindingBO next) {
         new ValidationUtils(validator).validate(next);
         return Mono.fromRunnable(() -> {
-            Number changed = eval(RScript.ReturnType.INTEGER, UPDATE_SCRIPT, List.of(bindingKey(lease.bindingId()), leaseKey(lease.bindingId())), lease.owner(), epoch(),
+            Number changed = eval(RScript.ReturnType.LONG, UPDATE_SCRIPT, List.of(bindingKey(lease.bindingId()), leaseKey(lease.bindingId())), lease.owner(), epoch(),
                     previous.getGeneration(), lease.fence(), previous.getState().getCode(), next.getGeneration(), next.getState().getCode(), encode(next, PURPOSE, lease.bindingId()));
             if (changed == null || changed.longValue() != 1) { throw unavailable("Edge lifecycle write fence rejected"); }
         }).subscribeOn(Schedulers.boundedElastic()).then();

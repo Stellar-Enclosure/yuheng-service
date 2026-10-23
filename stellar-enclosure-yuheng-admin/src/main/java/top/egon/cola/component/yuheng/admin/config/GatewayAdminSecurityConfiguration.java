@@ -155,10 +155,10 @@ public class GatewayAdminSecurityConfiguration {
     }
     @Bean("gatewayAdminAuditReadinessHealthIndicator")
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "egon.cola.platform.tianquan.shoubing.usage-observation", name = "enabled", havingValue = "true")
-    org.springframework.boot.actuate.health.HealthIndicator gatewayAdminAuditReadinessHealthIndicator(
+    org.springframework.boot.health.contributor.HealthIndicator gatewayAdminAuditReadinessHealthIndicator(
             @Qualifier("idpSecurityAuditReady") java.util.function.BooleanSupplier ready) {
-        return () -> ready.getAsBoolean() ? org.springframework.boot.actuate.health.Health.up().build()
-                : org.springframework.boot.actuate.health.Health.down().build();
+        return () -> ready.getAsBoolean() ? org.springframework.boot.health.contributor.Health.up().build()
+                : org.springframework.boot.health.contributor.Health.down().build();
     }
 
     @Bean("gatewayAdminIdentityStartupGuard")

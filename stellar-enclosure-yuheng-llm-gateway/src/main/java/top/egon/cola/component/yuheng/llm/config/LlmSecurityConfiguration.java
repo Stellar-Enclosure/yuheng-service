@@ -155,10 +155,10 @@ public class LlmSecurityConfiguration {
     }
 
     @Bean(name = "llmAuditReadiness")
-    org.springframework.boot.actuate.health.HealthIndicator llmAuditReadiness(
+    org.springframework.boot.health.contributor.HealthIndicator llmAuditReadiness(
             @Qualifier("idpSecurityAuditReady") java.util.function.BooleanSupplier ready) {
-        return () -> ready.getAsBoolean() ? org.springframework.boot.actuate.health.Health.up().build()
-                : org.springframework.boot.actuate.health.Health.down().withDetail("failedCheck", "oauthAudit").build();
+        return () -> ready.getAsBoolean() ? org.springframework.boot.health.contributor.Health.up().build()
+                : org.springframework.boot.health.contributor.Health.down().withDetail("failedCheck", "oauthAudit").build();
     }
     /** Adapts the verified identity to the existing controller's Servlet Principal contract. */
     @Bean(name = "llmVerifiedPrincipalRequestFilter")

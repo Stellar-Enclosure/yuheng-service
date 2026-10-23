@@ -44,6 +44,7 @@ class KafkaGatewayCallEventSinkTest {
     void usesGroupPartitionKeyAndRequiredHeaders() {
         MockProducer<String, byte[]> producer = new MockProducer<>(
                 true,
+                null,
                 new StringSerializer(),
                 new ByteArraySerializer()
         );

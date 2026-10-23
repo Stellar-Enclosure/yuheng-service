@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.redisson.api.RMapCache;
 import org.redisson.api.RStream;
 import org.redisson.api.RedissonClient;
-import org.redisson.api.StreamMessageId;
+import org.redisson.api.stream.StreamMessageId;
 import org.redisson.api.stream.StreamAddArgs;
 import org.redisson.api.stream.StreamReadArgs;
 import org.redisson.client.codec.StringCodec;

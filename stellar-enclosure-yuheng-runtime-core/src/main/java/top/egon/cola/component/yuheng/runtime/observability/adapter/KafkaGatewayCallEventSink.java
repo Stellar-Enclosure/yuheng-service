@@ -230,6 +230,7 @@ public final class KafkaGatewayCallEventSink
         properties.put(ProducerConfig.ACKS_CONFIG, "all");
         properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
         properties.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
+        properties.put(ProducerConfig.LINGER_MS_CONFIG, 0);
         int deliveryTimeoutMillis = Math.toIntExact(
                 settings.deliveryTimeout().toMillis()
         );

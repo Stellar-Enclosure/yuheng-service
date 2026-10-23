@@ -1,6 +1,6 @@
 package top.egon.cola.component.yuheng.edge.config;
 
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
@@ -26,7 +26,7 @@ import java.time.Duration;
 public class EdgeSessionRedisConfiguration {
     @Bean(name = "redisson", destroyMethod = "shutdown")
     public RedissonClient edgePrimaryRedisson(
-            RedisProperties redisProperties,
+            DataRedisProperties redisProperties,
             @Value("${egon.cola.platform.tianquan.shoubing.revocation.primary-endpoint}") String primaryEndpoint,
             Environment environment) {
         URI primary = requireSharedPrimary(redisProperties, primaryEndpoint, environment);
@@ -51,7 +51,7 @@ public class EdgeSessionRedisConfiguration {
     @Bean(name = "edgeSessionRedisConnectionFactory")
     @Primary
     public RedisConnectionFactory edgeSessionRedisConnectionFactory(
-            RedisProperties redisProperties,
+            DataRedisProperties redisProperties,
             @Value("${egon.cola.platform.tianquan.shoubing.revocation.primary-endpoint}") String primaryEndpoint,
             Environment environment) {
         URI primary = requireSharedPrimary(redisProperties, primaryEndpoint, environment);
@@ -88,7 +88,7 @@ public class EdgeSessionRedisConfiguration {
         return serializer;
     }
 
-    private static URI requireSharedPrimary(RedisProperties redisProperties, String primaryEndpoint,
+    private static URI requireSharedPrimary(DataRedisProperties redisProperties, String primaryEndpoint,
             Environment environment) {
         URI configured = parseConfiguredRedisUrl(redisProperties.getUrl());
         URI primary = parseConfiguredRedisUrl(primaryEndpoint);

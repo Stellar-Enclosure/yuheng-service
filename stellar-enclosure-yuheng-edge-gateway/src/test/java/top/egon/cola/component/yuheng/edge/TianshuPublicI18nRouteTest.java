@@ -3,6 +3,7 @@ package top.egon.cola.component.yuheng.edge;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.boot.webflux.autoconfigure.WebFluxProperties;
 import org.springframework.cloud.gateway.config.GatewayProperties;
 import org.springframework.cloud.gateway.handler.predicate.PathRoutePredicateFactory;
 import org.springframework.cloud.gateway.handler.predicate.MethodRoutePredicateFactory;
@@ -44,7 +45,7 @@ class TianshuPublicI18nRouteTest {
                 if ("tianshu-public-i18n".equals(properties.getProperty(candidate + ".id"))) prefix = candidate;
             }
             assertThat(prefix).isNotNull();
-            var path = new PathRoutePredicateFactory().apply(new PathRoutePredicateFactory.Config()
+            var path = new PathRoutePredicateFactory(new WebFluxProperties()).apply(new PathRoutePredicateFactory.Config()
                     .setPatterns(List.of(properties.getProperty(prefix + ".predicates[0].args.patterns")))
                     .setMatchTrailingSlash(Boolean.parseBoolean(properties.getProperty(prefix + ".predicates[0].args.matchTrailingSlash"))));
             var methodConfig = new MethodRoutePredicateFactory.Config();
@@ -77,7 +78,7 @@ class TianshuPublicI18nRouteTest {
                 return downstream.getResponse().setComplete();
             })).block(Duration.ofSeconds(3));
             assertThat(forwarded.get()).isNotNull();
-            assertThat(forwarded.get().getRequest().getHeaders()).doesNotContainKeys(HttpHeaders.AUTHORIZATION,
+            assertThat(forwarded.get().getRequest().getHeaders().asMultiValueMap()).doesNotContainKeys(HttpHeaders.AUTHORIZATION,
                     HttpHeaders.COOKIE, "X-Egon-Tianshu-Tenant", "tenant_id", "x-egon-user-id");
         }
         verifyNoInteractions(bindings);

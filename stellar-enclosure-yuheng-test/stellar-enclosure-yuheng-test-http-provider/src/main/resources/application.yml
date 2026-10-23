@@ -1,4 +1,9 @@
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+    codecs:
+      preferred-json-mapper: jackson2
   application:
     name: stellar-enclosure-yuheng-test-http-provider
   security:
@@ -8,7 +13,7 @@ spring:
           jwk-set-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
   autoconfigure:
     exclude:
-      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
 
 server:
   port: 0

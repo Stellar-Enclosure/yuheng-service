@@ -3,7 +3,7 @@ package top.egon.cola.component.yuheng.edge;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.springframework.cloud.gateway.config.GatewayProperties;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -498,7 +498,7 @@ class EdgeLoginContractTest {
     @Test
     void springSessionRedisFactoryRequiresTheExactPrimaryAndLocalPlaintextBoundary() {
         EdgeSessionRedisConfiguration configuration = new EdgeSessionRedisConfiguration();
-        RedisProperties properties = new RedisProperties();
+        DataRedisProperties properties = new DataRedisProperties();
         Environment environment = mock(Environment.class);
         when(environment.acceptsProfiles("local")).thenReturn(false);
         properties.setUrl("rediss://redis.example:6380");
@@ -536,7 +536,7 @@ class EdgeLoginContractTest {
     @Test
     void edgePrimaryRedissonUsesTheSharedEndpointDatabaseAndCredentials() throws Exception {
         EdgeSessionRedisConfiguration configuration = new EdgeSessionRedisConfiguration();
-        RedisProperties properties = new RedisProperties();
+        DataRedisProperties properties = new DataRedisProperties();
         properties.setUrl("rediss://redis.example:6380");
         properties.setDatabase(3);
         properties.setUsername("edge-test");
@@ -562,7 +562,7 @@ class EdgeLoginContractTest {
             assertThat(server.getTimeout()).isEqualTo(750);
         }
         var bean = EdgeSessionRedisConfiguration.class.getMethod("edgePrimaryRedisson",
-                RedisProperties.class, String.class, Environment.class)
+                DataRedisProperties.class, String.class, Environment.class)
                 .getAnnotation(org.springframework.context.annotation.Bean.class);
         assertThat(bean.name()).containsExactly("redisson");
         assertThat(bean.destroyMethod()).isEqualTo("shutdown");
@@ -571,7 +571,7 @@ class EdgeLoginContractTest {
     @Test
     void edgePrimaryRedissonRejectsEndpointDriftAndNonlocalPlaintextBeforeConnecting() {
         EdgeSessionRedisConfiguration configuration = new EdgeSessionRedisConfiguration();
-        RedisProperties properties = new RedisProperties();
+        DataRedisProperties properties = new DataRedisProperties();
         properties.setUrl("rediss://redis.example:6380");
         Environment environment = mock(Environment.class);
         assertThatThrownBy(() -> configuration.edgePrimaryRedisson(properties,
@@ -731,13 +731,13 @@ class EdgeLoginContractTest {
     void generatedOpenApiHasFiveOriginalOperationsExactSchemasAndLogoutAndSecurity() throws Exception {
         try (var fixture = new EdgeResourceAuthorizationContractTest.Fixture(tempDir);
                 var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
-            context.setEnvironment(new org.springframework.boot.web.reactive.context.StandardReactiveWebEnvironment());
+            context.setEnvironment(new org.springframework.boot.web.context.reactive.StandardReactiveWebEnvironment());
             context.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("edgeDocsFixture", Map.of(
                     "springdoc.api-docs.enabled", true, "springdoc.api-docs.version", "OPENAPI_3_1",
                     "egon.cola.component.yuheng.openapi.enabled", false, "egon.cola.component.id.enabled", false,
                     "egon.cola.platform.tianquan.shoubing.enabled", false,
                     "spring.cloud.gateway.server.webflux.filter.json-to-grpc.enabled", false,
-                    "spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV2,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration")));
+                    "spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV4,org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration")));
             context.registerBean("edgeSessionController", EdgeSessionController.class, fixture::controller);
             var config = new EdgeSecurityConfiguration(fixture.properties);
             context.registerBean("edgeOpenAPI", io.swagger.v3.oas.models.OpenAPI.class, config::edgeOpenAPI);

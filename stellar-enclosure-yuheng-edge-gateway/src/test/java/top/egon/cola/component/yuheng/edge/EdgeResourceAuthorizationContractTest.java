@@ -366,7 +366,7 @@ class EdgeResourceAuthorizationContractTest {
         assertThat(completed.getAttributes()).doesNotContainKeys(top.egon.cola.component.yuheng.edge.filter.EdgeResourceAuthorizationGatewayFilterFactory.AUTHENTICATION_OBSERVATION,
                 top.egon.cola.component.yuheng.edge.filter.EdgeResourceAuthorizationGatewayFilterFactory.AUTHORIZATION_OBSERVATION,
                 top.egon.cola.component.yuheng.edge.filter.EdgeResourceAuthorizationGatewayFilterFactory.VERIFIED_ACCESS);
-        assertThat(reached.get().getRequest().getHeaders().keySet()).noneMatch(name -> name.toLowerCase().contains("proof") || name.toLowerCase().contains("marker"));
+        assertThat(reached.get().getRequest().getHeaders().headerNames()).noneMatch(name -> name.toLowerCase().contains("proof") || name.toLowerCase().contains("marker"));
     }
 
     @Test
@@ -465,7 +465,7 @@ class EdgeResourceAuthorizationContractTest {
     void productionConfigurationReusesQualifiedSdkBeansAndActualAuditReadiness() {
         when(fixture.redis.reactive()).thenReturn(fixture.reactive);
         try (var context = new org.springframework.context.annotation.AnnotationConfigApplicationContext()) {
-            context.setEnvironment(new org.springframework.boot.web.reactive.context.StandardReactiveWebEnvironment());
+            context.setEnvironment(new org.springframework.boot.web.context.reactive.StandardReactiveWebEnvironment());
             Map<String, Object> settings = new LinkedHashMap<>(); String prefix = "egon.cola.platform.tianquan.shoubing.";
             settings.put(prefix + "enabled", false); settings.put(prefix + "resource-server-id", "resource-app-a");
             settings.put(prefix + "resource-uri", RESOURCE_A.toASCIIString());
@@ -503,14 +503,14 @@ class EdgeResourceAuthorizationContractTest {
                     .isSameAs(context.getBean("reactiveOAuth2AuthorizedClientManager"));
             assertThat(context.getBean("idpObservedVerificationComponent")).isInstanceOf(top.egon.cola.platform.tianquan.shoubing.starter.security.IdpObservedVerificationComponent.class);
             assertThat(context.getBean("idpSecurityAuditReady", java.util.function.BooleanSupplier.class).getAsBoolean()).isTrue();
-            assertThat(context.getBean("edgeSecurityAuditHealthIndicator", org.springframework.boot.actuate.health.HealthIndicator.class).health().getStatus())
-                    .isEqualTo(org.springframework.boot.actuate.health.Status.UP);
+            assertThat(context.getBean("edgeSecurityAuditHealthIndicator", org.springframework.boot.health.contributor.HealthIndicator.class).health().getStatus())
+                    .isEqualTo(org.springframework.boot.health.contributor.Status.UP);
             assertThat(context.containsBean("idpSecurityObservationFilter")).isFalse();
             try { context.getBean("idpAuditSpoolLease", java.nio.channels.FileChannel.class).close(); }
             catch (java.io.IOException failure) { throw new IllegalStateException(failure); }
             assertThat(context.getBean("idpSecurityAuditReady", java.util.function.BooleanSupplier.class).getAsBoolean()).isFalse();
-            assertThat(context.getBean("edgeSecurityAuditHealthIndicator", org.springframework.boot.actuate.health.HealthIndicator.class).health().getStatus())
-                    .isEqualTo(org.springframework.boot.actuate.health.Status.DOWN);
+            assertThat(context.getBean("edgeSecurityAuditHealthIndicator", org.springframework.boot.health.contributor.HealthIndicator.class).health().getStatus())
+                    .isEqualTo(org.springframework.boot.health.contributor.Status.DOWN);
         }
         org.mockito.Mockito.verify(fixture.redis, org.mockito.Mockito.never()).shutdown();
     }
@@ -733,14 +733,14 @@ class EdgeResourceAuthorizationContractTest {
             var revScripts = mock(org.redisson.api.RScriptReactive.class); when(reactive.getScript(org.redisson.client.codec.StringCodec.INSTANCE)).thenReturn(revScripts);
             doAnswer(call -> Mono.defer(() -> { int number = snapshots.incrementAndGet(); assertThat((List<?>) call.getArgument(3)).hasSize(7);
                 return Mono.just(number == unavailableSnapshotNumber ? List.of("U", "OAUTH_SECURITY_READY_ABSENT") : snapshot.get()); }))
-                    .when(revScripts).eval(eq(org.redisson.api.RScript.Mode.READ_ONLY), anyString(), eq(org.redisson.api.RScript.ReturnType.MULTI), any(List.class), any(Object[].class));
+                    .when(revScripts).eval(eq(org.redisson.api.RScript.Mode.READ_ONLY), anyString(), eq(org.redisson.api.RScript.ReturnType.LIST), any(List.class), any(Object[].class));
             var revocations = new top.egon.cola.platform.tianquan.shoubing.starter.security.reactive.ReactiveOAuthRevocationReader(reactive, registry, idp);
             org.redisson.api.RStream<String, String> stream = mock(org.redisson.api.RStream.class);
             doReturn(stream).when(redis).getStream(eq("egon:test:edge:audit"), eq(org.redisson.client.codec.StringCodec.INSTANCE));
             when(stream.add(any(org.redisson.api.stream.StreamAddArgs.class))).thenAnswer(call -> {
                 assertThat(reactor.core.scheduler.Schedulers.isInNonBlockingThread()).isFalse();
                 if (failAudit) { throw new org.redisson.client.RedisException("controlled unavailable"); }
-                return new org.redisson.api.StreamMessageId(1, audits.incrementAndGet());
+                return new org.redisson.api.stream.StreamMessageId(1, audits.incrementAndGet());
             });
             var auditProps = new top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthAuditProperties("egon:test:edge:audit", directory.resolve("spool"), 1_048_576, secret);
             var producer = new top.egon.cola.platform.tianquan.shoubing.starter.audit.TokenUsageAuditComponent(redis, mapper, auditProps,

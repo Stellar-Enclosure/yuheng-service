@@ -42,10 +42,10 @@ public class GatewayEngineManagementSecurityConfiguration {
 
     /** Composes the shared audit readiness with this existing health-only management surface. */
     @Bean(name = "gatewayEngineAuditReadiness")
-    org.springframework.boot.actuate.health.HealthIndicator auditReadiness(
+    org.springframework.boot.health.contributor.HealthIndicator auditReadiness(
             @Qualifier("idpSecurityAuditReady") java.util.function.BooleanSupplier ready) {
-        return () -> ready.getAsBoolean() ? org.springframework.boot.actuate.health.Health.up().build()
-                : org.springframework.boot.actuate.health.Health.down().withDetail("failedCheck", "oauthAudit").build();
+        return () -> ready.getAsBoolean() ? org.springframework.boot.health.contributor.Health.up().build()
+                : org.springframework.boot.health.contributor.Health.down().withDetail("failedCheck", "oauthAudit").build();
     }
 
     @Bean(name = "gatewayEngineSecurityObservationStartupCheck")

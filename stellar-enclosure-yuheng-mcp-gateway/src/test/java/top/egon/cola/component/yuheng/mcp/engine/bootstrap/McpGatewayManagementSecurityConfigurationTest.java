@@ -2,8 +2,9 @@ package top.egon.cola.component.yuheng.mcp.engine.bootstrap;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
+import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
+import org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -26,7 +27,8 @@ class McpGatewayManagementSecurityConfigurationTest {
     @Test
     void exposesAnonymousProbesWithoutLoginRedirectOrSessionAndDeniesOtherManagementPaths() {
         new WebApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(SecurityAutoConfiguration.class, WebMvcAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(SecurityAutoConfiguration.class,
+                        ServletWebSecurityAutoConfiguration.class, WebMvcAutoConfiguration.class))
                 .withUserConfiguration(McpGatewayManagementSecurityConfiguration.class, ProbeController.class)
                 .withBean("idpSecurityAuditReady", java.util.function.BooleanSupplier.class, () -> () -> true)
                 .withBean("oauthUsageObservationProperties", OAuthUsageObservationProperties.class,

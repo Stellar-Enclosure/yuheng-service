@@ -1,4 +1,9 @@
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+    codecs:
+      preferred-json-mapper: jackson2
   application:
     name: egon-cola-stellar-enclosure-yuheng-biz-gateway
   profiles:
@@ -9,7 +14,7 @@ spring:
       - optional:tianshu:application.yml
   autoconfigure:
     exclude:
-      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
   lifecycle:
     timeout-per-shutdown-phase: 20s
 

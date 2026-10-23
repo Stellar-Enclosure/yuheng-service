@@ -55,7 +55,7 @@ public final class RedissonRedisTokenBucketExecutor
         List<?> result = redisson.getScript(StringCodec.INSTANCE).eval(
                 RScript.Mode.READ_WRITE,
                 script,
-                RScript.ReturnType.MULTI,
+                RScript.ReturnType.LIST,
                 keys.stream().map(value -> (Object) value).toList(),
                 arguments.toArray()
         );

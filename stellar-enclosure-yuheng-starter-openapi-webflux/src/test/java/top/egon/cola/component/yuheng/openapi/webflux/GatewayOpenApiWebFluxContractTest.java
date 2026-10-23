@@ -42,7 +42,7 @@ class GatewayOpenApiWebFluxContractTest {
                 Map.entry("egon.cola.component.yuheng.openapi.build-id", "build-1"),
                 Map.entry("egon.cola.component.yuheng.openapi.published-groups[0]", "inventory"),
                 Map.entry("egon.cola.component.id.enabled", false),
-                Map.entry("spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV2,org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration")
+                Map.entry("spring.autoconfigure.exclude", "org.redisson.spring.starter.RedissonAutoConfigurationV4,org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration")
         ), TestApplication.class);
     }
 

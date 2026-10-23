@@ -9,7 +9,7 @@ Nginx, production HA, external IAM, and production certificates are outside this
 
 ## Prerequisites and evidence boundary
 
-Install JDK 21, Docker Compose, `curl`, `jq`, and `openssl`. Then create local secrets:
+Install JDK 25, Docker Compose, `curl`, `jq`, and `openssl`. Then create local secrets:
 
 ```bash
 cd stellar-enclosure-platform/stellar-enclosure-yuheng/deployment
