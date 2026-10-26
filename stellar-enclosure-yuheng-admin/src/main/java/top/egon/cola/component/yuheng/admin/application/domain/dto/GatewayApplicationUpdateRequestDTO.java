@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.application.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -21,6 +28,12 @@ public record GatewayApplicationUpdateRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayApplicationUpdateRequestDTO.displayName", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.displayName",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.APPLICATIONS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.APPLICATIONS_WRITE))
         @NotBlank String displayName,
         /**
          * 中文说明：保存 description 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO} 在其生命周期内读取或更新。
@@ -28,6 +41,12 @@ public record GatewayApplicationUpdateRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayApplicationUpdateRequestDTO.description", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.description",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.APPLICATIONS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.APPLICATIONS_WRITE))
         String description,
         /**
          * 中文说明：保存 expectedRevision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO} 在其生命周期内读取或更新。
@@ -35,6 +54,12 @@ public record GatewayApplicationUpdateRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayApplicationUpdateRequestDTO.expectedRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expectedRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.APPLICATIONS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.APPLICATIONS_WRITE))
         @PositiveOrZero long expectedRevision
 ) {
 }

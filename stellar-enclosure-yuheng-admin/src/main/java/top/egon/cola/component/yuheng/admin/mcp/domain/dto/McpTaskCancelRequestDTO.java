@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import jakarta.validation.constraints.PositiveOrZero;
 
@@ -17,5 +24,11 @@ public record McpTaskCancelRequestDTO(
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpTaskCancelRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpTaskCancelRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
  */
-@PositiveOrZero long expectedRevision) {
+@PermissionResource(key = "yuheng.field.McpTaskCancelRequestDTO.expectedRevision", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.expectedRevision",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
+    @PositiveOrZero long expectedRevision) {
 }

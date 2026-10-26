@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.runtime.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -10,9 +16,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import top.egon.cola.component.tianshu.model.management.DdcManagementConfigClientInstance;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceCatalog;
-import top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProjectionEnvelopeVO;
+import top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayConfigClientsProjectionVO;
+import top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayServicesProjectionVO;
+import top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstancesProjectionVO;
 import top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO;
 import top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService;
 
@@ -56,13 +62,18 @@ public class GatewayProjectionController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 引擎Nodes 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayProjection.engineNodes", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayProjection.engineNodes",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayProjectionController.engineNodes")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/yuheng-groups/{gatewayGroupId}/engine-nodes")
-    public GatewayProjectionEnvelopeVO<List<DdcManagementConfigClientInstance>> engineNodes(
+    public GatewayConfigClientsProjectionVO engineNodes(
             @PathVariable String gatewayGroupId) {
-        return service.engineNodes(gatewayGroupId);
+        return GatewayConfigClientsProjectionVO.from(service.engineNodes(gatewayGroupId));
     }
 
     /**
@@ -81,11 +92,16 @@ public class GatewayProjectionController {
      * @param version 参数 version；parameter version。
      * @return 返回 services 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayProjection.services", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayProjection.services",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayProjectionController.services")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/providers/services")
-    public GatewayProjectionEnvelopeVO<DdcManagementServiceCatalog> services(
+    public GatewayServicesProjectionVO services(
             @RequestParam String bizCode,
             @RequestParam String appCode,
             @RequestParam String env,
@@ -95,7 +111,7 @@ public class GatewayProjectionController {
             @RequestParam(required = false) String serviceName,
             @RequestParam(required = false) String group,
             @RequestParam(required = false) String version) {
-        return service.services(query(
+        var observed = service.services(query(
                 bizCode,
                 appCode,
                 env,
@@ -106,6 +122,7 @@ public class GatewayProjectionController {
                 group,
                 version
         ));
+        return GatewayServicesProjectionVO.from(observed);
     }
 
     /**
@@ -124,11 +141,16 @@ public class GatewayProjectionController {
      * @param version 参数 version；parameter version。
      * @return 返回 instances 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayProjection.instances", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayProjection.instances",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayProjectionController.instances")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/providers/instances")
-    public GatewayProjectionEnvelopeVO<List<GatewayProviderInstanceVO>> instances(
+    public GatewayProviderInstancesProjectionVO instances(
             @RequestParam String bizCode,
             @RequestParam String appCode,
             @RequestParam String env,
@@ -139,14 +161,14 @@ public class GatewayProjectionController {
             @RequestParam(required = false) String group,
             @RequestParam(required = false) String version) {
         if (protocol == null && serviceName == null) {
-            return service.instances(bizCode, appCode, env, namespace);
+            return GatewayProviderInstancesProjectionVO.from(service.instances(bizCode, appCode, env, namespace));
         }
         if (protocol == null || serviceName == null) {
             throw new IllegalArgumentException(
                     "protocol and serviceName must be supplied together"
             );
         }
-        return service.instances(query(
+        return GatewayProviderInstancesProjectionVO.from(service.instances(query(
                 bizCode,
                 appCode,
                 env,
@@ -156,7 +178,7 @@ public class GatewayProjectionController {
                 serviceName,
                 group,
                 version
-        ));
+        )));
     }
 
     /**
@@ -167,6 +189,11 @@ public class GatewayProjectionController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 consistency 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayProjection.consistency", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayProjection.consistency",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayProjectionController.consistency")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

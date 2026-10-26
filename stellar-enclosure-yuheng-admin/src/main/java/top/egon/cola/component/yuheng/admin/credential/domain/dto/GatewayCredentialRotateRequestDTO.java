@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.credential.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -19,6 +26,12 @@ public record GatewayCredentialRotateRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.dto.GatewayCredentialRotateRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.dto.GatewayCredentialRotateRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayCredentialRotateRequestDTO.overlapMinutes", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.overlapMinutes",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
         @Min(0) @Max(1440) long overlapMinutes
 ) {
 }

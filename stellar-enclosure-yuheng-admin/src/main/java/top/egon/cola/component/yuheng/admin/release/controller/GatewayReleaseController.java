@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.release.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -61,6 +67,11 @@ public class GatewayReleaseController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.create", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.create",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.RELEASES_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.RELEASES_WRITE)
     @Operation(operationId = "admin.gatewayReleaseController.create")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -89,6 +100,11 @@ public class GatewayReleaseController {
      * @param releaseId 参数 发布Id；parameter release id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayReleaseController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -106,12 +122,17 @@ public class GatewayReleaseController {
      * @param releaseId 参数 发布Id；parameter release id。
      * @return 返回 diff 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.diff", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.diff",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayReleaseController.diff")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/releases/{releaseId}/diff")
-    public Map<String, Object> diff(@PathVariable String releaseId) {
-        return service.diff(releaseId);
+    public top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseDiffVO diff(@PathVariable String releaseId) {
+        return top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseDiffVO.from(service.diff(releaseId));
     }
 
     /**
@@ -123,6 +144,11 @@ public class GatewayReleaseController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 重试 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.retry", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.retry",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.RELEASES_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.RELEASES_WRITE)
     @Operation(operationId = "admin.gatewayReleaseController.retry")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -148,6 +174,11 @@ public class GatewayReleaseController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 rollback 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.rollback", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.rollback",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.RELEASES_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.RELEASES_WRITE)
     @Operation(operationId = "admin.gatewayReleaseController.rollback")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -177,6 +208,11 @@ public class GatewayReleaseController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 history 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayRelease.history", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayRelease.history",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayReleaseController.history")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

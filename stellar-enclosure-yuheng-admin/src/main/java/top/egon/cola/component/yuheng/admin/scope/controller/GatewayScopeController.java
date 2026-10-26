@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.scope.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -49,6 +55,11 @@ public class GatewayScopeController {
      * 用法 / Usage: 调用方式 / Usage: {@code GatewayScopeController.list(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayScope.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayScope.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayScopeController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

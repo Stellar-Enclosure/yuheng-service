@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.time.Instant;
 
@@ -19,6 +26,12 @@ public record McpApprovalVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpApprovalVO.approvalId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.approvalId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_APPROVE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_APPROVE))
         String approvalId,
         /**
          * 中文说明：保存 审批Token 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO} 在其生命周期内读取或更新。
@@ -26,6 +39,12 @@ public record McpApprovalVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpApprovalVO.approvalToken", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.approvalToken",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_APPROVE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_APPROVE))
         String approvalToken,
         /**
          * 中文说明：保存 expiresAt 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO} 在其生命周期内读取或更新。
@@ -33,6 +52,13 @@ public record McpApprovalVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpApprovalVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpApprovalVO.expiresAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expiresAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_APPROVE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_APPROVE))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant expiresAt
 ) {
 

@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.routing.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.util.List;
 
@@ -21,6 +28,12 @@ public record GatewayDraftValidationReportVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftValidationReportVO.valid", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.valid",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         boolean valid,
         /**
          * 中文说明：保存 revision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 在其生命周期内读取或更新。
@@ -28,6 +41,12 @@ public record GatewayDraftValidationReportVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftValidationReportVO.revision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.revision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long revision,
         /**
          * 中文说明：保存 errors 对应的状态、依赖或配置值；字段类型为 {@code List<GatewayDraftValidationIssueVO>}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 在其生命周期内读取或更新。
@@ -35,6 +54,12 @@ public record GatewayDraftValidationReportVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftValidationReportVO.errors", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.errors",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         List<GatewayDraftValidationIssueVO> errors,
         /**
          * 中文说明：保存 warnings 对应的状态、依赖或配置值；字段类型为 {@code List<GatewayDraftValidationIssueVO>}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 在其生命周期内读取或更新。
@@ -42,6 +67,12 @@ public record GatewayDraftValidationReportVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftValidationReportVO.warnings", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.warnings",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         List<GatewayDraftValidationIssueVO> warnings,
         /**
          * 中文说明：保存 草稿Sha256 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 在其生命周期内读取或更新。
@@ -49,6 +80,12 @@ public record GatewayDraftValidationReportVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftValidationReportVO.draftSha256", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.draftSha256",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String draftSha256
 ) {
 }

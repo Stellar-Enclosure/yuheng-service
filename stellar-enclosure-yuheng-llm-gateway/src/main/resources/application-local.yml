@@ -18,6 +18,25 @@ egon:
           jwk-set-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
           resource-server-id: ${YUHENG_LLM_RESOURCE_SERVER_ID}
           resource-uri: ${YUHENG_LLM_RESOURCE_URI}
+          authority:
+            base-uri: ${TIANQUAN_SHOUBING_AUTHORITY_BASE_URI}
+            timeout: PT2S
+            bindings:
+              platform:
+                issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
+                registration-id: ${YUHENG_LLM_AUTHORITY_PLATFORM_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: PLATFORM
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+              tenant-a:
+                issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+                registration-id: ${YUHENG_LLM_AUTHORITY_TENANT_A_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: TENANT
+                tenant-id: ${TIANSHU_TENANT_ID}
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+          service-client:
+            app-id: ${YUHENG_LLM_AUTHORITY_SERVICE_APP_ID}
           trusted-issuers:
             platform:
               issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
@@ -34,33 +53,14 @@ egon:
               tenant-id: ${TIANSHU_TENANT_ID}
               status: ACTIVE
               trust-version: 1
-          revocation:
-            mode: STRICT_SHARED
-            primary-endpoint: ${TIANQUAN_SHOUBING_REVOCATION_PRIMARY_ENDPOINT}
-            epoch: ${EGON_TIANQUAN_SHOUBING_REVOCATION_EPOCH}
           usage-observation:
             enabled: true
             receiver: LLM
             fallback-issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
             allow-local-plaintext: false
-          audit:
-            stream-key: ${OAUTH_AUDIT_STREAM_KEY:egon:oauth:audit:v1}
-            spool-directory: ${YUHENG_LLM_OAUTH_AUDIT_SPOOL_DIRECTORY}
-            spool-max-bytes: ${OAUTH_AUDIT_SPOOL_MAX_BYTES:104857600}
-            hmac-key-file: ${OAUTH_AUDIT_HMAC_KEY_FILE}
-            delivery:
-              receipt-ttl: 1h
-              confirmation-timeout: 30s
-              batch-size: 100
         jianshen:
           enabled: false
           register-filter: false
-          runtime:
-            redis-enabled: true
-            redis-address: ${TIANQUAN_SHOUBING_REVOCATION_PRIMARY_ENDPOINT}
-            database: ${TIANQUAN_SHOUBING_REDIS_DATABASE:0}
-            password-file: ${TIANQUAN_SHOUBING_REDIS_PASSWORD_FILE:}
-            timeout: 2s
     component:
       yuheng:
         openapi:
@@ -88,3 +88,11 @@ management:
       group:
         readiness:
           include: readinessState,llmAuditReadiness
+
+yuheng:
+  llm:
+    cache:
+      redis:
+        address: ${YUHENG_LLM_CACHE_REDIS_ADDRESS}
+        database: ${YUHENG_LLM_CACHE_REDIS_DATABASE:0}
+        password-file: ${YUHENG_LLM_CACHE_REDIS_PASSWORD_FILE:}

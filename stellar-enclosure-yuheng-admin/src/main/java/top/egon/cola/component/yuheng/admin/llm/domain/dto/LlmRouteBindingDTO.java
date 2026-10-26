@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.llm.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -34,26 +41,56 @@ import java.util.Set;
 public class LlmRouteBindingDTO {
 
     /** 已存在且能力匹配的渠道稳定 key / existing channel stable key. */
+    @PermissionResource(key = "yuheng.field.LlmRouteBindingDTO.channelKey", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.channelKey",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotBlank
     @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,63}$")
     private String channelKey;
 
     /** 上游精确模型名，1–128，不构成新的客户端权限 / exact upstream model name. */
+    @PermissionResource(key = "yuheng.field.LlmRouteBindingDTO.upstreamModel", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.upstreamModel",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotBlank
     @Size(max = 128)
     private String upstreamModel;
 
     /** 此绑定允许的协议特性，有界唯一枚举 / allowed protocol capabilities. */
+    @PermissionResource(key = "yuheng.field.LlmRouteBindingDTO.capabilities", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.capabilities",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     private Set<LlmCapabilityEnum> capabilities;
 
     /** 候选优先级 0–1000，越大越优先 / candidate priority. */
+    @PermissionResource(key = "yuheng.field.LlmRouteBindingDTO.priority", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.priority",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Min(0)
     @Max(1_000)
     private Integer priority;
 
     /** 同优先级随机权重 1–1000 / random weight inside one priority. */
+    @PermissionResource(key = "yuheng.field.LlmRouteBindingDTO.weight", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.weight",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Min(1)
     @Max(1_000)

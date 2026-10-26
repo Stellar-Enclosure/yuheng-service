@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.catalog.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 /**
  * 中文说明：{@code GatewayCatalogResourceCreatedVO} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责资源Created相关的职责与边界。
@@ -15,5 +22,11 @@ public record GatewayCatalogResourceCreatedVO(
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.vo.GatewayCatalogResourceCreatedVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.vo.GatewayCatalogResourceCreatedVO}; do not couple callers to its representation when the owning type exposes an API.
  */
-String id) {
+@PermissionResource(key = "yuheng.field.GatewayCatalogResourceCreatedVO.id", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.id",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
+    String id) {
 }

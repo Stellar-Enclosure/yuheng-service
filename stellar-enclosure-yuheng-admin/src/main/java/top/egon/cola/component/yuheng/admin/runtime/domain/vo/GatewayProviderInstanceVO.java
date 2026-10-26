@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.runtime.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.time.Instant;
 import java.util.Map;
@@ -34,6 +41,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.serviceKey", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.serviceKey",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String serviceKey,
         /**
          * 中文说明：保存 protocol 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -41,6 +54,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.protocol", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.protocol",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String protocol,
         /**
          * 中文说明：保存 服务Name 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -48,6 +67,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.serviceName", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.serviceName",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String serviceName,
         /**
          * 中文说明：保存 group 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -55,6 +80,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.group", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.group",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String group,
         /**
          * 中文说明：保存 version 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -62,6 +93,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.version", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.version",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String version,
         /**
          * 中文说明：保存 instanceId 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -69,6 +106,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.instanceId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.instanceId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String instanceId,
         /**
          * 中文说明：保存 租约Id 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -76,6 +119,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.leaseId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.leaseId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String leaseId,
         /**
          * 中文说明：保存 host 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -83,6 +132,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.host", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.host",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String host,
         /**
          * 中文说明：保存 port 对应的状态、依赖或配置值；字段类型为 {@code int}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -90,6 +145,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.port", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.port",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         int port,
         /**
          * 中文说明：保存 region 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -97,6 +158,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.region", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.region",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String region,
         /**
          * 中文说明：保存 zone 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -104,6 +171,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.zone", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.zone",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String zone,
         /**
          * 中文说明：保存 weight 对应的状态、依赖或配置值；字段类型为 {@code Integer}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -111,6 +184,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.weight", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.weight",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         Integer weight,
         /**
          * 中文说明：保存 tags 对应的状态、依赖或配置值；字段类型为 {@code Map<String, String>}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -118,6 +197,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.tags", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.tags",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         Map<String, String> tags,
         /**
          * 中文说明：保存 定义SetId 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -125,6 +210,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.definitionSetId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.definitionSetId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String definitionSetId,
         /**
          * 中文说明：保存 status 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -132,6 +223,12 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.status", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.status",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String status,
         /**
          * 中文说明：保存 expireAt 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -139,6 +236,13 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.expireAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expireAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant expireAt,
         /**
          * 中文说明：保存 observedAt 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 在其生命周期内读取或更新。
@@ -146,6 +250,13 @@ public record GatewayProviderInstanceVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayProviderInstanceVO.observedAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.observedAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant observedAt
 ) {
 

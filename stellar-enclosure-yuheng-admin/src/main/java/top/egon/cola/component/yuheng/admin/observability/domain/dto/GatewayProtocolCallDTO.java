@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.observability.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 /**
  * 中文说明：{@code GatewayProtocolCallDTO} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责Protocol调用相关的职责与边界。
@@ -16,12 +23,24 @@ public record GatewayProtocolCallDTO(
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO}; do not couple callers to its representation when the owning type exposes an API.
  */
-String protocol,
+@PermissionResource(key = "yuheng.field.GatewayProtocolCallDTO.protocol", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.protocol",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    String protocol,
 /**
  * 中文说明：保存 值 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO} 在其生命周期内读取或更新。
  * English summary: Holds the state, dependency, or configuration represented by value; its type is {@code long}, and {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO} reads or updates it during its lifecycle.
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO}; do not couple callers to its representation when the owning type exposes an API.
  */
-long value) {
+@PermissionResource(key = "yuheng.field.GatewayProtocolCallDTO.value", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.value",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    long value) {
 }

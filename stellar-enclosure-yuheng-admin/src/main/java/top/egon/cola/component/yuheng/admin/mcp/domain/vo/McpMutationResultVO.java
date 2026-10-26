@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 /**
  * 中文说明：{@code McpMutationResultVO} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责MutationResult相关的职责与边界。
@@ -18,6 +25,12 @@ public record McpMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpMutationResultVO.draftRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.draftRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         long draftRevision,
         /**
          * 中文说明：保存 资源Id 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 在其生命周期内读取或更新。
@@ -25,6 +38,12 @@ public record McpMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpMutationResultVO.resourceId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.resourceId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         String resourceId,
         /**
          * 中文说明：保存 资源Revision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 在其生命周期内读取或更新。
@@ -32,6 +51,12 @@ public record McpMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpMutationResultVO.resourceRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.resourceRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         long resourceRevision,
         /**
          * 中文说明：保存 replayed 对应的状态、依赖或配置值；字段类型为 {@code boolean}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 在其生命周期内读取或更新。
@@ -39,6 +64,12 @@ public record McpMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpMutationResultVO.replayed", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.replayed",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         boolean replayed
 ) {
 }

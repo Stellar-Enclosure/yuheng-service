@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.llm.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -39,51 +46,111 @@ import java.util.List;
 public class LlmModelCommandDTO {
 
     /** 稳定配置键，创建后不改名 / stable key, immutable after creation. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.key", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.key",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotBlank
     @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,63}$")
     private String key;
 
     /** 展示名称，trim 后 1–128 字符 / trimmed display name. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.name", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.name",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotBlank
     @Size(max = 128)
     private String name;
 
     /** CHAT 或 EMBEDDING，决定空间字段是否为空 / model kind driving the space fields. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.kind", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.kind",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     private LlmModelKindEnum kind;
 
     /** 支持入口协议集合 1–4 唯一 / supported ingress protocols, 1–4 unique. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.protocols", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.protocols",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Size(min = 1, max = 4)
     private List<@NotNull LlmProtocolEnum> protocols;
 
     /** 是否用于新调用 / enablement for new calls. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.enabled", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.enabled",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     private Boolean enabled;
 
     /** 嵌入维度 1..16000，CHAT 必须为 null / embedding dimensions, null for CHAT. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.dimensions", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.dimensions",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @Schema(nullable = true)
     @Min(1)
     @Max(16_000)
     private Integer dimensions;
 
     /** 不可变嵌入空间版本标识，CHAT 必须为 null，不能仅用维度代替 / immutable embedding space identity, null for CHAT. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.embeddingSpaceId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.embeddingSpaceId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @Schema(nullable = true)
     @Size(min = 1, max = 128)
     private String embeddingSpaceId;
 
     /** 可调用此模型的已验证 SERVICE subject，1–100，非请求方自报 / verified service subjects, 1–100. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.allowedSubjects", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.allowedSubjects",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Size(min = 1, max = 100)
     private List<@NotBlank String> allowedSubjects;
 
     /** 显式模型渠道映射 1–16，无匹配不扩大到全部渠道 / explicit route bindings, 1–16. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.routes", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.routes",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Size(min = 1, max = 16)
     @Valid
     private List<LlmRouteBindingDTO> routes;
 
     /** 创建为 0，替换须等于当前 revision / 0 on create, current revision on replace. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.expectedRevision", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.expectedRevision",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @NotNull
     @Min(0)
     private Long expectedRevision;

@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.bo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
@@ -23,26 +30,157 @@ import lombok.NoArgsConstructor;
 @Accessors(chain = true)
 public class McpTaskBO {
 
+    @PermissionResource(key = "yuheng.field.McpTaskBO.id", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.id",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String id;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.principalFingerprint", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.principalFingerprint",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String principalFingerprint;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.subjectId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.subjectId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String subjectId;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.tenantId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.tenantId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String tenantId;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.clientId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.clientId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String clientId;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.serverCode", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.serverCode",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String serverCode;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.toolName", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.toolName",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String toolName;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.requestDigest", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.requestDigest",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String requestDigest;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.state", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.state",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String state;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.inputPayload", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.inputPayload",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private Map<String, Object> inputPayload;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.resultPayload", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.resultPayload",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private Map<String, Object> resultPayload;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.errorPayload", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.errorPayload",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private Map<String, Object> errorPayload;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.workerOwner", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.workerOwner",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private String workerOwner;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.leaseUntil", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.leaseUntil",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant leaseUntil;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.executionDeadline", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.executionDeadline",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant executionDeadline;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.expiresAt", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.expiresAt",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant expiresAt;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.attemptCount", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.attemptCount",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private int attemptCount;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.maxAttempts", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.maxAttempts",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private int maxAttempts;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.revision", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.revision",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
     private long revision;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.createdAt", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.createdAt",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant createdAt;
+    @PermissionResource(key = "yuheng.field.McpTaskBO.updatedAt", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.updatedAt",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_RUNTIME_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant updatedAt;
 
     /**

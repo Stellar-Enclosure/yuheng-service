@@ -10,6 +10,11 @@ spring:
 
 yuheng:
   admin:
+    cache:
+      redis:
+        address: ${YUHENG_ADMIN_CACHE_REDIS_ADDRESS}
+        database: ${YUHENG_ADMIN_CACHE_REDIS_DATABASE:0}
+        password-file: ${YUHENG_ADMIN_CACHE_REDIS_PASSWORD_FILE:}
     openapi:
       enabled: ${YUHENG_ADMIN_OPENAPI_ENABLED:false}
       allow-development-http: ${YUHENG_ADMIN_OPENAPI_ALLOW_DEVELOPMENT_HTTP:false}
@@ -41,6 +46,32 @@ egon:
             receiver: YUHENG_ADMIN
             fallback-issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
             allow-local-plaintext: true
+          authority:
+            base-uri: ${TIANQUAN_SHOUBING_AUTHORITY_BASE_URI}
+            timeout: PT2S
+            bindings:
+              tenant-a:
+                issuer: ${TIANQUAN_SHOUBING_TENANT_A_ISSUER}
+                registration-id: ${YUHENG_ADMIN_AUTHORITY_TENANT_A_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: TENANT
+                tenant-id: ${TIANQUAN_SHOUBING_TENANT_A_ID}
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+              tenant-b:
+                issuer: ${TIANQUAN_SHOUBING_TENANT_B_ISSUER}
+                registration-id: ${YUHENG_ADMIN_AUTHORITY_TENANT_B_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: TENANT
+                tenant-id: ${TIANQUAN_SHOUBING_TENANT_B_ID}
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+              platform:
+                issuer: ${TIANQUAN_SHOUBING_PLATFORM_ISSUER}
+                registration-id: ${YUHENG_ADMIN_AUTHORITY_PLATFORM_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: PLATFORM
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+          service-client:
+            app-id: ${YUHENG_ADMIN_AUTHORITY_SERVICE_APP_ID}
           trusted-issuers:
             tenant-a:
               issuer: ${TIANQUAN_SHOUBING_TENANT_A_ISSUER}
@@ -65,20 +96,6 @@ egon:
               realm-type: PLATFORM
               status: ACTIVE
               trust-version: ${TIANQUAN_SHOUBING_PLATFORM_TRUST_VERSION}
-          revocation:
-            primary-endpoint: ${YUHENG_ADMIN_OAUTH_PRIMARY_REDIS_ADDRESS}
-            mode: STRICT_SHARED
-            timeout: PT0.5S
-            epoch: ${YUHENG_ADMIN_OAUTH_REVOCATION_EPOCH}
-          audit:
-            stream: ${YUHENG_ADMIN_OAUTH_AUDIT_STREAM}
-            spool-directory: ${YUHENG_ADMIN_OAUTH_AUDIT_SPOOL_DIRECTORY}
-            spool-max-bytes: ${YUHENG_ADMIN_OAUTH_AUDIT_SPOOL_MAX_BYTES:1073741824}
-            hmac-key-file: ${YUHENG_ADMIN_OAUTH_AUDIT_HMAC_KEY_FILE}
-            delivery:
-              receipt-ttl: PT1H
-              confirmation-timeout: PT30S
-              batch-size: 100
           issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
           jwk-set-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
         jianshen:
@@ -99,9 +116,6 @@ egon:
               "[yuheng:mcp:write]": ["yuheng:mcp:write"]
               "[yuheng:read]": ["yuheng:read"]
               "[yuheng:releases:write]": ["yuheng:releases:write"]
-          runtime:
-            redis-address: ${YUHENG_AUTHORIZATION_REDIS_ADDRESS:redis://127.0.0.1:6379}
-            password-file: ${UNIFIED_IDENTITY_REDIS_PASSWORD_FILE:${UNIFIED_XINGYUAN_RUNTIME_DIR:target/local-unified-xingyuan}/secrets/redis.password}
           authorization:
             endpoint: ${TIANQUAN_JIANSHEN_AUTHORIZATION_ENDPOINT:http://127.0.0.1:18130}
             service-token:

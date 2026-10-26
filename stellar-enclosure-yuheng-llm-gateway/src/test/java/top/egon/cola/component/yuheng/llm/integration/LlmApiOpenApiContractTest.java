@@ -683,7 +683,7 @@ class LlmApiOpenApiContractTest {
         LlmApiController controller = new LlmApiController(service, properties, JSON, registry, byName, writer,
                 repository);
         controller.checkRegistry();
-        return new Fixture(controller, service, repository, MockMvcBuilders.standaloneSetup(controller).build());
+        return new Fixture(controller, service, repository, MockMvcBuilders.standaloneSetup(controller).setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(JSON)).build());
     }
 
     private static Map<LlmProtocolEnum, LlmProtocolStrategy> realFaces(LlmGatewayProperties properties) {

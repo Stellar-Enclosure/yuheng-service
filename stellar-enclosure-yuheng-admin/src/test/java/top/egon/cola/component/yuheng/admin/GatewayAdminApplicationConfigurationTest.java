@@ -35,6 +35,7 @@ class GatewayAdminApplicationConfigurationTest {
                     .withUserConfiguration(DdcRegistryTestConfiguration.class)
                     .withPropertyValues(
                             "egon.cola.component.tianshu.biz-code=infra",
+                            "egon.cola.component.tianshu.tenant-id=1001",
                             "egon.cola.component.tianshu.env=local",
                             "egon.cola.component.tianshu.app-code=ga",
                             "egon.cola.component.tianshu.registration-resource-uri=https://resource.example.test/stellar-enclosure-yuheng-admin",
@@ -134,6 +135,7 @@ class GatewayAdminApplicationConfigurationTest {
                         "spring.application.name=stellar-enclosure-yuheng-admin-test",
                         "egon.cola.component.tianshu.enabled=true",
                         "egon.cola.component.tianshu.biz-code=infra",
+                            "egon.cola.component.tianshu.tenant-id=1001",
                         "egon.cola.component.tianshu.env=test",
                         "egon.cola.component.tianshu.app-code=ga",
                         "egon.cola.component.tianshu.rpc.target=dns:///127.0.0.1:19080",

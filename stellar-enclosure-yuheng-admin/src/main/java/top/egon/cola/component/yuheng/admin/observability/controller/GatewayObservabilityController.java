@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.observability.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -52,6 +58,11 @@ public class GatewayObservabilityController {
      * @param namespace 参数 命名空间；parameter namespace。
      * @return 返回 dashboard 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayObservability.dashboard", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayObservability.dashboard",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayObservabilityController.dashboard")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -78,6 +89,11 @@ public class GatewayObservabilityController {
      * @param size 参数 size；parameter size。
      * @return 返回 traces 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayObservability.traces", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayObservability.traces",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayObservabilityController.traces")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -117,6 +133,11 @@ public class GatewayObservabilityController {
      * @param size 参数 size；parameter size。
      * @return 返回 audits 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayObservability.audits", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayObservability.audits",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayObservabilityController.audits")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

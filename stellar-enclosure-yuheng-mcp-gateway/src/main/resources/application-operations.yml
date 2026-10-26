@@ -56,6 +56,25 @@ egon:
           jwk-set-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
           resource-server-id: ${YUHENG_MCP_ENGINE_RESOURCE_SERVER_ID:}
           resource-uri: ${YUHENG_MCP_ENGINE_RESOURCE_URI:}
+          authority:
+            base-uri: ${TIANQUAN_SHOUBING_AUTHORITY_BASE_URI}
+            timeout: PT2S
+            bindings:
+              platform:
+                issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
+                registration-id: ${YUHENG_MCP_AUTHORITY_PLATFORM_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: PLATFORM
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+              tenant-a:
+                issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+                registration-id: ${YUHENG_MCP_AUTHORITY_TENANT_A_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: TENANT
+                tenant-id: ${TIANSHU_TENANT_ID}
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+          service-client:
+            app-id: ${YUHENG_MCP_AUTHORITY_SERVICE_APP_ID}
           trusted-issuers:
             platform:
               issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
@@ -72,24 +91,11 @@ egon:
               tenant-id: ${TIANSHU_TENANT_ID}
               status: ACTIVE
               trust-version: 1
-          revocation:
-            mode: STRICT_SHARED
-            primary-endpoint: ${TIANQUAN_SHOUBING_REVOCATION_PRIMARY_ENDPOINT}
-            epoch: ${EGON_TIANQUAN_SHOUBING_REVOCATION_EPOCH}
           usage-observation:
             enabled: true
             receiver: MCP
             fallback-issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
             allow-local-plaintext: false
-          audit:
-            stream-key: ${OAUTH_AUDIT_STREAM_KEY:egon:oauth:audit:v1}
-            spool-directory: ${YUHENG_MCP_OAUTH_AUDIT_SPOOL_DIRECTORY}
-            spool-max-bytes: ${OAUTH_AUDIT_SPOOL_MAX_BYTES:104857600}
-            hmac-key-file: ${OAUTH_AUDIT_HMAC_KEY_FILE}
-            delivery:
-              receipt-ttl: 1h
-              confirmation-timeout: 30s
-              batch-size: 100
           yuheng:
             enabled: ${TIANQUAN_SHOUBING_YUHENG_ENABLED:true}
             issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
@@ -110,11 +116,6 @@ egon:
           enabled: ${YUHENG_MCP_TIANQUAN_JIANSHEN_ENABLED:false}
           register-filter: false
           system-code: ${YUHENG_MCP_TIANQUAN_JIANSHEN_SYSTEM_CODE:mock-backend}
-          runtime:
-            redis-enabled: ${YUHENG_MCP_TIANQUAN_JIANSHEN_ENABLED:false}
-            redis-address: ${YUHENG_MCP_TIANQUAN_JIANSHEN_REDIS_ADDRESS:redis://127.0.0.1:6379}
-            database: ${YUHENG_MCP_TIANQUAN_JIANSHEN_REDIS_DATABASE:0}
-            password-file: ${YUHENG_MCP_TIANQUAN_JIANSHEN_REDIS_PASSWORD_FILE:}
           authorization:
             endpoint: ${YUHENG_MCP_TIANQUAN_JIANSHEN_AUTHORIZATION_ENDPOINT:}
           yuheng:

@@ -43,11 +43,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.redisson.api.RStream;
-import org.redisson.api.RedissonClient;
-import org.redisson.api.stream.StreamMessageId;
-import org.redisson.api.stream.StreamAddArgs;
-import org.redisson.client.codec.StringCodec;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -94,8 +89,6 @@ import top.egon.cola.component.yuheng.llm.proxy.service.OpenAiEmbeddingProtocolS
 import top.egon.cola.component.yuheng.llm.proxy.service.OpenAiResponsesProtocolStrategy;
 import top.egon.cola.component.yuheng.llm.proxy.service.impl.LlmInvocationServiceImpl;
 import top.egon.cola.platform.tianquan.shoubing.core.resource.ResourceServerStatus;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.AuditDeliveryProperties;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthAuditProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthUsageObservationProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.TokenUsageAuditComponent;
 import top.egon.cola.platform.tianquan.shoubing.starter.autoconfigure.IdpSecurityObservationAutoConfiguration;
@@ -127,8 +120,7 @@ class LlmSecurityConfigurationTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
-    private final RedissonClient redis = mock(RedissonClient.class);
-    @SuppressWarnings("unchecked") private final RStream<String, String> stream = mock(RStream.class);
+    private final top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClient authority = mock(top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClient.class);
     private final LlmConfigurationRepository repository = mock(LlmConfigurationRepository.class);
     private final java.util.List<Map<String, String>> events = new java.util.ArrayList<>();
     private AnnotationConfigWebApplicationContext context;
@@ -141,18 +133,14 @@ class LlmSecurityConfigurationTest {
     @BeforeEach
     void prepare() throws Exception {
         validator.afterPropertiesSet();
-        Path keyFile = temporary.resolve("audit.key");
-        Files.writeString(keyFile, "0123456789abcdef0123456789abcdef");
-        Files.setPosixFilePermissions(keyFile, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
-        doReturn(stream).when(redis).getStream(org.mockito.ArgumentMatchers.eq("egon:oauth:audit:v1"),
-                org.mockito.ArgumentMatchers.eq(StringCodec.INSTANCE));
-        when(stream.add(any(StreamAddArgs.class))).thenAnswer(call -> {
-            org.redisson.api.stream.StreamAddParams<String, String> fields = call.getArgument(0);
-            events.add(Map.copyOf(fields.getEntries())); return new StreamMessageId(events.size(), 1);
+        when(authority.appendAudit(any())).thenAnswer(call -> {
+            var event=(top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditEvent)call.getArgument(0);
+            events.add(Map.of("reasonCode",event.reasonCode()));
+            return new top.egon.cola.platform.tianquan.shoubing.contract.state.IdentityAuditReceipt(java.util.UUID.randomUUID().toString(),event.eventId(),
+                    top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditFingerprint.of(event),event.issuer().toASCIIString(),"llm",event.resource(),"STORED",NOW);
         });
-        var audit = new OAuthAuditProperties("egon:oauth:audit:v1", temporary.resolve("spool"), 1_048_576, keyFile);
         var usage = new OAuthUsageObservationProperties(true, ISSUER, false, IdpSecurityObservationReceiverEnum.LLM);
-        var producer = new TokenUsageAuditComponent(redis, mapper, audit, new AuditDeliveryProperties(), Clock.fixed(NOW, ZoneOffset.UTC), validator);
+        var producer = new TokenUsageAuditComponent(issuer -> authority, Clock.fixed(NOW, ZoneOffset.UTC), validator, sample -> { });
         var converter = (TokenUsageAuditEventConverter) Class.forName(TokenUsageAuditEventConverter.class.getName() + "Impl").getConstructor().newInstance();
         var observation = new IdpObservedVerificationComponent(producer, converter, usage, sample -> { }, Clock.fixed(NOW, ZoneOffset.UTC), validator, RESOURCE);
         var properties = new IdpStarterProperties(); properties.setResourceServerId("llm"); properties.setResourceUri(RESOURCE);
@@ -196,13 +184,16 @@ class LlmSecurityConfigurationTest {
         controller.checkRegistry();
         context = new AnnotationConfigWebApplicationContext(); context.setServletContext(new MockServletContext());
         context.setEnvironment(new MockEnvironment().withProperty("egon.cola.platform.tianquan.shoubing.usage-observation.enabled", "true")
-                .withProperty("server.ssl.enabled", "true").withProperty("TIANSHU_TENANT_ID", "1001"));
+                .withProperty("server.ssl.enabled", "true").withProperty("TIANSHU_TENANT_ID", "1001").withProperty("egon.cola.component.cache.enabled", "false"));
         context.addBeanFactoryPostProcessor(factory -> {
             factory.registerSingleton("defaultValidator", validator); factory.registerSingleton("jacksonObjectMapper", mapper);
-            factory.registerSingleton("oauthAuditProperties", audit); factory.registerSingleton("oauthUsageObservationProperties", usage);
+            factory.registerSingleton("oauthUsageObservationProperties", usage);
             factory.registerSingleton("tokenUsageAuditComponent", producer); factory.registerSingleton("idpObservedVerificationComponent", observation);
+            factory.registerSingleton("identityAuthorityClientResolver", (top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClientResolver) issuer -> authority);
+            factory.registerSingleton("trustedIssuerRegistry", new TrustedIssuerRegistry(properties));
             factory.registerSingleton("idpStarterProperties", properties); factory.registerSingleton("idpJwtVerifier", verifier);
             factory.registerSingleton("idpClock", Clock.fixed(NOW, ZoneOffset.UTC)); factory.registerSingleton("llmMeters", meters);
+            factory.registerSingleton("nativeJsonWebConfigurer", wiring);
             factory.registerSingleton("llmApiController", controller); factory.registerSingleton(LlmGatewayProperties.BEAN_NAME, llm);
             factory.registerSingleton("llmProtocolStrategyRegistry", names);
             strategies.forEach(factory::registerSingleton);
@@ -216,60 +207,25 @@ class LlmSecurityConfigurationTest {
     @AfterEach void cleanup() { if (context != null) { context.close(); } validator.close(); meters.close(); SecurityContextHolder.clearContext(); org.slf4j.MDC.clear(); }
 
     @Test
-    void startupAllowsExplicitLocalLoopbackRedis() {
-        var properties = context.getBean("idpStarterProperties", IdpStarterProperties.class);
-        context.getBean("oauthUsageObservationProperties", OAuthUsageObservationProperties.class).setAllowLocalPlaintext(true);
-        var environment = localStartupEnvironment();
-        for (String endpoint : List.of("redis://127.0.0.1:6379", "redis://localhost:6379", "redis://[::1]:6379")) {
-            properties.getRevocation().setPrimaryEndpoint(endpoint);
-            assertThat(startupCheck(environment, true)).as(endpoint).isNotNull();
-        }
+    void startupUsesFiniteHttpsIssuersAndSqlAuthorityWithoutAnAuthorizationRedisEndpoint() {
+        context.getBean("idpStarterProperties", IdpStarterProperties.class).getRevocation().setPrimaryEndpoint(null);
+        assertThat(startupCheck(localStartupEnvironment(),true)).isNotNull();
     }
 
     @Test
-    void startupLocalExceptionKeepsTheSdkRedisUriValidation() {
-        var properties = context.getBean("idpStarterProperties", IdpStarterProperties.class);
-        context.getBean("oauthUsageObservationProperties", OAuthUsageObservationProperties.class).setAllowLocalPlaintext(true);
-        var environment = localStartupEnvironment();
-        for (String endpoint : List.of("redis://redis.example:6379", "redis://127.0.0.2:6379",
-                "redis://user:password@127.0.0.1:6379", "redis://127.0.0.1:6379?database=1",
-                "redis://127.0.0.1:6379#fragment")) {
-            properties.getRevocation().setPrimaryEndpoint(endpoint);
-            assertThatThrownBy(() -> startupCheck(environment, true)).as(endpoint)
-                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("must be rediss or exact loopback redis and canonical");
-        }
+    void startupRejectsPlaintextIssuerJwksAndResource() {
+        var properties=context.getBean("idpStarterProperties",IdpStarterProperties.class);
+        var issuer=properties.getTrustedIssuers().get("tenant-1001");
+        issuer.setJwksUri("http://idp.example/jwks");
+        assertThatThrownBy(()->startupCheck(localStartupEnvironment(),true)).isInstanceOf(IllegalStateException.class);
+        issuer.setJwksUri(ISSUER+"/.well-known/jwks.json"); issuer.setIssuer("http://idp.example/tenants/1001");
+        assertThatThrownBy(()->startupCheck(localStartupEnvironment(),true)).isInstanceOf(IllegalStateException.class);
+        issuer.setIssuer(ISSUER.toASCIIString()); properties.setResourceUri(URI.create("http://resource.example"));
+        assertThatThrownBy(()->startupCheck(localStartupEnvironment(),true)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void startupPlaintextRequiresTheFlagLocalProfileAndLocalDeployment() {
-        context.getBean("idpStarterProperties", IdpStarterProperties.class).getRevocation().setPrimaryEndpoint("redis://127.0.0.1:6379");
-        var usage = context.getBean("oauthUsageObservationProperties", OAuthUsageObservationProperties.class);
-        var environment = localStartupEnvironment();
-        assertThatThrownBy(() -> startupCheck(environment, true)).isInstanceOf(IllegalStateException.class)
-                .hasMessage("LLM_SECURITY_TRANSPORT_REQUIRED");
-        usage.setAllowLocalPlaintext(true);
-        environment.setActiveProfiles("production");
-        assertThatThrownBy(() -> startupCheck(environment, true)).isInstanceOf(IllegalStateException.class)
-                .hasMessage("LLM_SECURITY_TRANSPORT_REQUIRED");
-        environment.setActiveProfiles("local");
-        environment.setProperty("DEPLOYMENT_ENV", "production");
-        assertThatThrownBy(() -> startupCheck(environment, true)).isInstanceOf(IllegalStateException.class)
-                .hasMessage("LLM_SECURITY_TRANSPORT_REQUIRED");
-        var missingDeployment = new MockEnvironment().withProperty("server.ssl.enabled", "true");
-        missingDeployment.setActiveProfiles("local");
-        assertThatThrownBy(() -> startupCheck(missingDeployment, true)).isInstanceOf(IllegalStateException.class)
-                .hasMessage("LLM_SECURITY_TRANSPORT_REQUIRED");
-    }
-
-    @Test
-    void startupAcceptsProductionRedisTlsWithoutTheLocalException() {
-        var environment = new MockEnvironment().withProperty("server.ssl.enabled", "true").withProperty("DEPLOYMENT_ENV", "production");
-        environment.setActiveProfiles("production");
-        assertThat(startupCheck(environment, true)).isNotNull();
-    }
-
-    @Test
-    void startupLocalRedisKeepsAuditAndServerTlsRequired() {
+    void startupKeepsDurableAuditAndServerTlsRequired() {
         context.getBean("idpStarterProperties", IdpStarterProperties.class).getRevocation().setPrimaryEndpoint("redis://127.0.0.1:6379");
         var usage = context.getBean("oauthUsageObservationProperties", OAuthUsageObservationProperties.class).setAllowLocalPlaintext(true);
         var environment = localStartupEnvironment();
@@ -344,7 +300,7 @@ class LlmSecurityConfigurationTest {
         assertThat(context.getBean("llmProtocolSecurityFilterRegistration", org.springframework.boot.web.servlet.FilterRegistrationBean.class).isEnabled()).isFalse();
         Path parent = Path.of("").toAbsolutePath().getParent();
         for (String owner : List.of("llm", "biz", "mcp")) {
-            Path resources = parent.resolve("yuheng-" + owner + "-gateway/src/main/resources");
+            Path resources = parent.resolve("stellar-enclosure-yuheng-" + owner + "-gateway/src/main/resources");
             java.util.Set<String> first = null;
             for (String name : List.of("application.yml", owner.equals("llm") ? "application-local.yml" : "application-operations.yml")) {
                 var sources = new org.springframework.boot.env.YamlPropertySourceLoader().load(name,
@@ -391,7 +347,7 @@ class LlmSecurityConfigurationTest {
         var missing = mvc.perform(get("/v1/models").secure(true)).andReturn().getResponse();
         assertThat(missing.getStatus()).isEqualTo(401);
         assertThat(mapper.readTree(missing.getContentAsString()).has("error")).isTrue();
-        when(stream.add(any(StreamAddArgs.class))).thenThrow(new org.redisson.client.RedisException("controlled audit outage"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("controlled audit outage")).when(authority).appendAudit(any());
         var unavailable = mvc.perform(post("/v1/chat/completions").secure(true).contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + token("yuheng:llm:invoke", false)).content(body())).andReturn().getResponse();
         assertThat(unavailable.getStatus()).isEqualTo(503);
@@ -399,7 +355,48 @@ class LlmSecurityConfigurationTest {
         verify(service, never()).invoke(any()); verify(chat, never()).exchange(any(), any(), any());
     }
 
+    @Test
+    void modelPoliciesAcceptVerifiedUserAndServiceReadScopesWithoutInvokingAProvider() throws Exception {
+        for (boolean serviceToken : List.of(false, true)) {
+            var response = mvc.perform(get("/v1/model-policies").secure(true).param("model", "company-chat")
+                    .header("Authorization", "Bearer " + token("yuheng:llm:read", serviceToken))).andReturn().getResponse();
+            assertThat(response.getStatus()).isEqualTo(200);
+            assertThat(response.getHeader("Cache-Control")).contains("no-store");
+            assertThat(mapper.readTree(response.getContentAsString())).hasSize(1);
+            assertThat(response.getContentAsString()).doesNotContain("secretRef", "allowedSubjects", "baseUrl", "upstreamModel");
+        }
+        when(repository.findSnapshot("second")).thenReturn(Optional.of(model().setModelKey("second")));
+        var pair=mvc.perform(get("/v1/model-policies").secure(true).param("model","company-chat","second")
+                .header("Authorization","Bearer "+token("yuheng:llm:read",false))).andReturn().getResponse();
+        assertThat(pair.getStatus()).isEqualTo(200); assertThat(mapper.readTree(pair.getContentAsString())).hasSize(2);
+        verify(service, never()).invoke(any()); verify(chat, never()).exchange(any(), any(), any());
+    }
+
+    @Test
+    void modelPoliciesRejectMissingProofWrongTenantMissingScopeUnknownAliasAndUnboundedQueries() throws Exception {
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "company-chat")
+                .principal(() -> "operator")).andReturn().getResponse().getStatus()).isEqualTo(401);
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "company-chat")
+                .header("Authorization", "Bearer " + token("yuheng:llm:read", false, claims -> claims.put("tenant_id", "1002"))))
+                .andReturn().getResponse().getStatus()).isEqualTo(401);
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "company-chat")
+                .header("Authorization", "Bearer " + token("yuheng:llm:invoke", false))).andReturn().getResponse().getStatus()).isEqualTo(403);
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "unknown")
+                .header("Authorization", "Bearer " + token("yuheng:llm:read", false))).andReturn().getResponse().getStatus()).isEqualTo(404);
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "one", "two", "three")
+                .header("Authorization", "Bearer " + token("yuheng:llm:read", true))).andReturn().getResponse().getStatus()).isEqualTo(400);
+        model.setAllowedSubjects(List.of("another-subject"));
+        assertThat(mvc.perform(get("/v1/model-policies").secure(true).param("model", "company-chat")
+                .header("Authorization", "Bearer " + token("yuheng:llm:read", false))).andReturn().getResponse().getStatus()).isEqualTo(403);
+        verify(service, never()).invoke(any()); verify(chat, never()).exchange(any(), any(), any());
+    }
+
     private String token(String scope, boolean serviceToken) throws Exception {
+        return token(scope, serviceToken, claims -> { });
+    }
+
+    private String token(String scope, boolean serviceToken, java.util.function.Consumer<Map<String, Object>> customize) throws Exception {
+
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", ISSUER.toASCIIString()); claims.put("sub", serviceToken ? "llm-service" : "operator");
         claims.put("aud", List.of(RESOURCE.toASCIIString())); claims.put("iat", NOW.minusSeconds(1).getEpochSecond()); claims.put("nbf", NOW.minusSeconds(1).getEpochSecond());
@@ -412,6 +409,7 @@ class LlmSecurityConfigurationTest {
             claims.put("app_id", "llm"); claims.put("resource_version", 1L); claims.put("credential_id", "501:0");
             claims.put("source_biz", "commerce"); claims.put("source_app", "llm"); claims.put("source_env", "test");
         } else { claims.put("acr", "PASSWORD"); claims.put("auth_time", NOW.minusSeconds(5).getEpochSecond()); }
+        customize.accept(claims);
         var signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(new JOSEObjectType("at+jwt")).keyID("key-1").build(), JWTClaimsSet.parse(claims));
         signed.sign(new RSASSASigner(key)); return signed.serialize();
     }

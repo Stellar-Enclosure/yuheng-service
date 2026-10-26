@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.openapi.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -14,14 +21,70 @@ import java.util.regex.Pattern;
  * 意外记录完整文档或其中的敏感扩展字段。</p>
  */
 public record GatewayOpenApiDocumentVO(
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.snapshotId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.snapshotId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String snapshotId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.applicationId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.applicationId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String applicationId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.buildId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.buildId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String buildId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.openapiVersion", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.openapiVersion",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String openapiVersion,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.documentSha256", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.documentSha256",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String documentSha256,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.canonicalSha256", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.canonicalSha256",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String canonicalSha256,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.document", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.document",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         Map<String, Object> document,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.fetchedAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.fetchedAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant fetchedAt,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiDocumentVO.validatedAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.validatedAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant validatedAt
 ) {
 

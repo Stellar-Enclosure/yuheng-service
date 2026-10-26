@@ -57,12 +57,9 @@ public class GatewayEngineManagementSecurityConfiguration {
             @Qualifier("environment") org.springframework.core.env.Environment environment) {
         new top.egon.cola.component.common.core.validation.ValidationUtils(validator).validate(usage);
         identity.validate();
-        boolean localRedis = usage.isAllowLocalPlaintext()
-                && java.util.Arrays.asList(environment.getActiveProfiles()).contains("local")
-                && "local".equals(environment.getProperty("DEPLOYMENT_ENV"));
         if (!usage.isEnabled() || !ready.getAsBoolean() || identity.getTrustedIssuers().isEmpty()
                 || identity.getResourceUri() == null || !"https".equals(identity.getResourceUri().getScheme())
-                || (!identity.getRevocation().getPrimaryEndpoint().startsWith("rediss://") && !localRedis)
+                || identity.getTrustedIssuers().values().stream().anyMatch(issuer -> !issuer.getIssuer().startsWith("https://") || !issuer.getJwksUri().startsWith("https://"))
                 || !environment.getProperty("egon.cola.component.yuheng.engine.http.public-tls.enabled", Boolean.class, false)
                 || !environment.getProperty("egon.cola.component.yuheng.engine.http.internal-tls.enabled", Boolean.class, false)) {
             throw new IllegalStateException("YUHENG_SECURITY_OBSERVATION_NOT_READY");

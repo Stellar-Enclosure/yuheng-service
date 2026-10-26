@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.RestController;
 import top.egon.cola.platform.tianquan.jianshen.contract.auth.AuthorizationBootstrapView;
 import top.egon.cola.platform.tianquan.jianshen.contract.auth.Rbac3AboutView;
 import top.egon.cola.platform.tianquan.jianshen.starter.authorization.Rbac3AboutService;
-import top.egon.cola.platform.tianquan.jianshen.starter.security.RequiresPermission;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.*;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.*;
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
 
 import java.util.Objects;
 
@@ -61,7 +63,10 @@ public class GatewayAuthBootstrapController {
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/bootstrap")
-    @RequiresPermission("yuheng:read")
+    @PermissionResource(key="yuheng.api.authorization.bootstrap", type=ResourceType.API,
+            labelPage="gateway.permissions", labelKey="api.authorization.bootstrap",
+            allowedPrincipals=PermissionManifest.PrincipalType.USER)
+    @RequiresPermissions(codes=GatewayPermissionCodes.READ)
     public AuthorizationBootstrapView bootstrap() {
         Rbac3AboutView about = bootstrap.current();
         return AuthorizationBootstrapView.from(about);

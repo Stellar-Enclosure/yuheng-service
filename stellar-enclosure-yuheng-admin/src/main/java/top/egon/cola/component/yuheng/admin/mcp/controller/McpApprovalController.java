@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -68,6 +74,11 @@ public class McpApprovalController {
      * @param authentication 参数 authentication；parameter authentication。
      * @return 返回 issue 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpApproval.issue", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpApproval.issue",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_APPROVE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_APPROVE)
     @Operation(operationId = "admin.mcpApprovalController.issue")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

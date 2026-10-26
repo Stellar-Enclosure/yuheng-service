@@ -23,7 +23,6 @@ import top.egon.cola.platform.tianquan.jianshen.starter.security.Rbac3BearerAuth
 
 import java.io.IOException;
 import java.time.Instant;
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -174,13 +173,6 @@ public class GatewayAdminSecurityConfiguration {
                 || !"https".equalsIgnoreCase(properties.getResourceUri().getScheme())
                 || !environment.getProperty("egon.cola.platform.tianquan.jianshen.authorization.endpoint", "").startsWith("https://")) {
             throw new IllegalStateException("OAUTH_HOST_TLS_REQUIRED");
-        }
-        boolean localRedis = environment.getProperty("egon.cola.platform.tianquan.shoubing.usage-observation.allow-local-plaintext", Boolean.class, false)
-                && java.util.Arrays.asList(environment.getActiveProfiles()).contains("local") && "local".equals(environment.getProperty("DEPLOYMENT_ENV"));
-        URI redis = URI.create(properties.getRevocation().getPrimaryEndpoint());
-        if (!"rediss".equalsIgnoreCase(redis.getScheme()) && !(localRedis && "redis".equalsIgnoreCase(redis.getScheme())
-                && java.util.Set.of("127.0.0.1", "localhost", "::1", "[::1]").contains(redis.getHost()))) {
-            throw new IllegalStateException("OAUTH_PRIMARY_TLS_REQUIRED");
         }
         return Boolean.TRUE;
     }

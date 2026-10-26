@@ -30,24 +30,23 @@ import static org.mockito.Mockito.when;
 /** Evaluates the actual class and method annotations with Spring's method-security manager. */
 class GatewayAdminSecurityScopeContractTest {
     private static final Set<String> EXPECTED = Set.of("yuheng:applications:write", "yuheng:catalog:write", "yuheng:credentials:write",
-            "yuheng:drafts:write", "yuheng:groups:write", "yuheng:knowledge:admin", "yuheng:knowledge:read", "yuheng:knowledge:write",
+            "yuheng:drafts:write", "yuheng:groups:write",
             "yuheng:llm:read", "yuheng:llm:write", "yuheng:mcp:approve", "yuheng:mcp:read", "yuheng:mcp:runtime:read", "yuheng:mcp:test",
             "yuheng:mcp:write", "yuheng:read", "yuheng:releases:write");
     private static final List<String> CONTROLLERS = List.of(
             "application.controller.GatewayApplicationController", "catalog.controller.GatewayCatalogController",
             "credential.controller.GatewayCredentialController", "group.controller.GatewayGroupController",
-            "knowledge.controller.KnowledgeController", "knowledge.controller.KnowledgeDocumentController", "knowledge.controller.KnowledgeJobController",
             "llm.controller.LlmConfigurationController", "mcp.controller.McpAppAdminController", "mcp.controller.McpApprovalController",
             "mcp.controller.McpCapabilityController", "mcp.controller.McpProtocolInspectorController", "mcp.controller.McpRemoteProviderController",
             "mcp.controller.McpServerController", "mcp.controller.McpTaskAdminController", "mcp.controller.McpToolAdminController",
             "observability.controller.GatewayObservabilityController", "openapi.controller.GatewayOpenApiController",
             "release.controller.GatewayReleaseController", "routing.controller.GatewayDraftController", "runtime.controller.GatewayProjectionController",
-            "scope.controller.GatewayScopeController", "wiki.controller.WikiController");
+            "scope.controller.GatewayScopeController");
 
     @AfterEach void cleanup() { SecurityContextHolder.clearContext(); }
 
     @Test
-    void sameScopeAndExisting17CapabilitiesOnEveryActualMethodOverride() throws Exception {
+    void sameScopeAndExisting14CapabilitiesOnEveryActualMethodOverride() throws Exception {
         var seen = new LinkedHashSet<String>();
         var pattern = Pattern.compile("'CAP_(yuheng:[A-Za-z0-9:._-]+)'");
         int checkedMethods = 0;
@@ -82,7 +81,7 @@ class GatewayAdminSecurityScopeContractTest {
         var service = new ServiceIdentityPrincipal("publisher", null, "publisher", "jti-1", URI.create("https://api.example/yuheng"), 7,
                 Set.of("yuheng:read"), "biz", "publisher", "test", "credential-1", issued, issued.plusSeconds(300), "publisher-app", ServiceTokenContext.PLATFORM);
         var proof = new TokenAuditProofBO(URI.create("https://idp.example/platform"), service.resourceUri(), "a".repeat(64), "b".repeat(64), "c".repeat(64));
-        var authentication = new IdpAuthenticationToken(service, List.of(new SimpleGrantedAuthority("SCOPE_yuheng:read")));
+        var authentication = new IdpAuthenticationToken(service, List.of(new SimpleGrantedAuthority("SCOPE_yuheng:read")), proof.issuer());
         authentication.setDetails(proof); SecurityContextHolder.getContext().setAuthentication(authentication);
         new GatewayAdminServiceAuthorityFilter().doFilter(new MockHttpServletRequest(), new MockHttpServletResponse(), (request, response) -> {
             var adapted = SecurityContextHolder.getContext().getAuthentication();

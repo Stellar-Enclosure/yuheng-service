@@ -39,10 +39,8 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.exception.LlmInvocationEx
 import top.egon.cola.component.yuheng.llm.proxy.service.LlmProtocolStrategy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import top.egon.cola.platform.tianquan.jianshen.starter.autoconfigure.Rbac3StarterProperties;
-import top.egon.cola.platform.tianquan.jianshen.starter.runtime.Rbac3RuntimeRedissonConfiguration;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import top.egon.cola.platform.tianquan.shoubing.contract.IdpPrincipal;
@@ -51,17 +49,25 @@ import top.egon.cola.platform.tianquan.shoubing.contract.IdpPrincipal;
 @Slf4j
 @Configuration(value = "llmSecurityConfiguration", proxyBeanMethods = false)
 @EnableConfigurationProperties(Rbac3StarterProperties.class)
-@Import(Rbac3RuntimeRedissonConfiguration.class)
 public class LlmSecurityConfiguration {
 
-    /** Reuses the host primary connection under Common cache's explicit integration name. */
-    @Bean(name = "redissonClient", destroyMethod = "")
+    /** Host-owned business cache connection; authorization and revocation continue through their SQL authority clients. */
+    @Bean(name = "redissonClient", destroyMethod = "shutdown")
     @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(name = "redissonClient")
-    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(name = "rbac3RuntimeRedissonClient")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "egon.cola.component.cache", name = "enabled", havingValue = "true", matchIfMissing = true)
     org.redisson.api.RedissonClient applicationCacheRedissonClient(
-            @Qualifier("rbac3RuntimeRedissonClient") org.redisson.api.RedissonClient primary) {
-        return primary;
+            @org.springframework.beans.factory.annotation.Value("${yuheng.llm.cache.redis.address}") String address,
+            @org.springframework.beans.factory.annotation.Value("${yuheng.llm.cache.redis.database:0}") int database,
+            @org.springframework.beans.factory.annotation.Value("${yuheng.llm.cache.redis.password-file:}") String passwordFile) throws java.io.IOException {
+        var endpoint = java.net.URI.create(address);
+        if (!java.util.Set.of("redis", "rediss").contains(endpoint.getScheme()) || endpoint.getHost() == null
+                || endpoint.getUserInfo() != null || database < 0) throw new IllegalArgumentException("YUHENG_CACHE_REDIS_CONFIGURATION_INVALID");
+        var config = new org.redisson.config.Config();
+        var server = config.useSingleServer().setAddress(address).setDatabase(database);
+        if (!passwordFile.isBlank()) server.setPassword(java.nio.file.Files.readString(java.nio.file.Path.of(passwordFile)).strip());
+        return org.redisson.Redisson.create(config);
     }
+
     private static final String BUSINESS_ENTERED = LlmSecurityConfiguration.class.getName() + ".businessEntered";
     private static final Map<String, LlmProtocolEnum> PROTOCOLS = Map.of(
             "/v1/models", LlmProtocolEnum.OPENAI_CHAT, "/v1/model-policies", LlmProtocolEnum.OPENAI_CHAT, "/v1/chat/completions", LlmProtocolEnum.OPENAI_CHAT,
@@ -81,7 +87,7 @@ public class LlmSecurityConfiguration {
             @Qualifier("llmVerifiedPrincipalRequestFilter") OncePerRequestFilter projection,
             @Qualifier("llmProtocolSecurityResponseFilter") OncePerRequestFilter protocol) throws Exception {
         http.securityMatcher("/v1/**").csrf(csrf -> csrf.disable()).requestCache(cache -> cache.disable())
-                .requiresChannel(channel -> channel.anyRequest().requiresSecure())
+                .redirectToHttps(https -> https.requestMatchers(request -> !request.isSecure()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(form -> form.disable()).httpBasic(basic -> basic.disable()).logout(logout -> logout.disable())
                 .addFilterBefore(bearer, AnonymousAuthenticationFilter.class)
@@ -144,11 +150,8 @@ public class LlmSecurityConfiguration {
             throw new IllegalStateException("LLM_SECURITY_OBSERVATION_REQUIRED");
         }
         properties.validate();
-        boolean localRedis = usage.isAllowLocalPlaintext()
-                && java.util.Arrays.asList(environment.getActiveProfiles()).contains("local")
-                && "local".equals(environment.getProperty("DEPLOYMENT_ENV"));
         if (!"https".equals(properties.getResourceUri().getScheme()) || properties.getTrustedIssuers().isEmpty()
-                || (!properties.getRevocation().getPrimaryEndpoint().startsWith("rediss://") && !localRedis)) {
+                || properties.getTrustedIssuers().values().stream().anyMatch(issuer -> !issuer.getIssuer().startsWith("https://") || !issuer.getJwksUri().startsWith("https://"))) {
             throw new IllegalStateException("LLM_SECURITY_TRANSPORT_REQUIRED");
         }
         return new Object();

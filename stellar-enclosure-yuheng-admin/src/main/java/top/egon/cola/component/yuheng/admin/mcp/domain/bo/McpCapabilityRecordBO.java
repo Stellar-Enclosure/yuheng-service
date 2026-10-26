@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.bo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.util.Map;
 import java.util.Objects;
 import top.egon.cola.component.yuheng.admin.mcp.domain.enums.McpCapabilityKindEnum;
@@ -22,13 +29,61 @@ import lombok.NoArgsConstructor;
 @Accessors(chain = true)
 public class McpCapabilityRecordBO {
 
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.kind", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.kind",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private McpCapabilityKindEnum kind;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.id", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.id",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String id;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.gatewayGroupId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.gatewayGroupId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String gatewayGroupId;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.serverId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.serverId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String serverId;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.name", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.name",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String name;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.content", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.content",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private Map<String, Object> content;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.enabled", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.enabled",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private boolean enabled;
+    @PermissionResource(key = "yuheng.field.McpCapabilityRecordBO.revision", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.revision",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private long revision;
 
     /**

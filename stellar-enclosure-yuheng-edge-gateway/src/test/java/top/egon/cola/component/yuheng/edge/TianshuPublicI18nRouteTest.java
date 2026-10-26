@@ -21,7 +21,7 @@ import org.springframework.security.web.server.csrf.WebSessionServerCsrfTokenRep
 import top.egon.cola.component.yuheng.edge.config.EdgeOAuthProperties;
 import top.egon.cola.component.yuheng.edge.config.EdgeSecurityConfiguration;
 import top.egon.cola.component.yuheng.edge.filter.TrustedIdentityHeaderFilter;
-import top.egon.cola.component.yuheng.edge.service.impl.EdgeSessionBindingComponent;
+
 
 import java.time.Duration;
 import java.util.List;
@@ -31,8 +31,8 @@ import static org.mockito.Mockito.*;
 
 class TianshuPublicI18nRouteTest {
     private static final String PUBLIC_PATH = "/api/v1/tianshu/i18n/public/bundle";
-    private final EdgeSessionBindingComponent bindings = mock(EdgeSessionBindingComponent.class);
-    private final TrustedIdentityHeaderFilter filter = new TrustedIdentityHeaderFilter(new ObjectMapper(), bindings);
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory;
+    private final TrustedIdentityHeaderFilter filter = new TrustedIdentityHeaderFilter();
 
     @Test void configuredPublicRouteMatchesOnlyExactGetInBothProfiles() {
         for (String profile : List.of("application.yml", "application-local.yml")) {
@@ -62,9 +62,8 @@ class TianshuPublicI18nRouteTest {
         }
     }
 
-    @Test void anonymousPublicGetPassesApiSecurityAndGlobalFilterWithoutSessionOrTokenLookup() {
-        var configuration = new EdgeSecurityConfiguration(new EdgeOAuthProperties());
-        var security = configuration.edgeApiSecurityWebFilterChain(ServerHttpSecurity.http(), new WebSessionServerCsrfTokenRepository());
+    @Test void anonymousPublicGetPassesApiSecurityAndGlobalFilterWithoutSessionOrTokenLookup() throws Exception {
+        var fixture = new EdgeSecurityFixture(directory);
         for (String ambientCredential : List.of("", "session", "bearer")) {
             var request = MockServerHttpRequest.get(PUBLIC_PATH).header("X-Egon-Tianshu-Tenant", "other-tenant")
                     .header("tenant_id", "forged").header("x-egon-user-id", "forged");
@@ -73,7 +72,7 @@ class TianshuPublicI18nRouteTest {
             var exchange = MockServerWebExchange.from(request);
             exchange.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, route("tianshu-public-i18n"));
             var forwarded = new AtomicReference<org.springframework.web.server.ServerWebExchange>();
-            new WebFilterChainProxy(security).filter(exchange, current -> filter.filter(current, downstream -> {
+            fixture.security.filter(exchange, current -> filter.filter(current, downstream -> {
                 forwarded.set(downstream);
                 return downstream.getResponse().setComplete();
             })).block(Duration.ofSeconds(3));
@@ -81,7 +80,7 @@ class TianshuPublicI18nRouteTest {
             assertThat(forwarded.get().getRequest().getHeaders().asMultiValueMap()).doesNotContainKeys(HttpHeaders.AUTHORIZATION,
                     HttpHeaders.COOKIE, "X-Egon-Tianshu-Tenant", "tenant_id", "x-egon-user-id");
         }
-        verifyNoInteractions(bindings);
+        verifyNoInteractions(fixture.identities);
     }
 
     @Test void publicRouteIdentityCannotBypassOtherPathsMethodsOrProtectedRoute() {
@@ -97,6 +96,47 @@ class TianshuPublicI18nRouteTest {
         protectedRoute.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, route("tianshu-admin"));
         assertUnauthorized(protectedRoute);
         assertUnauthorized(exchange(HttpMethod.GET, PUBLIC_PATH));
+    }
+
+    @Test void permissionSnapshotRouteAddsOnlyTheFixedUserEndpointForItsApplication() {
+        for (String profile : List.of("application.yml", "application-local.yml")) {
+            var yaml = new YamlPropertiesFactoryBean();
+            yaml.setResources(new FileSystemResource("src/main/resources/" + profile));
+            var properties = yaml.getObject();
+            for (String routeId : List.of("jianshen-about", "jianshen-about-browser")) {
+                String prefix = properties.stringPropertyNames().stream()
+                        .filter(key -> key.startsWith(GatewayProperties.PREFIX + ".routes[") && key.endsWith(".id")
+                                && routeId.equals(properties.getProperty(key)))
+                        .findFirst().orElseThrow().replaceAll("\\.id$", "");
+                String browser = routeId.endsWith("-browser") ? "/apps/edge-jianshen" : "";
+                assertThat(properties.getProperty(prefix + ".predicates[0]"))
+                        .isEqualTo("Path=" + browser + "/api/v1/auth/about," + browser + "/api/v1/authorization/effective-permissions");
+                assertThat(properties.getProperty(prefix + ".metadata.edge-app-alias")).isEqualTo("edge-jianshen");
+                assertThat(properties.getProperty(prefix + ".uri")).isEqualTo("${egon.yuheng.edge.resources.edge-jianshen.resource-uri}");
+            }
+            assertThat(properties.getProperty("egon.yuheng.edge.resources.edge-jianshen.request-paths[2]"))
+                    .isEqualTo("/api/v1/authorization/effective-permissions");
+        }
+    }
+
+    @Test void publicApplicationLoginWordsAcceptOnlyExactGetAndLocaleWithoutAmbientCredentials() throws Exception {
+        var fixture = new EdgeSecurityFixture(directory);
+        String path = EdgeSecurityConfiguration.PUBLIC_APP_I18N_PATH;
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get(path + "?locale=zh-CN")
+                .header(HttpHeaders.COOKIE, "__Secure-egon_access_edge-tianshu=expired")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer expired"));
+        exchange.getAttributes().put(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR, route("tianshu-public-auth-i18n-browser"));
+        var forwarded = new AtomicReference<org.springframework.web.server.ServerWebExchange>();
+        fixture.security.filter(exchange, current -> filter.filter(current, downstream -> {
+            forwarded.set(downstream); return downstream.getResponse().setComplete();
+        })).block(Duration.ofSeconds(3));
+        assertThat(forwarded.get()).isNotNull();
+        assertThat(forwarded.get().getRequest().getHeaders().asMultiValueMap()).doesNotContainKeys(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION);
+        verifyNoInteractions(fixture.identities);
+        for (String suffix : List.of("/", "?pageCode=arbitrary", "?locale=en-US&locale=zh-CN", "?tenantId=1001")) {
+            assertThat(EdgeSecurityConfiguration.publicI18n(MockServerWebExchange.from(MockServerHttpRequest.get(path + suffix)))).isFalse();
+        }
+        assertThat(EdgeSecurityConfiguration.publicI18n(MockServerWebExchange.from(MockServerHttpRequest.post(path)))).isFalse();
     }
 
     private void assertUnauthorized(MockServerWebExchange exchange) {

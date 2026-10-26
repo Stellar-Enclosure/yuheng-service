@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.runtime.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.time.Instant;
 import java.util.List;
@@ -26,6 +33,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.targetReleaseId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.targetReleaseId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String targetReleaseId,
         /**
          * 中文说明：保存 target发布Status 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -33,6 +46,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.targetReleaseStatus", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.targetReleaseStatus",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String targetReleaseStatus,
         /**
          * 中文说明：保存 引擎NodeCount 对应的状态、依赖或配置值；字段类型为 {@code int}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -40,6 +59,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.engineNodeCount", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.engineNodeCount",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         int engineNodeCount,
         /**
          * 中文说明：保存 ready引擎NodeCount 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -47,6 +72,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.readyEngineNodeCount", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.readyEngineNodeCount",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long readyEngineNodeCount,
         /**
          * 中文说明：保存 consistent 对应的状态、依赖或配置值；字段类型为 {@code boolean}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -54,6 +85,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.consistent", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.consistent",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         boolean consistent,
         /**
          * 中文说明：保存 observedAt 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -61,6 +98,13 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.observedAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.observedAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant observedAt,
         /**
          * 中文说明：保存 source 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -68,6 +112,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.source", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.source",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String source,
         /**
          * 中文说明：保存 stale 对应的状态、依赖或配置值；字段类型为 {@code boolean}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -75,6 +125,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.stale", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.stale",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         boolean stale,
         /**
          * 中文说明：保存 nodes 对应的状态、依赖或配置值；字段类型为 {@code List<GatewayEngineNodeConsistencyVO>}，由 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 在其生命周期内读取或更新。
@@ -82,6 +138,12 @@ public record GatewayRuntimeConsistencyVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayRuntimeConsistencyVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRuntimeConsistencyVO.nodes", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.nodes",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         List<GatewayEngineNodeConsistencyVO> nodes
 ) {
 

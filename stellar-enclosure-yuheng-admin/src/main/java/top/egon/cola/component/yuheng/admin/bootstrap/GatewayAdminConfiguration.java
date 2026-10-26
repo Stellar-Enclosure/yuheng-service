@@ -71,14 +71,23 @@ import java.util.Set;
 })
 public class GatewayAdminConfiguration {
 
-    /** Selects the host connection for Common cache alongside the Tianshu client. */
-    @Bean(name = "redissonClient", destroyMethod = "")
-    @ConditionalOnMissingBean(name = "redissonClient")
-    @ConditionalOnProperty(prefix = "egon.cola.component.cache", name = "enabled", havingValue = "true", matchIfMissing = true)
+    /** Host-owned business cache connection; authorization and revocation continue through their SQL authority clients. */
+    @Bean(name = "redissonClient", destroyMethod = "shutdown")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(name = "redissonClient")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "egon.cola.component.cache", name = "enabled", havingValue = "true", matchIfMissing = true)
     org.redisson.api.RedissonClient applicationCacheRedissonClient(
-            @Qualifier("rbac3RuntimeRedissonClient") org.redisson.api.RedissonClient client) {
-        return client;
+            @org.springframework.beans.factory.annotation.Value("${yuheng.admin.cache.redis.address}") String address,
+            @org.springframework.beans.factory.annotation.Value("${yuheng.admin.cache.redis.database:0}") int database,
+            @org.springframework.beans.factory.annotation.Value("${yuheng.admin.cache.redis.password-file:}") String passwordFile) throws java.io.IOException {
+        var endpoint = java.net.URI.create(address);
+        if (!java.util.Set.of("redis", "rediss").contains(endpoint.getScheme()) || endpoint.getHost() == null
+                || endpoint.getUserInfo() != null || database < 0) throw new IllegalArgumentException("YUHENG_CACHE_REDIS_CONFIGURATION_INVALID");
+        var config = new org.redisson.config.Config();
+        var server = config.useSingleServer().setAddress(address).setDatabase(database);
+        if (!passwordFile.isBlank()) server.setPassword(java.nio.file.Files.readString(java.nio.file.Path.of(passwordFile)).strip());
+        return org.redisson.Redisson.create(config);
     }
+
 
     /** Supplies projection timestamps regardless of whether OpenAPI discovery is enabled. */
     @Bean("gatewayProjectionClock")

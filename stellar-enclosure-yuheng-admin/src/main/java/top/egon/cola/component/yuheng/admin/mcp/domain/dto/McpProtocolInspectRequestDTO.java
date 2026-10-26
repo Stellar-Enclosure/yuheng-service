@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.constraints.NotBlank;
@@ -23,6 +30,12 @@ public record McpProtocolInspectRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpProtocolInspectRequestDTO.dialect", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.dialect",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_TEST)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_TEST))
         @NotBlank String dialect,
         /**
          * 中文说明：保存 方法 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO} 在其生命周期内读取或更新。
@@ -30,6 +43,12 @@ public record McpProtocolInspectRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpProtocolInspectRequestDTO.method", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.method",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_TEST)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_TEST))
         @NotBlank String method,
         /**
          * 中文说明：保存 params 对应的状态、依赖或配置值；字段类型为 {@code Map<String, Object>}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO} 在其生命周期内读取或更新。
@@ -37,6 +56,12 @@ public record McpProtocolInspectRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpProtocolInspectRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpProtocolInspectRequestDTO.params", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.params",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_TEST)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_TEST))
         @Schema
         @NotNull Map<String, Object> params
 ) {

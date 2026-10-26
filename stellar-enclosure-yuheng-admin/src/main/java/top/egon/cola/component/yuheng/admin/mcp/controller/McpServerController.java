@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -66,6 +72,11 @@ public class McpServerController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpServerController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -85,6 +96,11 @@ public class McpServerController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.create", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.create",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpServerController.create")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -111,6 +127,11 @@ public class McpServerController {
      * @param id 参数 id；parameter id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpServerController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -130,6 +151,11 @@ public class McpServerController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 update 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.update", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.update",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpServerController.update")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -160,6 +186,11 @@ public class McpServerController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 delete 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.delete", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.delete",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpServerController.delete")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -187,6 +218,11 @@ public class McpServerController {
      * @param id 参数 id；parameter id。
      * @return 返回 validate 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.validate", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.validate",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpServerController.validate")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -204,6 +240,11 @@ public class McpServerController {
      * @param id 参数 id；parameter id。
      * @return 返回 preview 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpServer.preview", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpServer.preview",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpServerController.preview")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

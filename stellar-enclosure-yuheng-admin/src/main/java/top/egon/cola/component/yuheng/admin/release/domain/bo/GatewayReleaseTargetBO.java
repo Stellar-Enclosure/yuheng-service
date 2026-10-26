@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.release.domain.bo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.time.Instant;
 import top.egon.cola.component.yuheng.contract.runtime.GatewayEngineRoleEnum;
 import lombok.experimental.Accessors;
@@ -21,12 +28,61 @@ import lombok.NoArgsConstructor;
 @Accessors(chain = true)
 public class GatewayReleaseTargetBO {
 
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.instanceId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.instanceId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private String instanceId;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.leaseId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.leaseId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private String leaseId;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.status", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.status",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private String status;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.appliedVersion", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.appliedVersion",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private Long appliedVersion;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.appliedArtifactSha256", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.appliedArtifactSha256",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private String appliedArtifactSha256;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.errorCode", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.errorCode",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private String errorCode;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.observedAt", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.observedAt",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant observedAt;
+    @PermissionResource(key = "yuheng.field.GatewayReleaseTargetBO.engineRole", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.engineRole",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
     private GatewayEngineRoleEnum engineRole;
 }

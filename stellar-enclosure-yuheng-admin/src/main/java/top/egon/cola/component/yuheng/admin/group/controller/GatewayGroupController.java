@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.group.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -61,6 +67,11 @@ public class GatewayGroupController {
      * 用法 / Usage: 调用方式 / Usage: {@code GatewayGroupController.list(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayGroupController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -79,6 +90,11 @@ public class GatewayGroupController {
      * @param requestId 参数 请求Id；parameter request id。
      * @return 返回 create 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.create", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.create",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.GROUPS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.GROUPS_WRITE)
     @Operation(operationId = "admin.gatewayGroupController.create")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -111,6 +127,11 @@ public class GatewayGroupController {
      * @param id 参数 id；parameter id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayGroupController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -131,6 +152,11 @@ public class GatewayGroupController {
      * @param requestId 参数 请求Id；parameter request id。
      * @return 返回 update 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.update", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.update",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.GROUPS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.GROUPS_WRITE)
     @Operation(operationId = "admin.gatewayGroupController.update")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -163,6 +189,11 @@ public class GatewayGroupController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 enable 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.enable", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.enable",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.GROUPS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.GROUPS_WRITE)
     @Operation(operationId = "admin.gatewayGroupController.enable")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -188,6 +219,11 @@ public class GatewayGroupController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 disable 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayGroup.disable", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayGroup.disable",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.GROUPS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.GROUPS_WRITE)
     @Operation(operationId = "admin.gatewayGroupController.disable")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

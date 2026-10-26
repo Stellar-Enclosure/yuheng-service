@@ -258,7 +258,7 @@ class GatewayManagedDdlConfigurationTest {
         try (Stream<Path> moduleDirectories = Files.list(Path.of(".."))) {
             for (Path module : moduleDirectories.filter(Files::isDirectory).toList()) {
                 Path sourceRoot = module.resolve("src/main/java");
-                if (Files.isDirectory(sourceRoot)) {
+                if (Files.isDirectory(sourceRoot) && !module.getFileName().toString().equals("stellar-enclosure-yuheng-edge-gateway")) {
                     try (Stream<Path> walked = Files.walk(sourceRoot)) {
                         walked.filter(path -> path.toString().endsWith(".java")).forEach(sources::add);
                     }

@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.routing.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.constraints.NotBlank;
@@ -28,6 +35,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.operationId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.operationId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         @NotBlank String operationId,
         /**
          * 中文说明：保存 content 对应的状态、依赖或配置值；字段类型为 {@code Map<String, Object>}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 在其生命周期内读取或更新。
@@ -35,6 +48,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.content", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.content",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         @Schema
         @NotNull Map<String, Object> content,
         /**
@@ -43,6 +62,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.enabled", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.enabled",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         boolean enabled,
         /**
          * 中文说明：保存 expectedRevision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 在其生命周期内读取或更新。
@@ -50,6 +75,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.expectedRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expectedRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         @PositiveOrZero long expectedRevision,
         /**
          * 中文说明：保存 idempotency键 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 在其生命周期内读取或更新。
@@ -57,6 +88,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.idempotencyKey", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.idempotencyKey",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         @NotBlank String idempotencyKey,
         /**
          * 中文说明：保存 changeReason 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 在其生命周期内读取或更新。
@@ -64,6 +101,12 @@ public record GatewayDraftRouteRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftRouteRequestDTO.changeReason", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.changeReason",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         @NotBlank String changeReason
 ) {
 }

@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.catalog.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -62,6 +68,11 @@ public class GatewayCatalogController {
      * @param applicationId 参数 applicationId；parameter application id。
      * @return 返回 目录 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.catalog", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.catalog",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayCatalogController.catalog")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -81,6 +92,11 @@ public class GatewayCatalogController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create接口Group 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.createInterfaceGroup", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.createInterfaceGroup",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CATALOG_WRITE)
     @Operation(operationId = "admin.gatewayCatalogController.createInterfaceGroup")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -119,6 +135,11 @@ public class GatewayCatalogController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create操作 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.createOperation", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.createOperation",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CATALOG_WRITE)
     @Operation(operationId = "admin.gatewayCatalogController.createOperation")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -145,6 +166,11 @@ public class GatewayCatalogController {
      * @param operationId 参数 操作Id；parameter operation id。
      * @return 返回 操作 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.operation", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.operation",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayCatalogController.operation")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -164,6 +190,11 @@ public class GatewayCatalogController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 update元数据 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.updateMetadata", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.updateMetadata",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CATALOG_WRITE)
     @Operation(operationId = "admin.gatewayCatalogController.updateMetadata")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -195,6 +226,11 @@ public class GatewayCatalogController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 update定义 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.updateDefinition", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.updateDefinition",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CATALOG_WRITE)
     @Operation(operationId = "admin.gatewayCatalogController.updateDefinition")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -221,6 +257,11 @@ public class GatewayCatalogController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 deprecate 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCatalog.deprecate", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCatalog.deprecate",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CATALOG_WRITE)
     @Operation(operationId = "admin.gatewayCatalogController.deprecate")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

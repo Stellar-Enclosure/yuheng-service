@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.observability.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.time.Instant;
 
@@ -22,6 +29,13 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.time", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.time",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant time,
         /**
          * 中文说明：保存 requests 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 在其生命周期内读取或更新。
@@ -29,6 +43,12 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.requests", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.requests",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long requests,
         /**
          * 中文说明：保存 errors 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 在其生命周期内读取或更新。
@@ -36,6 +56,12 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.errors", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.errors",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long errors,
         /**
          * 中文说明：保存 p50 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 在其生命周期内读取或更新。
@@ -43,6 +69,12 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.p50", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.p50",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long p50,
         /**
          * 中文说明：保存 p95 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 在其生命周期内读取或更新。
@@ -50,6 +82,12 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.p95", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.p95",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long p95,
         /**
          * 中文说明：保存 p99 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 在其生命周期内读取或更新。
@@ -57,6 +95,12 @@ public record GatewayRequestPointDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayRequestPointDTO.p99", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.p99",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long p99
 ) {
 }

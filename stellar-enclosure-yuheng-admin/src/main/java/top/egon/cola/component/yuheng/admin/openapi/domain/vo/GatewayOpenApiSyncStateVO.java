@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.openapi.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -11,22 +18,127 @@ import java.util.regex.Pattern;
  * Provider 地址、凭证或响应体。</p>
  */
 public record GatewayOpenApiSyncStateVO(
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.id", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.id",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String id,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.applicationId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.applicationId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String applicationId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.buildId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.buildId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String buildId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.artifactVersion", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.artifactVersion",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String artifactVersion,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.openapiGroup", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.openapiGroup",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String openapiGroup,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.status", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.status",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String status,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.snapshotId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.snapshotId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String snapshotId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.definitionSetId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.definitionSetId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String definitionSetId,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.operationCount", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.operationCount",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         Integer operationCount,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.schemaCount", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.schemaCount",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         Integer schemaCount,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.canonicalSha256", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.canonicalSha256",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String canonicalSha256,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.lastErrorCode", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.lastErrorCode",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String lastErrorCode,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.lastErrorMessage", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.lastErrorMessage",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String lastErrorMessage,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.sourceType", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.sourceType",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String sourceType,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.lastAttemptAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.lastAttemptAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant lastAttemptAt,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.lastSuccessAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.lastSuccessAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant lastSuccessAt,
+        @PermissionResource(key = "yuheng.field.GatewayOpenApiSyncStateVO.nextRetryAt", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.nextRetryAt",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant nextRetryAt
 ) {
 

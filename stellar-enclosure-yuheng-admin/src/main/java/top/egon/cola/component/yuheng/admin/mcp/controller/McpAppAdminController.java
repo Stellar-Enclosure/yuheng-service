@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -61,6 +67,11 @@ public class McpAppAdminController {
      */
     @org.springframework.beans.factory.annotation.Qualifier("mcpControlPlaneService")
     private final McpControlPlaneService service;
+    private final top.egon.cola.platform.tianquan.jianshen.starter.field.PermissionFieldBindingGuard fields;
+
+    private static final Set<String> UPLOAD_FIELDS = Set.of("gatewayGroupId", "appCode", "version", "displayName",
+            "resourceUri", "mimeType", "contentSecurityPolicy", "permissions", "allowedOrigins", "expectedRevision",
+            "expectedDraftRevision", "changeReason", "artifact");
 
 
     /**
@@ -71,6 +82,11 @@ public class McpAppAdminController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpAppAdmin.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpAppAdmin.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpAppAdminController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -90,6 +106,11 @@ public class McpAppAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 register 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpAppAdmin.register", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpAppAdmin.register",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpAppAdminController.register")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -130,6 +151,11 @@ public class McpAppAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 upload 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpAppAdmin.upload", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpAppAdmin.upload",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpAppAdminController.upload")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -155,6 +181,7 @@ public class McpAppAdminController {
             @RequestPart("artifact") MultipartFile artifact,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             AdminActor actor) throws IOException {
+        requireUploadFields();
         return service.uploadArtifact(
                 new top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadDTO(
                         gatewayGroupId,
@@ -185,6 +212,11 @@ public class McpAppAdminController {
      * @param id 参数 id；parameter id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpAppAdmin.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpAppAdmin.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpAppAdminController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -205,6 +237,11 @@ public class McpAppAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 revoke 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpAppAdmin.revoke", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpAppAdmin.revoke",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpAppAdminController.revoke")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -229,5 +266,23 @@ public class McpAppAdminController {
         );
     }
 
+
+    private void requireUploadFields() {
+        Set<String> submitted = UPLOAD_FIELDS;
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
+                instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
+            var request = servlet.getRequest();
+            submitted = new java.util.HashSet<>(request.getParameterMap().keySet());
+            if (request instanceof org.springframework.web.multipart.MultipartHttpServletRequest multipart) {
+                submitted.addAll(multipart.getMultiFileMap().keySet());
+            }
+            try { for (var part : request.getParts()) submitted.add(part.getName()); }
+            catch (jakarta.servlet.ServletException | IOException failure) {
+                throw new IllegalArgumentException("MCP_UPLOAD_PARTS_UNAVAILABLE", failure);
+            }
+        }
+        fields.require(top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadCommandDTO.class,
+                new top.egon.cola.platform.tianquan.jianshen.starter.field.SubmittedFieldSet(submitted), UPLOAD_FIELDS);
+    }
 
 }

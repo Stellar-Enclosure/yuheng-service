@@ -49,7 +49,16 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmProtocolEnum;
 @Configuration(value = "llmGatewayConfiguration", proxyBeanMethods = false)
 @EnableConfigurationProperties(LlmGatewayProperties.class)
 @MapperScan("top.egon.cola.component.yuheng.llm.proxy.dao")
-public class LlmGatewayConfiguration {
+public class LlmGatewayConfiguration implements org.springframework.web.servlet.config.annotation.WebMvcConfigurer {
+
+    /** Keep native protocol trees and enum wire values on the same Jackson codec as streaming and error encoders. */
+    @Override
+    public void extendMessageConverters(java.util.List<org.springframework.http.converter.HttpMessageConverter<?>> converters) {
+        int jsonIndex = 0;
+        while (jsonIndex < converters.size() && !converters.get(jsonIndex).canRead(java.util.Map.class, org.springframework.http.MediaType.APPLICATION_JSON)) jsonIndex++;
+        converters.add(jsonIndex, new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(objectMapper));
+    }
+
 
     /** 中文说明：四种同协议 Strategy 的具名注册表键值，Step 11 的实现必须使用这些 bean 名。 English summary: the named registry entries of the four same-protocol Strategies, which Step 11's implementations must adopt as their bean names. */
     private static final String OPENAI_CHAT_STRATEGY_BEAN = "openAiChatProtocolStrategy";

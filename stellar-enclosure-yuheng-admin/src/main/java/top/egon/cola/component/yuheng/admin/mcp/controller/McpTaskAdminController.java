@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -62,6 +68,11 @@ public class McpTaskAdminController {
      * @param clientId 参数 客户端Id；parameter client id。
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpTaskAdmin.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpTaskAdmin.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_RUNTIME_READ)
     @Operation(operationId = "admin.mcpTaskAdminController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -80,6 +91,11 @@ public class McpTaskAdminController {
      * @param id 参数 id；parameter id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpTaskAdmin.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpTaskAdmin.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_RUNTIME_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_RUNTIME_READ)
     @Operation(operationId = "admin.mcpTaskAdminController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -99,6 +115,11 @@ public class McpTaskAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 cancel 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpTaskAdmin.cancel", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpTaskAdmin.cancel",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpTaskAdminController.cancel")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

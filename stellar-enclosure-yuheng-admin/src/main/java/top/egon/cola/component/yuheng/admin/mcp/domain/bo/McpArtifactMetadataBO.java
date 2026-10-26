@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.bo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
@@ -22,20 +29,111 @@ import lombok.NoArgsConstructor;
 @Accessors(chain = true)
 public class McpArtifactMetadataBO {
 
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.id", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.id",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String id;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.gatewayGroupId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.gatewayGroupId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String gatewayGroupId;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.appCode", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.appCode",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String appCode;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.version", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.version",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String version;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.displayName", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.displayName",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String displayName;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.resourceUri", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.resourceUri",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String resourceUri;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.artifactReference", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.artifactReference",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String artifactReference;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.sha256", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.sha256",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String sha256;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.sizeBytes", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.sizeBytes",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private long sizeBytes;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.mimeType", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.mimeType",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String mimeType;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.contentSecurityPolicy", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.contentSecurityPolicy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String contentSecurityPolicy;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.permissions", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.permissions",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private Set<String> permissions;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.allowedOrigins", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.allowedOrigins",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private Set<String> allowedOrigins;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.createdBy", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.createdBy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String createdBy;
+    @PermissionResource(key = "yuheng.field.McpArtifactMetadataBO.createdAt", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.createdAt",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private Instant createdAt;
 
     /**

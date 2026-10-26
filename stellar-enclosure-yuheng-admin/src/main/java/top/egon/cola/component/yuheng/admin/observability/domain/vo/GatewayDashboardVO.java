@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.observability.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayProtocolCallDTO;
 import top.egon.cola.component.yuheng.admin.observability.domain.dto.GatewayRequestPointDTO;
@@ -29,6 +36,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.gatewayGroups", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.gatewayGroups",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long gatewayGroups,
         /**
          * 中文说明：保存 readyEngines 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -36,6 +49,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.readyEngines", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.readyEngines",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long readyEngines,
         /**
          * 中文说明：保存 totalEngines 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -43,6 +62,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.totalEngines", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.totalEngines",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long totalEngines,
         /**
          * 中文说明：保存 inconsistentGroups 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -50,6 +75,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.inconsistentGroups", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.inconsistentGroups",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long inconsistentGroups,
         /**
          * 中文说明：保存 activeProviders 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -57,6 +88,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.activeProviders", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.activeProviders",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long activeProviders,
         /**
          * 中文说明：保存 abnormalProviders 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -64,6 +101,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.abnormalProviders", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.abnormalProviders",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         long abnormalProviders,
         /**
          * 中文说明：保存 发布SuccessRate 对应的状态、依赖或配置值；字段类型为 {@code double}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -71,6 +114,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.releaseSuccessRate", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.releaseSuccessRate",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         double releaseSuccessRate,
         /**
          * 中文说明：保存 请求Series 对应的状态、依赖或配置值；字段类型为 {@code List<GatewayRequestPointDTO>}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -78,6 +127,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.requestSeries", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.requestSeries",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         List<GatewayRequestPointDTO> requestSeries,
         /**
          * 中文说明：保存 protocolCalls 对应的状态、依赖或配置值；字段类型为 {@code List<GatewayProtocolCallDTO>}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -85,6 +140,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.protocolCalls", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.protocolCalls",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         List<GatewayProtocolCallDTO> protocolCalls,
         /**
          * 中文说明：保存 可观测性State 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 在其生命周期内读取或更新。
@@ -92,6 +153,12 @@ public record GatewayDashboardVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayDashboardVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDashboardVO.observabilityState", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.observabilityState",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
         String observabilityState
 ) {
 

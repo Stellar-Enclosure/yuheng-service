@@ -9,17 +9,6 @@ server:
 spring:
   application:
     name: stellar-enclosure-yuheng-edge-gateway
-  session:
-    timeout: 30m
-    redis:
-      namespace: egon:bff:session:v3-local
-      flush-mode: on-save
-  data:
-    redis:
-      url: ${EGON_TIANQUAN_SHOUBING_REVOCATION_PRIMARY_ENDPOINT:redis://127.0.0.1:6379}
-      username: ${EGON_TIANQUAN_SHOUBING_REDIS_USERNAME}
-      password: ${EGON_TIANQUAN_SHOUBING_REDIS_PASSWORD}
-      timeout: 500ms
   security:
     oauth2:
       client:
@@ -30,221 +19,337 @@ spring:
             client-secret: ${EGON_YUHENG_EDGE_UI_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-ui/auth/callback"
+            scope: [openid, profile, offline_access]
           edge-ui-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_UI_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_UI_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-ui/auth/callback"
+            scope: [openid, profile, offline_access]
           edge-shoubing-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_SHOUBING_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_SHOUBING_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - tianquan-shoubing:bootstrap:read
-              - tianquan-shoubing:oauth-client:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-shoubing/auth/callback"
+            scope: [openid, profile, offline_access, tianquan-shoubing:bootstrap:read, tianquan-shoubing:oauth-client:read]
           edge-shoubing-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_SHOUBING_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_SHOUBING_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - tianquan-shoubing:bootstrap:read
-              - tianquan-shoubing:oauth-client:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-shoubing/auth/callback"
+            scope: [openid, profile, offline_access, tianquan-shoubing:bootstrap:read, tianquan-shoubing:oauth-client:read]
           edge-jianshen-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_JIANSHEN_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_JIANSHEN_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - system:about:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-jianshen/auth/callback"
+            scope: [openid, profile, offline_access, system:about:read]
           edge-jianshen-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_JIANSHEN_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_JIANSHEN_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - system:about:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-jianshen/auth/callback"
+            scope: [openid, profile, offline_access, system:about:read]
           edge-tianshu-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_TIANSHU_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_TIANSHU_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - TIANSHU_READ
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-tianshu/auth/callback"
+            scope: [openid, profile, offline_access, TIANSHU_READ]
           edge-tianshu-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_TIANSHU_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_TIANSHU_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - TIANSHU_READ
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-tianshu/auth/callback"
+            scope: [openid, profile, offline_access, TIANSHU_READ]
           edge-yuheng-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_YUHENG_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_YUHENG_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:read
-          edge-yaoguang-a:
-            provider: edge-issuer-a
-            client-id: ${EGON_YUHENG_EDGE_YAOGUANG_A_CLIENT_ID}
-            client-secret: ${EGON_YUHENG_EDGE_YAOGUANG_A_CLIENT_SECRET}
-            authorization-grant-type: authorization_code
-            client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:knowledge:read
-              - yuheng:knowledge:write
-              - yuheng:knowledge:admin
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-yuheng/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:read]
           edge-yuheng-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_YUHENG_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_YUHENG_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-yuheng/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:read]
+          edge-yaoguang-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_YAOGUANG_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_YAOGUANG_A_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            client-authentication-method: client_secret_basic
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-yaoguang/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:knowledge:read, yuheng:knowledge:write, yuheng:knowledge:admin]
           edge-yaoguang-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_YAOGUANG_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_YAOGUANG_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:knowledge:read
-              - yuheng:knowledge:write
-              - yuheng:knowledge:admin
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-yaoguang/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:knowledge:read, yuheng:knowledge:write, yuheng:knowledge:admin]
           edge-biz-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_BIZ_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_BIZ_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - ${EGON_YUHENG_EDGE_BIZ_USER_SCOPE}
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-biz/auth/callback"
+            scope: [openid, profile, offline_access, "${EGON_YUHENG_EDGE_BIZ_USER_SCOPE}"]
           edge-biz-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_BIZ_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_BIZ_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - ${EGON_YUHENG_EDGE_BIZ_USER_SCOPE}
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-biz/auth/callback"
+            scope: [openid, profile, offline_access, "${EGON_YUHENG_EDGE_BIZ_USER_SCOPE}"]
           edge-mcp-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_MCP_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_MCP_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - ${EGON_YUHENG_EDGE_MCP_USER_SCOPE}
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-mcp/auth/callback"
+            scope: [openid, profile, offline_access, "${EGON_YUHENG_EDGE_MCP_USER_SCOPE}"]
           edge-mcp-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_MCP_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_MCP_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - ${EGON_YUHENG_EDGE_MCP_USER_SCOPE}
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-mcp/auth/callback"
+            scope: [openid, profile, offline_access, "${EGON_YUHENG_EDGE_MCP_USER_SCOPE}"]
           edge-llm-a:
             provider: edge-issuer-a
             client-id: ${EGON_YUHENG_EDGE_LLM_A_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_LLM_A_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:llm:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-llm/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:llm:read]
           edge-llm-b:
             provider: edge-issuer-b
             client-id: ${EGON_YUHENG_EDGE_LLM_B_CLIENT_ID}
             client-secret: ${EGON_YUHENG_EDGE_LLM_B_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
-            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/login/oauth2/code/{registrationId}"
-            scope:
-              - openid
-              - profile
-              - offline_access
-              - yuheng:llm:read
+            redirect-uri: "${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}/apps/edge-llm/auth/callback"
+            scope: [openid, profile, offline_access, yuheng:llm:read]
+          edge-authority-ui-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_UI_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_UI_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-ui-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_UI_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_UI_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-ui-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_UI_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_UI_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-shoubing-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-shoubing-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-shoubing-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_SHOUBING_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-jianshen-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-jianshen-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-jianshen-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_JIANSHEN_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-tianshu-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-tianshu-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-tianshu-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_TIANSHU_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yuheng-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yuheng-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yuheng-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YUHENG_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yaoguang-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yaoguang-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-yaoguang-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_YAOGUANG_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-biz-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-biz-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-biz-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_BIZ_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-mcp-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-mcp-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-mcp-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_MCP_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-llm-a:
+            provider: edge-issuer-a
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_A_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_A_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-llm-b:
+            provider: edge-issuer-b
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_B_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_B_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+          edge-authority-llm-platform:
+            provider: edge-issuer-platform
+            client-id: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_PLATFORM_CLIENT_ID}
+            client-secret: ${EGON_YUHENG_EDGE_AUTHORITY_LLM_PLATFORM_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            client-authentication-method: client_secret_basic
+            scope: [tianquan-shoubing:security-state:resolve, tianquan-shoubing:refresh-context:resolve, tianquan-shoubing:audit:append]
+
         provider:
+          edge-issuer-platform:
+            issuer-uri: ${egon.yuheng.edge.upstreams.authorization-server}/platform
           edge-issuer-a:
             issuer-uri: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
             user-name-attribute: sub
@@ -262,34 +367,156 @@ spring:
           httpclient:
             response-timeout: 5s
           routes:
-            - id: authorization-server
-              uri: ${egon.yuheng.edge.upstreams.authorization-server}
+            - id: shoubing-admin-browser
+              uri: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+              metadata:
+                edge-app-alias: edge-shoubing
               predicates:
-                - Path=/tenants/**,/platform/**
+                - Path=/apps/edge-shoubing/api/v1/tianquan-shoubing/**
+              filters:
+                - EdgeResourceAuthorization=edge-shoubing
+                - StripPrefix=2
             - id: shoubing-admin
               uri: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
               metadata:
-                edge-registration-id: edge-shoubing
+                edge-app-alias: edge-shoubing
               predicates:
                 - Path=/api/v1/tianquan-shoubing/**
               filters:
                 - EdgeResourceAuthorization=edge-shoubing
+            - id: jianshen-admin-browser
+              uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+              metadata:
+                edge-app-alias: edge-jianshen
+              predicates:
+                - Path=/apps/edge-jianshen/api/tianquan-jianshen/v1/**
+              filters:
+                - EdgeResourceAuthorization=edge-jianshen
+                - StripPrefix=2
             - id: jianshen-admin
               uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
               metadata:
-                edge-registration-id: edge-jianshen
+                edge-app-alias: edge-jianshen
               predicates:
                 - Path=/api/tianquan-jianshen/v1/**
               filters:
                 - EdgeResourceAuthorization=edge-jianshen
+            - id: jianshen-about-browser
+              uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+              metadata:
+                edge-app-alias: edge-jianshen
+              predicates:
+                - Path=/apps/edge-jianshen/api/v1/auth/about,/apps/edge-jianshen/api/v1/authorization/effective-permissions
+              filters:
+                - EdgeResourceAuthorization=edge-jianshen
+                - StripPrefix=2
             - id: jianshen-about
               uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
               metadata:
-                edge-registration-id: edge-jianshen
+                edge-app-alias: edge-jianshen
               predicates:
-                - Path=/api/v1/auth/about
+                - Path=/api/v1/auth/about,/api/v1/authorization/effective-permissions
               filters:
                 - EdgeResourceAuthorization=edge-jianshen
+            - id: edge-shoubing-permission-snapshot-browser
+              uri: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+              metadata:
+                edge-app-alias: edge-shoubing
+              predicates:
+                - Path=/apps/edge-shoubing/api/v1/authorization/effective-permissions
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-shoubing
+                - StripPrefix=2
+            - id: edge-tianshu-permission-snapshot-browser
+              uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+              metadata:
+                edge-app-alias: edge-tianshu
+              predicates:
+                - Path=/apps/edge-tianshu/api/v1/authorization/effective-permissions
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-tianshu
+                - StripPrefix=2
+            - id: edge-yuheng-permission-snapshot-browser
+              uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+              metadata:
+                edge-app-alias: edge-yuheng
+              predicates:
+                - Path=/apps/edge-yuheng/api/v1/authorization/effective-permissions
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-yuheng
+                - StripPrefix=2
+            - id: edge-yaoguang-permission-snapshot-browser
+              uri: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+              metadata:
+                edge-app-alias: edge-yaoguang
+              predicates:
+                - Path=/apps/edge-yaoguang/api/v1/authorization/effective-permissions
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-yaoguang
+                - StripPrefix=2
+            - id: jianshen-permission-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+              metadata:
+                edge-app-alias: edge-jianshen
+              predicates:
+                - Path=/apps/edge-jianshen/api/v1/permission-catalogs/**,/apps/edge-jianshen/api/v1/roles/*/permissions
+              filters:
+                - EdgeResourceAuthorization=edge-jianshen
+                - StripPrefix=2
+            - id: edge-shoubing-field-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+              metadata:
+                edge-app-alias: edge-shoubing
+              predicates:
+                - Path=/apps/edge-shoubing/api/v1/authorization/field-catalog
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-shoubing
+                - StripPrefix=2
+            - id: edge-jianshen-field-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+              metadata:
+                edge-app-alias: edge-jianshen
+              predicates:
+                - Path=/apps/edge-jianshen/api/v1/authorization/field-catalog
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-jianshen
+                - StripPrefix=2
+            - id: edge-tianshu-field-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+              metadata:
+                edge-app-alias: edge-tianshu
+              predicates:
+                - Path=/apps/edge-tianshu/api/v1/authorization/field-catalog
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-tianshu
+                - StripPrefix=2
+            - id: edge-yuheng-field-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+              metadata:
+                edge-app-alias: edge-yuheng
+              predicates:
+                - Path=/apps/edge-yuheng/api/v1/authorization/field-catalog
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-yuheng
+                - StripPrefix=2
+            - id: edge-yaoguang-field-catalog-browser
+              uri: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+              metadata:
+                edge-app-alias: edge-yaoguang
+              predicates:
+                - Path=/apps/edge-yaoguang/api/v1/authorization/field-catalog
+                - Method=GET
+              filters:
+                - EdgeResourceAuthorization=edge-yaoguang
+                - StripPrefix=2
             - id: tianshu-public-i18n
               uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
               predicates:
@@ -302,42 +529,100 @@ spring:
                 - RemoveRequestHeader=Authorization
                 - RemoveRequestHeader=Cookie
                 - RemoveRequestHeader=X-Egon-Tianshu-Tenant
+            - id: tianshu-public-auth-i18n-browser
+              uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+              predicates:
+                - name: Path
+                  args:
+                    patterns: /apps/edge-tianshu/api/v1/tianshu/i18n/public/bundle
+                    matchTrailingSlash: false
+                - Method=GET
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RemoveRequestHeader=Cookie
+                - RemoveRequestHeader=X-Egon-Tianshu-Tenant
+                - StripPrefix=2
+            - id: tianshu-admin-browser
+              uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+              metadata:
+                edge-app-alias: edge-tianshu
+              predicates:
+                - Path=/apps/edge-tianshu/api/v1/tianshu/**
+              filters:
+                - EdgeResourceAuthorization=edge-tianshu
+                - StripPrefix=2
             - id: tianshu-admin
               uri: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
               metadata:
-                edge-registration-id: edge-tianshu
+                edge-app-alias: edge-tianshu
               predicates:
                 - Path=/api/v1/tianshu/**
               filters:
                 - EdgeResourceAuthorization=edge-tianshu
+            - id: stellar-enclosure-yaoguang-admin-browser
+              uri: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+              metadata:
+                edge-app-alias: edge-yaoguang
+              predicates:
+                - Path=/apps/edge-yaoguang/api/v1/yuheng/admin/knowledge-bases,/apps/edge-yaoguang/api/v1/yuheng/admin/knowledge-bases/**,/apps/edge-yaoguang/api/v1/yuheng/admin/knowledge-jobs/**,/apps/edge-yaoguang/api/v1/yaoguang/auth/bootstrap
+              filters:
+                - EdgeResourceAuthorization=edge-yaoguang
+                - StripPrefix=2
             - id: stellar-enclosure-yaoguang-admin
               uri: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
               metadata:
-                edge-registration-id: edge-yaoguang
+                edge-app-alias: edge-yaoguang
               predicates:
                 - Path=/api/v1/yuheng/admin/knowledge-bases,/api/v1/yuheng/admin/knowledge-bases/**,/api/v1/yuheng/admin/knowledge-jobs/**,/api/v1/yaoguang/auth/bootstrap
               filters:
                 - EdgeResourceAuthorization=edge-yaoguang
+            - id: stellar-enclosure-yuheng-admin-browser
+              uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+              metadata:
+                edge-app-alias: edge-yuheng
+              predicates:
+                - Path=/apps/edge-yuheng/api/v1/yuheng/admin/**
+              filters:
+                - EdgeResourceAuthorization=edge-yuheng
+                - StripPrefix=2
             - id: stellar-enclosure-yuheng-admin
               uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
               metadata:
-                edge-registration-id: edge-yuheng
+                edge-app-alias: edge-yuheng
               predicates:
                 - Path=/api/v1/yuheng/admin/**
               filters:
                 - EdgeResourceAuthorization=edge-yuheng
+            - id: yuheng-bootstrap-browser
+              uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+              metadata:
+                edge-app-alias: edge-yuheng
+              predicates:
+                - Path=/apps/edge-yuheng/api/v1/auth/bootstrap
+              filters:
+                - EdgeResourceAuthorization=edge-yuheng
+                - StripPrefix=2
             - id: yuheng-bootstrap
               uri: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
               metadata:
-                edge-registration-id: edge-yuheng
+                edge-app-alias: edge-yuheng
               predicates:
                 - Path=/api/v1/auth/bootstrap
               filters:
                 - EdgeResourceAuthorization=edge-yuheng
+            - id: yuheng-biz-browser
+              uri: ${egon.yuheng.edge.resources.edge-biz.resource-uri}
+              metadata:
+                edge-app-alias: edge-biz
+              predicates:
+                - Path=/apps/edge-biz/api/biz/**
+              filters:
+                - EdgeResourceAuthorization=edge-biz
+                - StripPrefix=2
             - id: yuheng-biz
               uri: ${egon.yuheng.edge.resources.edge-biz.resource-uri}
               metadata:
-                edge-registration-id: edge-biz
+                edge-app-alias: edge-biz
               predicates:
                 - Path=/api/biz/**
               filters:
@@ -345,7 +630,7 @@ spring:
             - id: yuheng-mcp
               uri: ${egon.yuheng.edge.resources.edge-mcp.resource-uri}
               metadata:
-                edge-registration-id: edge-mcp
+                edge-app-alias: edge-mcp
               predicates:
                 - Path=/mcp/**
               filters:
@@ -353,7 +638,7 @@ spring:
             - id: yuheng-llm
               uri: ${egon.yuheng.edge.resources.edge-llm.resource-uri}
               metadata:
-                edge-registration-id: edge-llm
+                edge-app-alias: edge-llm
               predicates:
                 - Path=/v1/**
               filters:
@@ -362,6 +647,157 @@ spring:
 egon:
   yuheng:
     edge:
+      oauth-state:
+        database:
+          jdbc-url: ${EGON_YUHENG_EDGE_OAUTH_JDBC_URL}
+          username: ${EGON_YUHENG_EDGE_OAUTH_DB_USERNAME}
+          password: ${EGON_YUHENG_EDGE_OAUTH_DB_PASSWORD}
+          maximum-pool-size: 8
+          queued-tasks: 200
+          transaction-timeout-seconds: 5
+        encryption:
+          active-key-id: v1
+          key-files:
+            v1: ${EGON_YUHENG_EDGE_OAUTH_STATE_KEY_FILE}
+      identity-authority:
+        app-id: stellar-enclosure-yuheng-edge-gateway
+        timeout: 3s
+        bindings:
+          ui-a:
+            registration-id: edge-authority-ui-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-ui.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          ui-b:
+            registration-id: edge-authority-ui-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-ui.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          ui-platform:
+            registration-id: edge-authority-ui-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-ui.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          shoubing-a:
+            registration-id: edge-authority-shoubing-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          shoubing-b:
+            registration-id: edge-authority-shoubing-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          shoubing-platform:
+            registration-id: edge-authority-shoubing-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-shoubing.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          jianshen-a:
+            registration-id: edge-authority-jianshen-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          jianshen-b:
+            registration-id: edge-authority-jianshen-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          jianshen-platform:
+            registration-id: edge-authority-jianshen-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-jianshen.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          tianshu-a:
+            registration-id: edge-authority-tianshu-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          tianshu-b:
+            registration-id: edge-authority-tianshu-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          tianshu-platform:
+            registration-id: edge-authority-tianshu-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-tianshu.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yuheng-a:
+            registration-id: edge-authority-yuheng-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yuheng-b:
+            registration-id: edge-authority-yuheng-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yuheng-platform:
+            registration-id: edge-authority-yuheng-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-yuheng.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yaoguang-a:
+            registration-id: edge-authority-yaoguang-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yaoguang-b:
+            registration-id: edge-authority-yaoguang-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          yaoguang-platform:
+            registration-id: edge-authority-yaoguang-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-yaoguang.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          biz-a:
+            registration-id: edge-authority-biz-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-biz.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          biz-b:
+            registration-id: edge-authority-biz-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-biz.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          biz-platform:
+            registration-id: edge-authority-biz-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-biz.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          mcp-a:
+            registration-id: edge-authority-mcp-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-mcp.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          mcp-b:
+            registration-id: edge-authority-mcp-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-mcp.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          mcp-platform:
+            registration-id: edge-authority-mcp-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-mcp.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          llm-a:
+            registration-id: edge-authority-llm-a
+            issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-llm.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          llm-b:
+            registration-id: edge-authority-llm-b
+            issuer: ${EGON_YUHENG_EDGE_OIDC_B_ISSUER}
+            source-resource: ${egon.yuheng.edge.resources.edge-llm.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
+          llm-platform:
+            registration-id: edge-authority-llm-platform
+            issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
+            source-resource: ${egon.yuheng.edge.resources.edge-llm.resource-uri}
+            resource-uri: ${EGON_YUHENG_EDGE_IDENTITY_AUTHORITY_RESOURCE_URI}
       public-origin: ${EGON_YUHENG_EDGE_PUBLIC_ORIGIN}
       default-registration-id: edge-ui
       allowed-return-paths:
@@ -390,8 +826,8 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-shoubing-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-shoubing-b
-          route-ids: [shoubing-admin]
-          request-paths: [/api/v1/tianquan-shoubing/**]
+          route-ids: [shoubing-admin, shoubing-admin-browser, edge-shoubing-permission-snapshot-browser, edge-shoubing-field-catalog-browser]
+          request-paths: [/api/v1/tianquan-shoubing/**, /apps/edge-shoubing/api/v1/authorization/effective-permissions, /apps/edge-shoubing/api/v1/authorization/field-catalog]
           scopes: [openid, profile, offline_access, tianquan-shoubing:bootstrap:read, tianquan-shoubing:oauth-client:read]
           return-path: /xingyuan/tianquan-shoubing/overview
         edge-jianshen:
@@ -401,8 +837,8 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-jianshen-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-jianshen-b
-          route-ids: [jianshen-admin, jianshen-about]
-          request-paths: [/api/tianquan-jianshen/v1/**, /api/v1/auth/about]
+          route-ids: [jianshen-admin, jianshen-about, jianshen-admin-browser, jianshen-about-browser, jianshen-permission-catalog-browser, edge-jianshen-field-catalog-browser]
+          request-paths: [/api/tianquan-jianshen/v1/**, /api/v1/auth/about, /api/v1/authorization/effective-permissions, /api/v1/permission-catalogs/**, /api/v1/roles/**, /apps/edge-jianshen/api/v1/authorization/field-catalog]
           scopes: [openid, profile, offline_access, system:about:read]
           return-path: /xingyuan/tianquan-jianshen/roles
         edge-tianshu:
@@ -412,8 +848,8 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-tianshu-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-tianshu-b
-          route-ids: [tianshu-admin]
-          request-paths: [/api/v1/tianshu/**]
+          route-ids: [tianshu-admin, tianshu-admin-browser, edge-tianshu-permission-snapshot-browser, edge-tianshu-field-catalog-browser]
+          request-paths: [/api/v1/tianshu/**, /apps/edge-tianshu/api/v1/authorization/effective-permissions, /apps/edge-tianshu/api/v1/authorization/field-catalog]
           scopes: [openid, profile, offline_access, TIANSHU_READ]
           return-path: /xingyuan/tianshu/registry
         edge-yuheng:
@@ -423,8 +859,8 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-yuheng-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-yuheng-b
-          route-ids: [stellar-enclosure-yuheng-admin, yuheng-bootstrap]
-          request-paths: [/api/v1/yuheng/admin/**, /api/v1/auth/bootstrap]
+          route-ids: [stellar-enclosure-yuheng-admin, yuheng-bootstrap, stellar-enclosure-yuheng-admin-browser, yuheng-bootstrap-browser, edge-yuheng-permission-snapshot-browser, edge-yuheng-field-catalog-browser]
+          request-paths: [/api/v1/yuheng/admin/**, /api/v1/auth/bootstrap, /apps/edge-yuheng/api/v1/authorization/effective-permissions, /apps/edge-yuheng/api/v1/authorization/field-catalog]
           scopes: [openid, profile, offline_access, yuheng:read]
           return-path: /xingyuan/yuheng/dashboard
         edge-yaoguang:
@@ -434,8 +870,8 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-yaoguang-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-yaoguang-b
-          route-ids: [stellar-enclosure-yaoguang-admin]
-          request-paths: [/api/v1/yuheng/admin/knowledge-bases, /api/v1/yuheng/admin/knowledge-bases/**, /api/v1/yuheng/admin/knowledge-jobs/**, /api/v1/yaoguang/auth/bootstrap]
+          route-ids: [stellar-enclosure-yaoguang-admin, stellar-enclosure-yaoguang-admin-browser, edge-yaoguang-permission-snapshot-browser, edge-yaoguang-field-catalog-browser]
+          request-paths: [/api/v1/yuheng/admin/knowledge-bases, /api/v1/yuheng/admin/knowledge-bases/**, /api/v1/yuheng/admin/knowledge-jobs/**, /api/v1/yaoguang/auth/bootstrap, /apps/edge-yaoguang/api/v1/authorization/effective-permissions, /apps/edge-yaoguang/api/v1/authorization/field-catalog]
           scopes: [openid, profile, offline_access, yuheng:knowledge:read, yuheng:knowledge:write, yuheng:knowledge:admin]
           return-path: /xingyuan/yuheng/knowledge
         edge-biz:
@@ -445,7 +881,7 @@ egon:
           issuer-registration-ids:
             "[${EGON_YUHENG_EDGE_OIDC_ISSUER}]": edge-biz-a
             "[${EGON_YUHENG_EDGE_OIDC_B_ISSUER}]": edge-biz-b
-          route-ids: [yuheng-biz]
+          route-ids: [yuheng-biz, yuheng-biz-browser]
           request-paths: [/api/biz/**]
           scopes: [openid, profile, offline_access, "${EGON_YUHENG_EDGE_BIZ_USER_SCOPE}"]
           return-path: /
@@ -475,24 +911,6 @@ egon:
         authorization-server: ${EGON_YUHENG_EDGE_AUTHORIZATION_SERVER}
         biz-gateway: ${EGON_YUHENG_EDGE_BIZ_GATEWAY}
         mcp-gateway: ${EGON_YUHENG_EDGE_MCP_GATEWAY}
-      session:
-        idle-timeout: 30m
-        absolute-timeout: 8h
-        max-authorized-clients: 100
-        encryption:
-          key-id: ${EGON_YUHENG_EDGE_SESSION_KEY_ID}
-          key-file: ${EGON_YUHENG_EDGE_SESSION_KEY_FILE}
-      refresh:
-        lock-wait: 5s
-        lock-lease: 15s
-        token-timeout: 5s
-      logout:
-        stream: egon:bff:logout-revocation:v1
-        consumer-group: bff-revocation-v1
-        max-pending: 10000
-        poll-interval: 5s
-        claim-idle: 30s
-        timeout: 5s
   cola:
     component:
       yuheng:
@@ -514,22 +932,6 @@ egon:
           resource-uri: ${egon.yuheng.edge.resources.edge-ui.resource-uri}
           platform-audience: platform
           clock-skew: 30s
-          resource-state-key-prefix: "identity:resource-server:"
-          oauth-client-state-key-prefix: "identity:oauth-client:"
-          usage-observation:
-            enabled: true
-            fallback-issuer: ${EGON_YUHENG_EDGE_OIDC_ISSUER}
-            receiver: EDGE
-            allow-local-plaintext: false
-          audit:
-            stream: egon:oauth:audit:v1
-            spool-directory: ${EGON_YUHENG_EDGE_AUDIT_SPOOL_DIRECTORY}
-            spool-max-bytes: 1073741824
-            hmac-key-file: ${EGON_YUHENG_EDGE_AUDIT_HMAC_KEY_FILE}
-            delivery:
-              receipt-ttl: 1h
-              confirmation-timeout: 30s
-              batch-size: 100
           trusted-issuers:
             platform:
               issuer: ${egon.yuheng.edge.upstreams.authorization-server}/platform
@@ -554,11 +956,6 @@ egon:
               tenant-id: ${EGON_YUHENG_EDGE_B_TENANT_ID}
               status: ACTIVE
               trust-version: 1
-          revocation:
-            primary-endpoint: ${EGON_TIANQUAN_SHOUBING_REVOCATION_PRIMARY_ENDPOINT:redis://127.0.0.1:6379}
-            mode: STRICT_SHARED
-            timeout: 500ms
-            epoch: ${EGON_TIANQUAN_SHOUBING_REVOCATION_EPOCH}
 
 springdoc:
   api-docs:
@@ -567,6 +964,4 @@ springdoc:
   group-configs:
     - group: edge-bff
       paths-to-match:
-        - /bff/**
-        - /oauth2/authorization/**
-        - /login/oauth2/code/**
+        - /apps/*/auth/**

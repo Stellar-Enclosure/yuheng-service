@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.routing.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 /**
  * 中文说明：{@code GatewayDraftMutationResultVO} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责MutationResult相关的职责与边界。
@@ -17,6 +24,12 @@ public record GatewayDraftMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftMutationResultVO.revision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.revision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         long revision,
         /**
          * 中文说明：保存 资源Id 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO} 在其生命周期内读取或更新。
@@ -24,6 +37,12 @@ public record GatewayDraftMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftMutationResultVO.resourceId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.resourceId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         String resourceId,
         /**
          * 中文说明：保存 replayed 对应的状态、依赖或配置值；字段类型为 {@code boolean}，由 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO} 在其生命周期内读取或更新。
@@ -31,6 +50,12 @@ public record GatewayDraftMutationResultVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayDraftMutationResultVO.replayed", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.replayed",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.DRAFTS_WRITE))
         boolean replayed
 ) {
 }

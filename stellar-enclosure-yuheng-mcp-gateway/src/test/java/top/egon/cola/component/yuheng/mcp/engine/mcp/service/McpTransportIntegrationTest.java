@@ -79,9 +79,15 @@ public class McpTransportIntegrationTest {
                         if ("UNAVAILABLE".equals(outcome)) {
                             throw new top.egon.cola.platform.tianquan.jianshen.starter.client.Rbac3AuthorizationClient.AuthorizationUnavailableException("controlled-snapshot");
                         }
+                        var granted="ALLOW".equals(outcome) ? request.requiredPermissions() : Set.<String>of();
+                        var expiry=request.expiresAt().minusSeconds(1);
+                        var view=new top.egon.cola.platform.tianquan.jianshen.contract.permission.EffectivePermissionSnapshot(request.issuer(),request.subjectId(),
+                                new top.egon.cola.platform.tianquan.jianshen.contract.permission.CatalogScope("10",request.tenantId(),"xingyuan",code,"default","test"),"1","1","1",
+                                new top.egon.cola.platform.tianquan.jianshen.contract.permission.EffectivePermissionSnapshot.ActiveRoleContext(code,List.of("50"),List.of("50")),
+                                granted.stream().sorted().toList(),expiry);
                         return new top.egon.cola.platform.tianquan.jianshen.contract.authorization.SystemAuthorizationSnapshot(
-                                request.tenantId(), request.subjectId(), "rbac-user", code, 1, 1, List.of(),
-                                "ALLOW".equals(outcome) ? request.requiredPermissions() : Set.of(), Map.of(), Map.of(), "checksum", clock.instant(), clock.instant().plusSeconds(300));
+                                request.tenantId(),request.subjectId(),"1",code,1,1,List.of("50"),null,null,granted,Set.of(),Map.of(),Map.of(),"checksum",clock.instant(),expiry,view,
+                                new top.egon.cola.platform.tianquan.jianshen.contract.authorization.RuntimePolicyBinding("yuheng-mcp-java","1","a".repeat(64),"b".repeat(64),"c".repeat(64)));
                     }, "yuheng-mcp", Duration.ofMinutes(5), clock);
             try (var validation = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
                 var adapter = top.egon.cola.component.yuheng.mcp.engine.mcp.adapter.security.Rbac3McpAuthorizationAdapter.createConfigured(loader,

@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.credential.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -60,6 +66,11 @@ public class GatewayCredentialController {
      * @param applicationId 参数 applicationId；parameter application id。
      * @return 返回 list 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCredential.list", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCredential.list",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayCredentialController.list")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -78,6 +89,11 @@ public class GatewayCredentialController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCredential.create", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCredential.create",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CREDENTIALS_WRITE)
     @Operation(operationId = "admin.gatewayCredentialController.create")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -101,6 +117,11 @@ public class GatewayCredentialController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 rotate 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCredential.rotate", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCredential.rotate",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CREDENTIALS_WRITE)
     @Operation(operationId = "admin.gatewayCredentialController.rotate")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -131,6 +152,11 @@ public class GatewayCredentialController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 revoke 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayCredential.revoke", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayCredential.revoke",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.CREDENTIALS_WRITE)
     @Operation(operationId = "admin.gatewayCredentialController.revoke")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

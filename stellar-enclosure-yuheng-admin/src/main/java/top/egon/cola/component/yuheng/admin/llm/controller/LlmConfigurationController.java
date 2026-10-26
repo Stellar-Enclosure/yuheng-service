@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.llm.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -25,6 +31,7 @@ import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmChannelCommandDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmModelCommandDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.vo.LlmChannelVO;
 import top.egon.cola.component.yuheng.admin.llm.domain.vo.LlmModelVO;
+import top.egon.cola.component.yuheng.admin.llm.domain.vo.GatewayLlmModelVO;
 import top.egon.cola.component.yuheng.admin.llm.service.LlmConfigurationService;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
 import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
@@ -94,6 +101,11 @@ public class LlmConfigurationController {
      * @param size 参数 页大小，默认 20；parameter page size, defaulting to 20.
      * @return 返回 渠道分页投影；returns the paged channel projection.
      */
+    @PermissionResource(key = "yuheng.api.llmConfiguration.listLlmChannels", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.llmConfiguration.listLlmChannels",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.LLM_READ)
     @Operation(operationId = "listLlmChannels")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -121,6 +133,11 @@ public class LlmConfigurationController {
      * @param requestId 参数 可选请求标识，仅用于审计关联；parameter the optional request correlation identifier.
      * @return 返回 已提交渠道投影与创建/替换状态；returns the committed channel projection with its create-or-replace status.
      */
+    @PermissionResource(key = "yuheng.api.llmConfiguration.replaceLlmChannel", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.llmConfiguration.replaceLlmChannel",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.LLM_WRITE)
     @Operation(operationId = "replaceLlmChannel")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -153,14 +170,21 @@ public class LlmConfigurationController {
      * @param size 参数 页大小，默认 20；parameter page size, defaulting to 20.
      * @return 返回 模型分页投影；returns the paged model projection.
      */
+    @PermissionResource(key = "yuheng.api.llmConfiguration.listLlmModelConfigurations", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.llmConfiguration.listLlmModelConfigurations",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.LLM_READ)
     @Operation(operationId = "listLlmModelConfigurations")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/models")
-    public LlmPageVO<LlmModelVO> listLlmModelConfigurations(
+    public LlmPageVO<GatewayLlmModelVO> listLlmModelConfigurations(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return llmConfigurationService.listModels(page, size);
+        var result = llmConfigurationService.listModels(page, size);
+        return LlmPageVO.<GatewayLlmModelVO>builder().items(result.getItems().stream().map(GatewayLlmModelVO::from).toList())
+                .page(result.getPage()).size(result.getSize()).total(result.getTotal()).build();
     }
 
     /**
@@ -178,12 +202,17 @@ public class LlmConfigurationController {
      * @param requestId 参数 可选请求标识，仅用于审计关联；parameter the optional request correlation identifier.
      * @return 返回 已提交模型投影与创建/替换状态；returns the committed model projection with its create-or-replace status.
      */
+    @PermissionResource(key = "yuheng.api.llmConfiguration.replaceLlmModel", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.llmConfiguration.replaceLlmModel",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.LLM_WRITE)
     @Operation(operationId = "replaceLlmModel")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @PutMapping("/models/{modelKey}")
     @PreAuthorize("hasAuthority('SCOPE_yuheng:llm:write') and (hasAnyAuthority('CAP_yuheng:llm:write','CAP_*'))")
-    public ResponseEntity<LlmModelVO> replaceLlmModel(
+    public ResponseEntity<GatewayLlmModelVO> replaceLlmModel(
             @PathVariable String modelKey,
             @Valid @RequestBody LlmModelCommandDTO command,
             AdminActor actor,
@@ -196,7 +225,7 @@ public class LlmConfigurationController {
                 audit(requestId)
         );
         log.debug("YUHENG_LLM_MODEL_REPLACED modelKey={} revision={}", modelKey, view.getRevision());
-        return saved(command.getExpectedRevision(), view);
+        return saved(command.getExpectedRevision(), GatewayLlmModelVO.from(view));
     }
 
     /**

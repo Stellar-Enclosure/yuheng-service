@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.credential.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import top.egon.cola.component.yuheng.admin.application.controller.*;
 import top.egon.cola.component.yuheng.admin.application.domain.dto.*;
@@ -129,6 +136,12 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.id", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.id",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
         String id,
         /**
          * 中文说明：保存 access键 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 在其生命周期内读取或更新。
@@ -136,6 +149,12 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.accessKey", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.accessKey",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
         String accessKey,
         /**
          * 中文说明：保存 secret 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 在其生命周期内读取或更新。
@@ -143,6 +162,12 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.secret", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.secret",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
         String secret,
         /**
          * 中文说明：保存 status 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 在其生命周期内读取或更新。
@@ -150,6 +175,12 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.status", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.status",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
         String status,
         /**
          * 中文说明：保存 validFrom 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 在其生命周期内读取或更新。
@@ -157,6 +188,13 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.validFrom", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.validFrom",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant validFrom,
         /**
          * 中文说明：保存 validUntil 对应的状态、依赖或配置值；字段类型为 {@code Instant}，由 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 在其生命周期内读取或更新。
@@ -164,6 +202,13 @@ public record IssuedGatewayCredentialVO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.credential.domain.vo.IssuedGatewayCredentialVO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.IssuedGatewayCredentialVO.validUntil", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.validUntil",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CREDENTIALS_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.CREDENTIALS_WRITE))
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         Instant validUntil
 ) {
 }

@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.constraints.NotBlank;
@@ -38,6 +45,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.gatewayGroupId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.gatewayGroupId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotBlank String gatewayGroupId,
         /**
          * 中文说明：保存 服务器Id 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -45,6 +58,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.serverId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.serverId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotBlank String serverId,
         /**
          * 中文说明：保存 name 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -52,6 +71,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.name", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.name",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotBlank String name,
         /**
          * 中文说明：保存 description 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -59,6 +84,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.description", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.description",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         String description,
         /**
          * 中文说明：保存 远程MountId 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -66,6 +97,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.remoteMountId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.remoteMountId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotBlank String remoteMountId,
         /**
          * 中文说明：保存 input模式 对应的状态、依赖或配置值；字段类型为 {@code Object}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -73,6 +110,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.inputSchema", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.inputSchema",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @Schema(type = "object",
                 additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
         Object inputSchema,
@@ -82,6 +125,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.outputSchema", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.outputSchema",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @Schema(type = "object",
                 additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
         Object outputSchema,
@@ -91,6 +140,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.annotations", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.annotations",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         Map<String, String> annotations,
         /**
          * 中文说明：保存 requiredPermissions 对应的状态、依赖或配置值；字段类型为 {@code Set<String>}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -98,6 +153,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.requiredPermissions", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.requiredPermissions",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         Set<String> requiredPermissions,
         /**
          * 中文说明：保存 riskLevel 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -105,6 +166,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.riskLevel", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.riskLevel",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         String riskLevel,
         /**
          * 中文说明：保存 idempotent 对应的状态、依赖或配置值；字段类型为 {@code boolean}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -112,6 +179,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.idempotent", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.idempotent",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         boolean idempotent,
         /**
          * 中文说明：保存 enabled 对应的状态、依赖或配置值；字段类型为 {@code Boolean}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -119,6 +192,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.enabled", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.enabled",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotNull Boolean enabled,
         /**
          * 中文说明：保存 expectedRevision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -126,6 +205,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.expectedRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expectedRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @PositiveOrZero long expectedRevision,
         /**
          * 中文说明：保存 expected草稿Revision 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -133,6 +218,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.expectedDraftRevision", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.expectedDraftRevision",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @PositiveOrZero long expectedDraftRevision,
         /**
          * 中文说明：保存 changeReason 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 在其生命周期内读取或更新。
@@ -140,6 +231,12 @@ public record McpRemoteToolRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.McpRemoteToolRequestDTO.changeReason", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.changeReason",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.MCP_WRITE))
         @NotBlank String changeReason
 ) {
 

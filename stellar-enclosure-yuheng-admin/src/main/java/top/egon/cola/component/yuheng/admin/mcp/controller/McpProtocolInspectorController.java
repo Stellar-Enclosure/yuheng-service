@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -58,6 +64,11 @@ public class McpProtocolInspectorController {
      * @param request 参数 请求；parameter request。
      * @return 返回 inspect 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpProtocolInspector.inspect", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpProtocolInspector.inspect",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_TEST)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_TEST)
     @Operation(operationId = "admin.mcpProtocolInspectorController.inspect")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

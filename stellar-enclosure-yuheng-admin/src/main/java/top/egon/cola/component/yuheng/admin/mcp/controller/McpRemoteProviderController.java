@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -67,6 +73,11 @@ public class McpRemoteProviderController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 providers 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.providers", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.providers",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpRemoteProviderController.providers")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -86,6 +97,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create提供方 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.createProvider", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.createProvider",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.createProvider")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -116,6 +132,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 update提供方 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.updateProvider", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.updateProvider",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.updateProvider")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -146,6 +167,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 delete提供方 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.deleteProvider", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.deleteProvider",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.deleteProvider")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -173,6 +199,11 @@ public class McpRemoteProviderController {
      * @param id 参数 id；parameter id。
      * @return 返回 discover 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.discover", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.discover",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_TEST)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_TEST)
     @Operation(operationId = "admin.mcpRemoteProviderController.discover")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -191,6 +222,11 @@ public class McpRemoteProviderController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 mounts 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.mounts", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.mounts",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpRemoteProviderController.mounts")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -210,6 +246,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 createMount 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.createMount", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.createMount",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.createMount")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -240,6 +281,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 updateMount 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.updateMount", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.updateMount",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.updateMount")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -270,6 +316,11 @@ public class McpRemoteProviderController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 deleteMount 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpRemoteProvider.deleteMount", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpRemoteProvider.deleteMount",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpRemoteProviderController.deleteMount")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

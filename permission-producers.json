@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "producers": [
+    {
+      "producerId": "yuheng-admin-java",
+      "module": "stellar-enclosure-yuheng-admin",
+      "artifactFile": "stellar-enclosure-yuheng-admin-exec.jar"
+    },
+    {
+      "producerId": "yuheng-llm-java",
+      "module": "stellar-enclosure-yuheng-llm-gateway",
+      "artifactFile": "stellar-enclosure-yuheng-llm-gateway-exec.jar"
+    },
+    {
+      "producerId": "yuheng-biz-java",
+      "module": "stellar-enclosure-yuheng-biz-gateway",
+      "artifactFile": "stellar-enclosure-yuheng-biz-gateway-exec.jar"
+    },
+    {
+      "producerId": "yuheng-mcp-java",
+      "module": "stellar-enclosure-yuheng-mcp-gateway",
+      "artifactFile": "stellar-enclosure-yuheng-mcp-gateway-exec.jar"
+    },
+    {
+      "producerId": "yuheng-edge-java",
+      "module": "stellar-enclosure-yuheng-edge-gateway",
+      "artifactFile": "stellar-enclosure-yuheng-edge-gateway-0.0.1-exec.jar"
+    }
+  ]
+}

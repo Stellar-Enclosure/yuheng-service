@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.routing.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -59,6 +65,11 @@ public class GatewayDraftController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 get 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.get", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.get",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayDraftController.get")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -79,6 +90,11 @@ public class GatewayDraftController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 put路由 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.putRoute", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.putRoute",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
     @Operation(operationId = "admin.gatewayDraftController.putRoute")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -116,6 +132,11 @@ public class GatewayDraftController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 delete路由 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.deleteRoute", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.deleteRoute",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
     @Operation(operationId = "admin.gatewayDraftController.deleteRoute")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -146,6 +167,11 @@ public class GatewayDraftController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 put策略 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.putPolicy", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.putPolicy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
     @Operation(operationId = "admin.gatewayDraftController.putPolicy")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -184,6 +210,11 @@ public class GatewayDraftController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 delete策略 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.deletePolicy", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.deletePolicy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
     @Operation(operationId = "admin.gatewayDraftController.deletePolicy")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -211,6 +242,11 @@ public class GatewayDraftController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 validate 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.validate", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.validate",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayDraftController.validate")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -228,6 +264,11 @@ public class GatewayDraftController {
      * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
      * @return 返回 diff 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.gatewayDraft.diff", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.diff",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayDraftController.diff")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

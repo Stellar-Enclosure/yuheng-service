@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.mcp.domain.bo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import java.util.Map;
 import java.util.Objects;
 import lombok.experimental.Accessors;
@@ -21,14 +28,68 @@ import lombok.NoArgsConstructor;
 @Accessors(chain = true)
 public class McpRemoteMountDraftBO {
 
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.id", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.id",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String id;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.gatewayGroupId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.gatewayGroupId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String gatewayGroupId;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.serverId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.serverId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String serverId;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.providerId", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.providerId",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String providerId;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.namespace", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.namespace",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String namespace;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.capabilityFingerprint", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.capabilityFingerprint",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private String capabilityFingerprint;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.content", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.content",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private Map<String, Object> content;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.enabled", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.enabled",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private boolean enabled;
+    @PermissionResource(key = "yuheng.field.McpRemoteMountDraftBO.revision", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.revision",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.MCP_READ))
     private long revision;
 
     /**

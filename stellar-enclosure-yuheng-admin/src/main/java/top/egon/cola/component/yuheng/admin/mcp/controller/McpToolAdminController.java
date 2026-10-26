@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.mcp.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -66,6 +72,11 @@ public class McpToolAdminController {
      * @param serverId 参数 服务器Id；parameter server id。
      * @return 返回 managedTools 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.managedTools", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.managedTools",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpToolAdminController.managedTools")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -87,6 +98,11 @@ public class McpToolAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 putOverride 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.putOverride", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.putOverride",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpToolAdminController.putOverride")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -117,6 +133,11 @@ public class McpToolAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 deleteOverride 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.deleteOverride", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.deleteOverride",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpToolAdminController.deleteOverride")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -145,6 +166,11 @@ public class McpToolAdminController {
      * @param serverId 参数 服务器Id；parameter server id。
      * @return 返回 远程Tools 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.remoteTools", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.remoteTools",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
     @Operation(operationId = "admin.mcpToolAdminController.remoteTools")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -165,6 +191,11 @@ public class McpToolAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 create远程工具 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.createRemoteTool", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.createRemoteTool",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpToolAdminController.createRemoteTool")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -195,6 +226,11 @@ public class McpToolAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 update远程工具 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.updateRemoteTool", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.updateRemoteTool",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpToolAdminController.updateRemoteTool")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
@@ -225,6 +261,11 @@ public class McpToolAdminController {
      * @param actor 参数 actor；parameter actor。
      * @return 返回 delete远程工具 的处理结果；returns the result of the operation.
      */
+    @PermissionResource(key = "yuheng.api.mcpToolAdmin.deleteRemoteTool", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.deleteRemoteTool",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
     @Operation(operationId = "admin.mcpToolAdminController.deleteRemoteTool")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)

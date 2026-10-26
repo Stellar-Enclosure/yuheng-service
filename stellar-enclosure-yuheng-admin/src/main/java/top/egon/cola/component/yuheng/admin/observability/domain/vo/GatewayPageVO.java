@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.observability.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 
 import java.util.List;
 
@@ -20,28 +27,52 @@ public record GatewayPageVO<T>(
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO}; do not couple callers to its representation when the owning type exposes an API.
  */
-List<T> items,
+@PermissionResource(key = "yuheng.field.GatewayPageVO.items", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.items",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    List<T> items,
 /**
  * 中文说明：保存 page 对应的状态、依赖或配置值；字段类型为 {@code int}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 在其生命周期内读取或更新。
  * English summary: Holds the state, dependency, or configuration represented by page; its type is {@code int}, and {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} reads or updates it during its lifecycle.
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO}; do not couple callers to its representation when the owning type exposes an API.
  */
-int page,
+@PermissionResource(key = "yuheng.field.GatewayPageVO.page", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.page",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    int page,
 /**
  * 中文说明：保存 size 对应的状态、依赖或配置值；字段类型为 {@code int}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 在其生命周期内读取或更新。
  * English summary: Holds the state, dependency, or configuration represented by size; its type is {@code int}, and {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} reads or updates it during its lifecycle.
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO}; do not couple callers to its representation when the owning type exposes an API.
  */
-int size,
+@PermissionResource(key = "yuheng.field.GatewayPageVO.size", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.size",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    int size,
 /**
  * 中文说明：保存 total 对应的状态、依赖或配置值；字段类型为 {@code long}，由 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 在其生命周期内读取或更新。
  * English summary: Holds the state, dependency, or configuration represented by total; its type is {@code long}, and {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} reads or updates it during its lifecycle.
  *
  * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO}; do not couple callers to its representation when the owning type exposes an API.
  */
-long total) {
+@PermissionResource(key = "yuheng.field.GatewayPageVO.total", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.total",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+    long total) {
 
     /**
      * 中文说明：创建 {@code top.egon.cola.component.yuheng.admin.observability.domain.vo.GatewayPageVO} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。

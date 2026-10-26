@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.llm.domain.vo;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -30,19 +37,43 @@ import java.util.List;
 public class LlmPageVO<T> {
 
     /** 当前页项目，空结果为空数组 / items of the current page, empty array when none. */
+    @PermissionResource(key = "yuheng.field.LlmPageVO.items", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.items",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
     @NotNull
     private List<T> items;
 
     /** 页码，从 1 开始 / one-based page number. */
+    @PermissionResource(key = "yuheng.field.LlmPageVO.page", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.page",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
     @Min(1)
     private int page;
 
     /** 有效页大小 1–100 / effective page size, 1–100. */
+    @PermissionResource(key = "yuheng.field.LlmPageVO.size", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.size",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
     @Min(1)
     @Max(100)
     private int size;
 
     /** 本次查询匹配总数，非跨页快照 / matched total of this query, not a cross-page snapshot. */
+    @PermissionResource(key = "yuheng.field.LlmPageVO.total", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.total",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.NUMBER,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
     @Min(0)
     private long total;
 

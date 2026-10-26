@@ -19,57 +19,31 @@ class GatewayEngineSecurityObservationStartupCheckTest {
     private static final String SECOND_TLS = "egon.cola.component.yuheng.engine.http.internal-tls.enabled";
 
     @Test
-    void allowsExplicitLocalLoopbackRedisAndPreservesProductionTls() {
+    void finiteHttpsIssuersAndReadyNativeTlsDoNotDependOnAnAuthorizationRedisEndpoint() {
         var configuration = new GatewayEngineManagementSecurityConfiguration();
-        var usage = usage();
-        var identity = identity();
-        var environment = environment();
         try (var validators = Validation.buildDefaultValidatorFactory()) {
-            for (String endpoint : List.of("redis://127.0.0.1:6379", "redis://localhost:6379", "redis://[::1]:6379")) {
-                identity.getRevocation().setPrimaryEndpoint(endpoint);
-                assertThatCode(() -> configuration.securityObservationStartupCheck(usage, () -> true, identity, validators.getValidator(), environment))
-                        .doesNotThrowAnyException();
-            }
-            usage.setAllowLocalPlaintext(false);
-            environment.setActiveProfiles("production");
-            environment.setProperty("DEPLOYMENT_ENV", "production");
-            identity.getRevocation().setPrimaryEndpoint("rediss://redis.example:6379");
-            assertThatCode(() -> configuration.securityObservationStartupCheck(usage, () -> true, identity, validators.getValidator(), environment))
-                    .doesNotThrowAnyException();
+            var identity = identity(); identity.getRevocation().setPrimaryEndpoint(null);
+            assertThatCode(() -> configuration.securityObservationStartupCheck(usage(), () -> true, identity, validators.getValidator(), environment())).doesNotThrowAnyException();
         }
     }
 
     @Test
-    void rejectsPlaintextWithoutEveryLocalOptInAndRejectsForeignOrDecoratedEndpoints() {
+    void rejectsPlaintextIssuerJwksAndResourceAndMissingFiniteIssuers() {
         var configuration = new GatewayEngineManagementSecurityConfiguration();
         try (var validators = Validation.buildDefaultValidatorFactory()) {
-            for (String missing : List.of("flag", "profile", "environment", "environment-absent")) {
-                var usage = usage();
-                var environment = environment();
-                if (missing.equals("flag")) { usage.setAllowLocalPlaintext(false); }
-                if (missing.equals("profile")) { environment.setActiveProfiles("operations"); }
-                if (missing.equals("environment")) { environment.setProperty("DEPLOYMENT_ENV", "production"); }
-                if (missing.equals("environment-absent")) {
-                    ((org.springframework.core.env.MapPropertySource) environment.getPropertySources().get("mockProperties"))
-                            .getSource().remove("DEPLOYMENT_ENV");
-                }
-                var identity = identity();
-                assertThatThrownBy(() -> configuration.securityObservationStartupCheck(usage, () -> true, identity, validators.getValidator(), environment))
-                        .isInstanceOf(IllegalStateException.class);
-            }
-            for (String endpoint : List.of("redis://redis.example:6379", "redis://127.0.0.2:6379",
-                    "redis://localhost.example:6379", "redis://user@127.0.0.1:6379",
-                    "redis://127.0.0.1:6379?database=1", "redis://127.0.0.1:6379#fragment")) {
-                var identity = identity();
-                identity.getRevocation().setPrimaryEndpoint(endpoint);
-                assertThatThrownBy(() -> configuration.securityObservationStartupCheck(usage(), () -> true, identity, validators.getValidator(), environment()))
-                        .isInstanceOf(IllegalStateException.class);
+            for (String setting : List.of("issuer", "jwks", "resource", "missing")) {
+                var identity = identity(); var issuer=identity.getTrustedIssuers().get("controlled");
+                if (setting.equals("issuer")) issuer.setIssuer("http://idp.example/tenants/1001");
+                if (setting.equals("jwks")) issuer.setJwksUri("http://idp.example/jwks");
+                if (setting.equals("resource")) identity.setResourceUri(URI.create("http://resource.example"));
+                if (setting.equals("missing")) identity.setTrustedIssuers(Map.of());
+                assertThatThrownBy(() -> configuration.securityObservationStartupCheck(usage(), () -> true, identity, validators.getValidator(), environment())).isInstanceOf(IllegalStateException.class);
             }
         }
     }
 
     @Test
-    void localRedisNeverDisablesAuditOrListenerTlsGuards() {
+    void requiresDurableAuditAndListenerTls() {
         var configuration = new GatewayEngineManagementSecurityConfiguration();
         try (var validators = Validation.buildDefaultValidatorFactory()) {
             assertThatThrownBy(() -> configuration.securityObservationStartupCheck(usage(), () -> false, identity(), validators.getValidator(), environment()))
@@ -99,8 +73,6 @@ class GatewayEngineSecurityObservationStartupCheckTest {
         var properties = new IdpStarterProperties();
         properties.setResourceServerId("controlled-resource");
         properties.setResourceUri(URI.create("https://resource.example"));
-        properties.getRevocation().setPrimaryEndpoint("redis://127.0.0.1:6379");
-        properties.getRevocation().setEpoch("controlled-epoch");
         var issuer = new IdpStarterProperties.TrustedIssuerSettings();
         issuer.setIssuer(ISSUER.toASCIIString());
         issuer.setJwksUri(ISSUER + "/.well-known/jwks.json");

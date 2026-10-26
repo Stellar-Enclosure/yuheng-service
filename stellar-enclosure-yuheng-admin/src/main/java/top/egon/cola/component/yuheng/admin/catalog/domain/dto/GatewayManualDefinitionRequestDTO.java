@@ -1,5 +1,12 @@
 package top.egon.cola.component.yuheng.admin.catalog.domain.dto;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.FieldPermissions;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.constraints.NotNull;
@@ -28,6 +35,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.summary", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.summary",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         String summary,
         /**
          * 中文说明：保存 tags 对应的状态、依赖或配置值；字段类型为 {@code List<String>}，由 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 在其生命周期内读取或更新。
@@ -35,6 +48,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.tags", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.tags",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @NotNull List<String> tags,
         /**
          * 中文说明：保存 请求模式 对应的状态、依赖或配置值；字段类型为 {@code Map<String, Object>}，由 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 在其生命周期内读取或更新。
@@ -42,6 +61,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.requestSchema", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.requestSchema",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @Schema
         @NotNull Map<String, Object> requestSchema,
         /**
@@ -50,6 +75,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.responseSchema", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.responseSchema",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @Schema
         @NotNull Map<String, Object> responseSchema,
         /**
@@ -58,6 +89,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.errorSchema", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.errorSchema",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @Schema
         @NotNull List<Map<String, Object>> errorSchema,
         /**
@@ -66,6 +103,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.descriptorSnapshot", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.descriptorSnapshot",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @Schema
         Map<String, Object> descriptorSnapshot,
         /**
@@ -74,6 +117,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.attributes", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.attributes",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         @Schema
         @NotNull Map<String, Object> attributes,
         /**
@@ -82,6 +131,12 @@ public record GatewayManualDefinitionRequestDTO(
          *
          * 用法 / Usage: 该字段通过 {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code top.egon.cola.component.yuheng.admin.catalog.domain.dto.GatewayManualDefinitionRequestDTO}; do not couple callers to its representation when the owning type exposes an API.
          */
+        @PermissionResource(key = "yuheng.field.GatewayManualDefinitionRequestDTO.externalAccessible", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.externalAccessible",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.CATALOG_WRITE)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                write = @PermissionGroup(codes = GatewayPermissionCodes.CATALOG_WRITE))
         boolean externalAccessible
 ) {
 

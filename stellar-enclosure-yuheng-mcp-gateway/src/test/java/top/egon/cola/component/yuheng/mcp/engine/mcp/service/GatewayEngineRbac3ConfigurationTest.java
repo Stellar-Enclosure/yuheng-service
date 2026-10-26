@@ -28,13 +28,8 @@ class GatewayEngineRbac3ConfigurationTest {
                 properties,
                 "egon.cola.platform.tianquan.jianshen.system-code"
         ));
-        assertEquals("${YUHENG_MCP_TIANQUAN_JIANSHEN_REDIS_ADDRESS:redis://127.0.0.1:6379}",
-                value(properties,
-                        "egon.cola.platform.tianquan.jianshen.runtime.redis-address"));
-        assertEquals("${YUHENG_MCP_TIANQUAN_JIANSHEN_REDIS_PASSWORD_FILE:}", value(
-                properties,
-                "egon.cola.platform.tianquan.jianshen.runtime.password-file"
-        ));
+        org.junit.jupiter.api.Assertions.assertNull(value(properties,"egon.cola.platform.tianquan.jianshen.runtime.redis-address"));
+        assertEquals("${TIANQUAN_SHOUBING_AUTHORITY_BASE_URI}",value(properties,"egon.cola.platform.tianquan.shoubing.authority.base-uri"));
         assertEquals("${YUHENG_MCP_TIANQUAN_JIANSHEN_AUTHORIZATION_ENDPOINT:}", value(
                 properties,
                 "egon.cola.platform.tianquan.jianshen.authorization.endpoint"

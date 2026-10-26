@@ -248,13 +248,13 @@ class McpRbac3IntegrationTest {
         assertEquals("TIANQUAN_JIANSHEN_PERMISSION_DENIED", missingPermission.reasonCode());
         assertFalse(staleSnapshot.allowed());
         assertEquals("TIANQUAN_JIANSHEN_SNAPSHOT_FENCED", staleSnapshot.reasonCode());
-        assertEquals(1, fetches.get());
+        assertEquals(3, fetches.get());
     }
 
     private McpAuthorizationPort.Decision authorize(
             Rbac3McpAuthorizationAdapter adapter,
             McpAuthorizationRequest request) {
-        return Mono.from(adapter.authorize(request)).block();
+        return Mono.from(adapter.authorize(bearer(request))).block();
     }
 
     private McpAuthorizationRequest request(
@@ -265,7 +265,7 @@ class McpRbac3IntegrationTest {
         return new McpAuthorizationRequest(
                 "https://tianquan-shoubing.internal",
                 "alice-sub",
-                "tenant-a",
+                "1001",
                 "finance-web",
                 "token-1",
                 "https://resource.egon.top/yuheng-mcp",
@@ -279,24 +279,14 @@ class McpRbac3IntegrationTest {
     }
 
     private SystemAuthorizationSnapshot snapshot(String systemCode) {
-        return new SystemAuthorizationSnapshot(
-                "tenant-a",
-                "alice-sub",
-                "user-1",
-                systemCode,
-                7L,
-                3L,
-                java.util.List.of("billing-operator"),
-                Set.of(
-                        "mcp:billing:tool:pay_invoice:call",
-                        "invoice:pay"
-                ),
-                Map.of(),
-                Map.of(),
-                "snapshot-checksum",
-                NOW,
-                NOW.plusSeconds(300)
-        );
+        Set<String> permissions=Set.of("mcp:billing:tool:pay_invoice:call","invoice:pay");
+        var scope=new top.egon.cola.platform.tianquan.jianshen.contract.permission.CatalogScope("10","1001","xingyuan",systemCode,"default","test");
+        var view=new top.egon.cola.platform.tianquan.jianshen.contract.permission.EffectivePermissionSnapshot("https://tianquan-shoubing.internal","alice-sub",scope,"1","7","3",
+                new top.egon.cola.platform.tianquan.jianshen.contract.permission.EffectivePermissionSnapshot.ActiveRoleContext(systemCode,java.util.List.of("50"),java.util.List.of("50")),
+                permissions.stream().sorted().toList(),NOW.plusSeconds(300));
+        return new SystemAuthorizationSnapshot("1001","alice-sub","1",systemCode,7L,3L,java.util.List.of("50"),null,null,
+                permissions,Set.of(),Map.of(),Map.of(),"snapshot-checksum",NOW,NOW.plusSeconds(300),view,
+                new top.egon.cola.platform.tianquan.jianshen.contract.authorization.RuntimePolicyBinding("yuheng-mcp-java","1","a".repeat(64),"b".repeat(64),"c".repeat(64)));
     }
 
     private static final class InMemoryStore

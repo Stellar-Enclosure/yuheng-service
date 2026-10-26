@@ -1,5 +1,11 @@
 package top.egon.cola.component.yuheng.admin.openapi.controller;
 
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
+import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.RequiresPermissions;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
@@ -48,6 +54,11 @@ public class GatewayOpenApiController {
 
 
     /** Returns filtered OpenAPI synchronization state rows. */
+    @PermissionResource(key = "yuheng.api.gatewayOpenApi.listSyncStates", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayOpenApi.listSyncStates",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayOpenApiController.listSyncStates")
     @EgonGatewayPolicy(exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/openapi/sync-states")
@@ -68,6 +79,11 @@ public class GatewayOpenApiController {
     }
 
     /** Returns the stored OpenAPI fragment for the current operation. */
+    @PermissionResource(key = "yuheng.api.gatewayOpenApi.operation", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayOpenApi.operation",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayOpenApiController.operation")
     @EgonGatewayPolicy(exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/operations/{operationId}/openapi")
@@ -78,6 +94,11 @@ public class GatewayOpenApiController {
     }
 
     /** Returns an immutable raw snapshot with an ETag based on canonical hash. */
+    @PermissionResource(key = "yuheng.api.gatewayOpenApi.document", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayOpenApi.document",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.READ)
+    @RequiresPermissions(codes = GatewayPermissionCodes.READ)
     @Operation(operationId = "admin.gatewayOpenApiController.document")
     @EgonGatewayPolicy(exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/openapi/snapshots/{snapshotId}/document")
