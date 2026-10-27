@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,7 @@ import org.apache.shardingsphere.driver.api.yaml.YamlShardingSphereDataSourceFac
 import org.springframework.beans.factory.annotation.Qualifier;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlManifestBO;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlResult;
+import top.egon.cola.component.common.mybatis.ddl.EgonColaManagedDdlInitializer;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlTargetBO;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaPostgreDdlRunner;
 import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfigurationException;
@@ -49,6 +52,13 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
     private final EgonColaShardingTopologyValidator topologyValidator;
     @Qualifier("egonColaPostgreDdlRunner")
     private final EgonColaPostgreDdlRunner ddlRunner;
+    private final Duration topologyReadyTimeout;
+
+    public GatewayManagedDdlFactory(EgonColaShardingProperties shardingProperties, ObjectMapper objectMapper,
+                                    GatewayPersistenceProperties persistenceProperties,
+                                    EgonColaShardingTopologyValidator topologyValidator, EgonColaPostgreDdlRunner ddlRunner) {
+        this(shardingProperties, objectMapper, persistenceProperties, topologyValidator, ddlRunner, Duration.ofSeconds(60));
+    }
 
     @Override
     public DataSource create(Map<String, DataSource> physical, byte[] yaml) throws Exception {
@@ -62,6 +72,14 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
                 .filter(result -> EgonColaDdlResult.StatusEnum.APPLIED.equals(result.status()))
                 .forEach(result -> log.info("managed ddl applied alias={} schema={} version={}",
                         result.alias(), result.schema(), result.version()));
+        if (shardingProperties.getMode() == EgonColaShardingProperties.ModeEnum.SHARDING_READWRITE) {
+            var primaries = new LinkedHashMap<String, EgonColaShardingProperties.PhysicalDataSourceProperties>();
+            shardingProperties.getDataSources().stream()
+                    .filter(source -> source.role() == EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY)
+                    .forEach(source -> primaries.put(source.logicalName(), source));
+            EgonColaManagedDdlInitializer.awaitReplicaReplay(shardingProperties.getDataSources(), primaries,
+                    physical, topologyReadyTimeout);
+        }
         return YamlShardingSphereDataSourceFactory.createDataSource(physical, topology.yaml());
     }
 

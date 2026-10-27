@@ -57,6 +57,6 @@ public class GatewayManagedDdlConfiguration {
         log.info("managed ddl ownership claimed for expected schema version {}",
                 persistenceProperties.getExpectedSchemaVersion());
         return new GatewayManagedDdlFactory(shardingProperties, objectMapper, persistenceProperties,
-                topologyValidator, ddlRunner);
+                topologyValidator, ddlRunner, mybatisPlusProperties.getDdl().getTopologyReadyTimeout());
     }
 }
