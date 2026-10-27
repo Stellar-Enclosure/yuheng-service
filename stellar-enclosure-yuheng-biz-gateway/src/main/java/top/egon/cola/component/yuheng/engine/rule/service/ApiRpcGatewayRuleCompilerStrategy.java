@@ -210,6 +210,16 @@ public final class ApiRpcGatewayRuleCompilerStrategy implements GatewayRuleCompi
         runtimePolicies.addAll(content.trafficPolicies());
         runtimePolicies.addAll(content.securityPolicies());
         runtimePolicies.addAll(content.corsPolicies());
+        Set<String> policyIds = runtimePolicies.stream()
+                .map(GatewayRuntimePolicy::policyId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        content.operations().forEach(operation -> {
+            if (!policyIds.containsAll(operation.policyRefs())) {
+                throw new IllegalArgumentException(
+                        "YUHENG_RULE_COMPILE_FAILED: operation references unknown policy: "
+                                + operation.operationId());
+            }
+        });
         Map<String, RuntimeTrafficPolicy> trafficPolicies =
                 trafficPolicyCompiler.compile(runtimePolicies);
         Map<String, GatewayRuntimeOperation> operations = content.operations()

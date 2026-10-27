@@ -35,9 +35,32 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProviderDirectoryTest {
+
+    @Test
+    void failedActivationDoesNotRetainPreviouslySubscribedProviders() {
+        ProviderServiceKey existing = key();
+        ProviderServiceKey missing = new ProviderServiceKey("test-biz", "test-app", "local", "default",
+                ProviderProtocolType.HTTP, "missing", "default", "v1", "http");
+        FakeRegistry registry = new FakeRegistry(existing) {
+            @Override
+            public ProviderServiceSnapshot getInstances(ProviderServiceKey key) {
+                if (key.equals(missing)) {
+                    throw new IllegalStateException("registry unavailable");
+                }
+                return super.getInstances(key);
+            }
+        };
+        ProviderDirectory directory = new ProviderDirectory(registry, Clock.systemUTC());
+        directory.activate(Set.of(existing));
+        assertThrows(IllegalStateException.class, () -> directory.activate(Set.of(existing, missing)));
+        assertEquals(1, directory.referenceCount(existing));
+        directory.release(Set.of(existing));
+        assertEquals(0, directory.referenceCount(existing));
+    }
 
     @Test
     void sharesSubscriptionsAndDropsExpiredLeases() {
@@ -166,7 +189,7 @@ class ProviderDirectoryTest {
                 .registryState();
     }
 
-    private static final class FakeRegistry
+    private static class FakeRegistry
             implements ProviderServiceRegistry {
 
         private final ProviderServiceKey key;

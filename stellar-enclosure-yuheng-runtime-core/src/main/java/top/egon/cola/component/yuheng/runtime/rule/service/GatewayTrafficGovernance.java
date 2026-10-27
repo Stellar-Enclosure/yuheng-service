@@ -145,7 +145,16 @@ public final class GatewayTrafficGovernance {
             Set<String> policyRefs,
             GatewayTrafficContext context,
             Duration defaultTimeout) {
-        List<RuntimeTrafficPolicy> policies = policies(policyRefs);
+        return acquire(policyRefs, context, defaultTimeout, rules.get());
+    }
+
+    public Mono<RequestPermit> acquire(
+            Set<String> policyRefs,
+            GatewayTrafficContext context,
+            Duration defaultTimeout,
+            GatewayCompiledRulesDTO snapshot) {
+        List<RuntimeTrafficPolicy> policies = policies(
+                policyRefs, snapshot == null ? rules.get() : snapshot);
         if (policies.isEmpty()) {
             return Mono.just(new RequestPermit(
                     policies,
@@ -293,8 +302,8 @@ public final class GatewayTrafficGovernance {
      * @param policyRefs 参数 策略Refs；parameter policy refs。
      * @return 返回 policies 的处理结果；returns the result of the operation.
      */
-    private List<RuntimeTrafficPolicy> policies(Set<String> policyRefs) {
-        GatewayCompiledRulesDTO active = rules.get();
+    private List<RuntimeTrafficPolicy> policies(
+            Set<String> policyRefs, GatewayCompiledRulesDTO active) {
         if (active == null || policyRefs == null || policyRefs.isEmpty()) {
             return List.of();
         }

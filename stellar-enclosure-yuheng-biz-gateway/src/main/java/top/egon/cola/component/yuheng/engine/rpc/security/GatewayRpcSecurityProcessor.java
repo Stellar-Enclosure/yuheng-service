@@ -1,6 +1,7 @@
 package top.egon.cola.component.yuheng.engine.rpc.security;
 
 import top.egon.cola.component.yuheng.engine.rpc.domain.RuntimeRpcRoute;
+import top.egon.cola.component.yuheng.engine.rule.domain.ApiRpcGatewayCompiledRulesDTO;
 
 import io.grpc.Deadline;
 import io.grpc.Metadata;
@@ -35,6 +36,12 @@ public interface GatewayRpcSecurityProcessor {
             Metadata inboundMetadata,
             String traceId,
             Deadline deadline);
+
+    default Mono<Outcome> authorize(
+            RuntimeRpcRoute route, Metadata inboundMetadata, String traceId,
+            Deadline deadline, ApiRpcGatewayCompiledRulesDTO rules) {
+        return authorize(route, inboundMetadata, traceId, deadline);
+    }
 
     /**
      * 中文说明：{@code Outcome} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责Outcome相关的职责与边界。

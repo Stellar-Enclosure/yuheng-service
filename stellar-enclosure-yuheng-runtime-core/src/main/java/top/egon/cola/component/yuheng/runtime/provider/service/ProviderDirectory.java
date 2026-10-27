@@ -9,6 +9,7 @@ import top.egon.cola.component.yuheng.core.provider.ProviderSubscription;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -83,11 +84,12 @@ public final class ProviderDirectory implements AutoCloseable {
                 new LinkedHashMap<>(snapshot.get());
         Map<ProviderServiceKey, ProviderSubscription> created =
                 new LinkedHashMap<>();
+        Set<ProviderServiceKey> retained = new LinkedHashSet<>();
         try {
             for (ProviderServiceKey key : required) {
                 SubscriptionRef existing = subscriptions.get(key);
                 if (existing != null) {
-                    existing.references++;
+                    retained.add(key);
                     continue;
                 }
                 ProviderServiceSnapshot initial = registry.getInstances(key);
@@ -102,6 +104,7 @@ public final class ProviderDirectory implements AutoCloseable {
             created.values().forEach(ProviderSubscription::close);
             throw failure;
         }
+        retained.forEach(key -> subscriptions.get(key).references++);
         created.forEach((key, subscription) -> subscriptions.put(
                 key,
                 new SubscriptionRef(subscription, 1)

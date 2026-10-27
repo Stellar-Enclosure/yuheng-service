@@ -17,6 +17,7 @@ import top.egon.cola.component.yuheng.core.provider.ProviderServiceKey;
 import top.egon.cola.component.yuheng.runtime.provider.domain.ProviderSelectionHandle;
 import top.egon.cola.component.yuheng.runtime.provider.service.ProviderSelector;
 import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
 import top.egon.cola.component.yuheng.runtime.traffic.service.GatewayAttemptExecutor;
 import top.egon.cola.component.yuheng.runtime.rule.service.GatewayTrafficGovernance;
 import top.egon.cola.component.yuheng.runtime.traffic.domain.ProviderCallClassification;
@@ -64,6 +65,8 @@ public final class EngineGatewayOperationInvoker
      * 用法 / Usage: 该字段通过 {@code EngineGatewayOperationInvoker} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code EngineGatewayOperationInvoker}; do not couple callers to its representation when the owning type exposes an API.
      */
     private final Supplier<? extends GatewayCompiledRulesDTO> rules;
+
+    private final Supplier<? extends GatewayRuleActivationApplier.Lease<? extends GatewayCompiledRulesDTO>> leases;
 
     /**
      * 中文说明：保存 提供方Selector 对应的状态、依赖或配置值；字段类型为 {@code ProviderSelector}，由 {@code EngineGatewayOperationInvoker} 在其生命周期内读取或更新。
@@ -153,7 +156,22 @@ public final class EngineGatewayOperationInvoker
             Duration defaultTimeout,
             long maximumRequestBytes,
             long maximumResponseBytes) {
+        this(rules, providerSelector, trafficGovernance, transport, objectMapper,
+                defaultTimeout, maximumRequestBytes, maximumResponseBytes, null);
+    }
+
+    public EngineGatewayOperationInvoker(
+            Supplier<? extends GatewayCompiledRulesDTO> rules,
+            ProviderSelector providerSelector,
+            GatewayTrafficGovernance trafficGovernance,
+            OperationTransport transport,
+            ObjectMapper objectMapper,
+            Duration defaultTimeout,
+            long maximumRequestBytes,
+            long maximumResponseBytes,
+            Supplier<? extends GatewayRuleActivationApplier.Lease<? extends GatewayCompiledRulesDTO>> leases) {
         this.rules = Objects.requireNonNull(rules, "rules");
+        this.leases = leases;
         this.providerSelector = Objects.requireNonNull(
                 providerSelector,
                 "providerSelector"
@@ -189,7 +207,14 @@ public final class EngineGatewayOperationInvoker
     @Override
     public Publisher<GatewayInvocationResult> invoke(
             GatewayOperationInvocation invocation) {
-        return Mono.defer(() -> invokeActive(invocation));
+        return Mono.deferContextual(context -> {
+            GatewayCompiledRulesDTO requestRules = context.getOrDefault(GatewayCompiledRulesDTO.class, null);
+            var lease = requestRules != null || leases == null ? null : leases.get();
+            GatewayCompiledRulesDTO snapshot = requestRules != null ? requestRules
+                    : lease == null ? (leases == null ? rules.get() : null) : lease.rules();
+            Mono<GatewayInvocationResult> result = Mono.defer(() -> invokeActive(invocation, snapshot));
+            return lease == null ? result : result.doFinally(signal -> lease.close());
+        });
     }
 
     /**
@@ -201,9 +226,9 @@ public final class EngineGatewayOperationInvoker
      * @return 返回 invokeActive 的处理结果；returns the result of the operation.
      */
     private Mono<GatewayInvocationResult> invokeActive(
-            GatewayOperationInvocation invocation) {
+            GatewayOperationInvocation invocation,
+            GatewayCompiledRulesDTO active) {
         Objects.requireNonNull(invocation, "invocation");
-        GatewayCompiledRulesDTO active = rules.get();
         if (active == null) {
             return Mono.error(new IllegalStateException(
                     "YUHENG_RULES_NOT_READY"
@@ -234,7 +259,8 @@ public final class EngineGatewayOperationInvoker
         return trafficGovernance.acquire(
                 operation.policyRefs(),
                 traffic,
-                defaultTimeout
+                defaultTimeout,
+                active
         ).flatMap(permit -> {
             long requestLimit = permit.requestSizeLimit(
                     maximumRequestBytes
@@ -261,7 +287,8 @@ public final class EngineGatewayOperationInvoker
                             permit,
                             failedProviders,
                             responseLimit,
-                            attempts.incrementAndGet()
+                            attempts.incrementAndGet(),
+                            active
                     ),
                     RetryableInvocationException.class::isInstance
             ).doFinally(ignored -> permit.close());
@@ -287,11 +314,13 @@ public final class EngineGatewayOperationInvoker
             GatewayTrafficGovernance.RequestPermit requestPermit,
             Set<String> failedProviders,
             long responseLimit,
-            int attemptNumber) {
+            int attemptNumber,
+            GatewayCompiledRulesDTO rules) {
         ProviderSelectionHandle selection = providerSelector.select(
                 serviceKey(operation.providerService()),
                 operation.policyRefs(),
-                failedProviders
+                failedProviders,
+                rules
         );
         ProviderInstance provider = selection.instance();
         GatewayTrafficGovernance.AttemptPermit attemptPermit;
@@ -302,7 +331,7 @@ public final class EngineGatewayOperationInvoker
             return Mono.error(failure);
         }
         AtomicBoolean completed = new AtomicBoolean();
-        return transport.invoke(provider, prepared, requestPermit.timeout())
+        return transport.invoke(provider, prepared, requestPermit.timeout(), rules)
                 .flatMap(result -> {
                     if (result.body().length > responseLimit) {
                         return Mono.error(new IllegalArgumentException(
@@ -650,6 +679,12 @@ public final class EngineGatewayOperationInvoker
                 ProviderInstance provider,
                 PreparedRequest request,
                 Duration timeout);
+
+        default Mono<GatewayInvocationResult> invoke(
+                ProviderInstance provider, PreparedRequest request, Duration timeout,
+                GatewayCompiledRulesDTO rules) {
+            return invoke(provider, request, timeout);
+        }
     }
 
     /**

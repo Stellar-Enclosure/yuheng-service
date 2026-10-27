@@ -126,12 +126,24 @@ public final class HttpRpcUpstreamAdapter {
             byte[] body,
             Map<String, List<String>> headers,
             Duration timeout) {
+        return invoke(match, provider, request, body, headers, timeout, rules.get());
+    }
+
+    public Mono<GatewayOutboundHttpResponse> invoke(
+            HttpRouteMatch match,
+            ProviderInstance provider,
+            NormalizedHttpRequest request,
+            byte[] body,
+            Map<String, List<String>> headers,
+            Duration timeout,
+            GatewayCompiledRulesDTO snapshot) {
         Map<String, String> metadata = match.route().metadata();
         String fullMethod = required(metadata, "methodIdentity");
         String requestType = required(metadata, "requestSchema");
         String responseType = required(metadata, "responseSchema");
         HttpRpcDynamicMessageBridge bridge = bridge(
-                required(metadata, "descriptorSha256")
+                required(metadata, "descriptorSha256"),
+                snapshot == null ? rules.get() : snapshot
         );
         byte[] protobufRequest = bridge.requestBytes(
                 requestType,
@@ -367,9 +379,10 @@ public final class HttpRpcUpstreamAdapter {
      * @param descriptorSha 参数 descriptorSha；parameter descriptor sha。
      * @return 返回 bridge 的处理结果；returns the result of the operation.
      */
-    private HttpRpcDynamicMessageBridge bridge(String descriptorSha) {
+    private HttpRpcDynamicMessageBridge bridge(
+            String descriptorSha, GatewayCompiledRulesDTO snapshot) {
         return bridges.computeIfAbsent(descriptorSha, ignored -> {
-            GatewayCompiledRulesDTO active = rules.get();
+            GatewayCompiledRulesDTO active = snapshot;
             if (active == null) {
                 throw new IllegalStateException(
                         "YUHENG_RULES_NOT_READY"

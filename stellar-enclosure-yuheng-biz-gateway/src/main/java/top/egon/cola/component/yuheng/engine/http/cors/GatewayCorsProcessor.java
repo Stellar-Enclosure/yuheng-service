@@ -61,11 +61,20 @@ public final class GatewayCorsProcessor {
             GatewayInboundHttpRequest request,
             String routeMethod,
             String traceId) {
+        return evaluate(policyRefs, request, routeMethod, traceId, policies.get());
+    }
+
+    public Decision evaluate(
+            Set<String> policyRefs,
+            GatewayInboundHttpRequest request,
+            String routeMethod,
+            String traceId,
+            Map<String, RuntimeCorsPolicy> snapshotPolicies) {
         String origin = firstHeader(request.headers(), "origin");
         if (origin == null) {
             return Decision.none();
         }
-        RuntimeCorsPolicy policy = referencedPolicy(policyRefs);
+        RuntimeCorsPolicy policy = referencedPolicy(policyRefs, snapshotPolicies);
         if (policy == null || !policy.enabled()) {
             throw rejected("CORS policy is not configured");
         }
@@ -114,9 +123,10 @@ public final class GatewayCorsProcessor {
      * @param policyRefs 参数 策略Refs；parameter policy refs。
      * @return 返回 referenced策略 的处理结果；returns the result of the operation.
      */
-    private RuntimeCorsPolicy referencedPolicy(Set<String> policyRefs) {
+    private RuntimeCorsPolicy referencedPolicy(
+            Set<String> policyRefs, Map<String, RuntimeCorsPolicy> snapshotPolicies) {
         List<RuntimeCorsPolicy> referenced = policyRefs.stream()
-                .map(policies.get()::get)
+                .map(snapshotPolicies::get)
                 .filter(java.util.Objects::nonNull)
                 .toList();
         if (referenced.size() > 1) {

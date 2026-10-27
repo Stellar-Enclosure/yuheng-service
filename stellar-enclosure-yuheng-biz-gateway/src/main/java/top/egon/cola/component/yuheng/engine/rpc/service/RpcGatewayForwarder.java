@@ -7,6 +7,7 @@ import top.egon.cola.component.yuheng.runtime.rpc.adapter.RpcProviderChannelCach
 import top.egon.cola.component.yuheng.runtime.rpc.domain.RawByteMarshaller;
 import top.egon.cola.component.yuheng.engine.rpc.domain.RuntimeRpcRoute;
 import top.egon.cola.component.yuheng.engine.rpc.security.GatewayRpcSecurityProcessor;
+import top.egon.cola.component.yuheng.engine.rule.domain.ApiRpcGatewayCompiledRulesDTO;
 
 import io.grpc.CallOptions;
 import io.grpc.ClientCall;
@@ -360,6 +361,11 @@ public final class RpcGatewayForwarder {
      * @return 返回 处理器 的处理结果；returns the result of the operation.
      */
     public ServerCallHandler<byte[], byte[]> handler(RuntimeRpcRoute route) {
+        return handler(route, null);
+    }
+
+    public ServerCallHandler<byte[], byte[]> handler(
+            RuntimeRpcRoute route, ApiRpcGatewayCompiledRulesDTO rules) {
         MethodDescriptor<byte[], byte[]> method =
                 RawByteMarshaller.INSTANCE.descriptor(route.fullMethodName());
         return (serverCall, inboundHeaders) -> {
@@ -408,13 +414,15 @@ public final class RpcGatewayForwarder {
                     inboundHeaders,
                     trace,
                     Context.current().getDeadline(),
-                    observation
+                    observation,
+                    rules
             );
             securityProcessor.authorize(
                             route,
                             inboundHeaders,
                             trace.traceId(),
-                            Context.current().getDeadline()
+                            Context.current().getDeadline(),
+                            rules
                     )
                     .subscribe(pending::authorized, pending::securityFailed);
             serverCall.request(1);
@@ -429,6 +437,8 @@ public final class RpcGatewayForwarder {
      * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
      */
     private final class PendingCall extends ServerCall.Listener<byte[]> {
+
+        private final ApiRpcGatewayCompiledRulesDTO rules;
 
         /**
          * 中文说明：保存 路由 对应的状态、依赖或配置值；字段类型为 {@code RuntimeRpcRoute}，由 {@code RpcGatewayForwarder.PendingCall} 在其生命周期内读取或更新。
@@ -650,7 +660,8 @@ public final class RpcGatewayForwarder {
                 Metadata inboundHeaders,
                 GatewayTraceContext trace,
                 Deadline inboundDeadline,
-                GatewayCallObservation observation) {
+                GatewayCallObservation observation,
+                ApiRpcGatewayCompiledRulesDTO rules) {
             this.route = route;
             this.method = method;
             this.serverCall = serverCall;
@@ -658,6 +669,7 @@ public final class RpcGatewayForwarder {
             this.trace = trace;
             this.inboundDeadline = inboundDeadline;
             this.observation = observation;
+            this.rules = rules;
         }
 
         /**
@@ -744,7 +756,8 @@ public final class RpcGatewayForwarder {
             trafficGovernance.acquire(
                             route.policyRefs(),
                             trafficContext(route, inboundHeaders, security),
-                            route.timeout()
+                            route.timeout(),
+                            rules
                     )
                     .subscribe(
                             permit -> {
@@ -855,7 +868,8 @@ public final class RpcGatewayForwarder {
                 selection = providerSelector.select(
                         route.targetService(),
                         route.policyRefs(),
-                        failedProviders
+                        failedProviders,
+                        rules
                 );
                 ProviderInstance provider = selection.instance();
                 attemptPermit = trafficPermit.acquireAttempt(provider);

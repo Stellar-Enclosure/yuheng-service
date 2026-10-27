@@ -36,6 +36,72 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EngineGatewayOperationInvokerTest {
 
     @Test
+    void requestContextSnapshotTakesPrecedenceOverTheCurrentOperation() {
+        var pinned = new OperationCompiledRulesTestDTO(snapshot("GET /invoices/{invoiceId}"));
+        var current = new OperationCompiledRulesTestDTO(snapshot("POST /invoices/{invoiceId}"));
+        AtomicReference<EngineGatewayOperationInvoker.PreparedRequest> prepared = new AtomicReference<>();
+        var invoker = new EngineGatewayOperationInvoker(() -> current,
+                key -> new ProviderSelectionHandle(provider(key), () -> { }),
+                GatewayTrafficGovernance.noop(), (provider, request, timeout) -> {
+                    prepared.set(request);
+                    return Mono.just(new GatewayInvocationResult(200, Map.of(), new byte[0]));
+                }, new ObjectMapper(), Duration.ofSeconds(1), 1024, 4096);
+        Mono.from(invoker.invoke(new GatewayOperationInvocation(
+                        new GatewayOperationCall("operation-42", Map.of("invoiceId", "9"), Map.of(), null),
+                        null, "user", "127.0.0.1", Map.of())))
+                .contextWrite(context -> context.put(
+                        top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO.class, pinned))
+                .block();
+        assertEquals("GET", prepared.get().method());
+    }
+
+    @Test
+    void operationSelectionAndTransportUseTheSameSnapshot() {
+        var first = new OperationCompiledRulesTestDTO(snapshot("GET /invoices/{invoiceId}"));
+        var second = new OperationCompiledRulesTestDTO(snapshot("POST /invoices/{invoiceId}"));
+        AtomicReference<OperationCompiledRulesTestDTO> active = new AtomicReference<>(first);
+        var selector = new top.egon.cola.component.yuheng.runtime.provider.service.ProviderSelector() {
+            @Override
+            public ProviderSelectionHandle select(top.egon.cola.component.yuheng.core.provider.ProviderServiceKey key) {
+                throw new AssertionError("snapshot-aware selection is required");
+            }
+
+            @Override
+            public ProviderSelectionHandle select(top.egon.cola.component.yuheng.core.provider.ProviderServiceKey key,
+                    Set<String> refs, Set<String> excluded,
+                    top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO rules) {
+                assertTrue(rules == first);
+                active.set(second);
+                return new ProviderSelectionHandle(provider(key), () -> { });
+            }
+        };
+        var transport = new EngineGatewayOperationInvoker.OperationTransport() {
+            @Override
+            public Mono<GatewayInvocationResult> invoke(ProviderInstance provider,
+                    EngineGatewayOperationInvoker.PreparedRequest request, Duration timeout) {
+                throw new AssertionError("snapshot-aware transport is required");
+            }
+
+            @Override
+            public Mono<GatewayInvocationResult> invoke(ProviderInstance provider,
+                    EngineGatewayOperationInvoker.PreparedRequest request, Duration timeout,
+                    top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO rules) {
+                assertTrue(rules == first);
+                assertEquals("GET", request.method());
+                return Mono.just(new GatewayInvocationResult(200, Map.of(), new byte[0]));
+            }
+        };
+        var invoker = new EngineGatewayOperationInvoker(active::get, selector,
+                GatewayTrafficGovernance.noop(), transport, new ObjectMapper(),
+                Duration.ofSeconds(1), 1024, 4096);
+        GatewayInvocationResult result = Mono.from(invoker.invoke(new GatewayOperationInvocation(
+                new GatewayOperationCall("operation-42", Map.of("invoiceId", "9"), Map.of(), null),
+                null, "user", "127.0.0.1", Map.of()))).block();
+        assertEquals(200, result.statusCode());
+        assertTrue(active.get() == second);
+    }
+
+    @Test
     void invokesTrustedOperationDirectlyAndForwardsOnlyLocalBearer() {
         var compiled = new OperationCompiledRulesTestDTO(snapshot(
                 "GET /invoices/{invoiceId}"

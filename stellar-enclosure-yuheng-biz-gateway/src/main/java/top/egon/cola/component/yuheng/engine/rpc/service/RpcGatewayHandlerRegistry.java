@@ -5,8 +5,15 @@ import top.egon.cola.component.yuheng.engine.rpc.service.RpcMethodIndex;
 import top.egon.cola.component.yuheng.engine.rpc.domain.RuntimeRpcRoute;
 
 import io.grpc.HandlerRegistry;
+import io.grpc.ForwardingServerCall;
+import io.grpc.ForwardingServerCallListener;
+import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
+import io.grpc.ServerCall;
 import io.grpc.ServerMethodDefinition;
+import io.grpc.Status;
+import top.egon.cola.component.yuheng.engine.rule.domain.ApiRpcGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
 
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +53,8 @@ public final class RpcGatewayHandlerRegistry extends HandlerRegistry {
      */
     private final Supplier<RpcMethodIndex> indexSupplier;
 
+    private final Supplier<GatewayRuleActivationApplier.Lease<ApiRpcGatewayCompiledRulesDTO>> leaseSupplier;
+
     /**
      * 中文说明：创建 {@code RpcGatewayHandlerRegistry} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
      * English summary: Creates an instance of {@code RpcGatewayHandlerRegistry} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
@@ -68,8 +77,16 @@ public final class RpcGatewayHandlerRegistry extends HandlerRegistry {
     public RpcGatewayHandlerRegistry(
             RpcGatewayForwarder forwarder,
             Supplier<RpcMethodIndex> indexSupplier) {
+        this(forwarder, indexSupplier, null);
+    }
+
+    public RpcGatewayHandlerRegistry(
+            RpcGatewayForwarder forwarder,
+            Supplier<RpcMethodIndex> indexSupplier,
+            Supplier<GatewayRuleActivationApplier.Lease<ApiRpcGatewayCompiledRulesDTO>> leaseSupplier) {
         this.forwarder = Objects.requireNonNull(forwarder, "forwarder");
         this.indexSupplier = indexSupplier;
+        this.leaseSupplier = leaseSupplier;
     }
 
     /**
@@ -115,8 +132,64 @@ public final class RpcGatewayHandlerRegistry extends HandlerRegistry {
                 RawByteMarshaller.INSTANCE.descriptor(methodName);
         return ServerMethodDefinition.create(
                 descriptor,
-                forwarder.handler(route)
+                leaseSupplier == null ? forwarder.handler(route)
+                        : (call, headers) -> startPinned(methodName, call, headers)
         );
+    }
+
+    private ServerCall.Listener<byte[]> startPinned(
+            String methodName, ServerCall<byte[], byte[]> call, Metadata headers) {
+        var lease = leaseSupplier.get();
+        if (lease == null) {
+            call.close(Status.UNAVAILABLE.withDescription("gateway rules are not ready"), new Metadata());
+            return new ServerCall.Listener<>() { };
+        }
+        RuntimeRpcRoute route = lease.rules().rpcMethods().find(methodName).orElse(null);
+        if (route == null) {
+            try {
+                call.close(Status.UNIMPLEMENTED, new Metadata());
+            } finally {
+                lease.close();
+            }
+            return new ServerCall.Listener<>() { };
+        }
+        try {
+            ServerCall<byte[], byte[]> managedCall =
+                    new ForwardingServerCall.SimpleForwardingServerCall<>(call) {
+                        @Override
+                        public void close(Status status, Metadata trailers) {
+                            try {
+                                super.close(status, trailers);
+                            } finally {
+                                lease.close();
+                            }
+                        }
+                    };
+            ServerCall.Listener<byte[]> listener =
+                    forwarder.handler(route, lease.rules()).startCall(managedCall, headers);
+            return new ForwardingServerCallListener.SimpleForwardingServerCallListener<>(listener) {
+                @Override
+                public void onCancel() {
+                    try {
+                        super.onCancel();
+                    } finally {
+                        lease.close();
+                    }
+                }
+
+                @Override
+                public void onComplete() {
+                    try {
+                        super.onComplete();
+                    } finally {
+                        lease.close();
+                    }
+                }
+            };
+        } catch (RuntimeException | Error failure) {
+            lease.close();
+            throw failure;
+        }
     }
 
     /**

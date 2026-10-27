@@ -106,7 +106,19 @@ public final class RuleBackedRpcGatewaySecurityProcessor
             Metadata inboundMetadata,
             String traceId,
             Deadline inboundDeadline) {
-        ApiRpcGatewayCompiledRulesDTO current = rules.get();
+        return authorize(route, inboundMetadata, traceId, inboundDeadline, rules.get());
+    }
+
+    @Override
+    public Mono<Outcome> authorize(
+            RuntimeRpcRoute route,
+            Metadata inboundMetadata,
+            String traceId,
+            Deadline inboundDeadline,
+            ApiRpcGatewayCompiledRulesDTO current) {
+        if (current == null) {
+            current = Objects.requireNonNull(rules.get(), "compiled rules");
+        }
         List<GatewaySecurityPolicy> policies = route.policyRefs().stream()
                 .map(current.securityPolicies()::get)
                 .filter(Objects::nonNull)

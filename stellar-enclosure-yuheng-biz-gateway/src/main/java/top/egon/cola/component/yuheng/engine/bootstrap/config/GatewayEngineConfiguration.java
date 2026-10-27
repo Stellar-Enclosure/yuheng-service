@@ -89,6 +89,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import org.springframework.context.annotation.Import;
 import top.egon.cola.component.yuheng.runtime.config.GatewayRuntimeConfiguration;
+import top.egon.cola.component.yuheng.engine.http.ingress.SnapshotHttpDataPlaneHandler;
 import top.egon.cola.component.yuheng.contract.runtime.GatewayEngineRoleEnum;
 
 /**
@@ -507,7 +508,8 @@ public class GatewayEngineConfiguration {
                 engineProperties.bodyLogSampleBytes(),
                 null
         );
-        return new GatewayHttpServer(engineProperties, handler);
+        return new GatewayHttpServer(engineProperties,
+                new SnapshotHttpDataPlaneHandler(handler, activation));
     }
 
     /**
@@ -572,9 +574,11 @@ public class GatewayEngineConfiguration {
                 telemetry);
         return new RpcGatewayHandlerRegistry(
                 forwarder,
-                () -> activation.active() == null
-                        ? RpcMethodIndex.empty()
-                        : activation.active().rpcMethods()
+                () -> {
+                    var rules = activation.active();
+                    return rules == null ? RpcMethodIndex.empty() : rules.rpcMethods();
+                },
+                activation::acquire
         );
     }
 

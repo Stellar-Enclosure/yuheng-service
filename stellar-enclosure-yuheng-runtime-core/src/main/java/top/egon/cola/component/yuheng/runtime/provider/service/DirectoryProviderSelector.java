@@ -10,6 +10,7 @@ import top.egon.cola.component.yuheng.runtime.provider.domain.ProviderSelectionH
 import top.egon.cola.component.yuheng.runtime.provider.domain.LoadBalancerType;
 import top.egon.cola.component.yuheng.runtime.provider.service.ProviderLoadBalancers;
 import top.egon.cola.component.yuheng.runtime.provider.service.ProviderSelector;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 
 import java.time.Clock;
 import java.util.Objects;
@@ -166,7 +167,26 @@ public final class DirectoryProviderSelector implements ProviderSelector {
             ProviderServiceKey serviceKey,
             Set<String> policyRefs,
             Set<String> excludedRuntimeIdentities) {
-        ResolvedPolicies resolved = resolve(serviceKey, policyRefs);
+        return select(serviceKey, policyRefs, excludedRuntimeIdentities,
+                runtimePolicies.get());
+    }
+
+    @Override
+    public ProviderSelectionHandle select(
+            ProviderServiceKey serviceKey,
+            Set<String> policyRefs,
+            Set<String> excludedRuntimeIdentities,
+            GatewayCompiledRulesDTO rules) {
+        return select(serviceKey, policyRefs, excludedRuntimeIdentities,
+                rules == null ? runtimePolicies.get() : rules.providerPolicies());
+    }
+
+    private ProviderSelectionHandle select(
+            ProviderServiceKey serviceKey,
+            Set<String> policyRefs,
+            Set<String> excludedRuntimeIdentities,
+            Map<String, RuntimeProviderPolicy> snapshotPolicies) {
+        ResolvedPolicies resolved = resolve(serviceKey, policyRefs, snapshotPolicies);
         ProviderCandidateFilterResult result = candidateFilter.filter(
                 serviceKey,
                 directory.instances(serviceKey),
@@ -203,11 +223,12 @@ public final class DirectoryProviderSelector implements ProviderSelector {
      */
     private ResolvedPolicies resolve(
             ProviderServiceKey serviceKey,
-            Set<String> policyRefs) {
+            Set<String> policyRefs,
+            Map<String, RuntimeProviderPolicy> snapshotPolicies) {
         LoadBalancerType loadBalancer = LoadBalancerType.ROUND_ROBIN;
         ProviderSelectionPolicy selection = policies.apply(serviceKey);
         for (String policyRef : policyRefs) {
-            RuntimeProviderPolicy policy = runtimePolicies.get().get(
+            RuntimeProviderPolicy policy = snapshotPolicies.get(
                     policyRef
             );
             if (policy == null) {

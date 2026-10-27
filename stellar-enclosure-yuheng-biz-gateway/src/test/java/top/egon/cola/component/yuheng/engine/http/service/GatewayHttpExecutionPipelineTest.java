@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GatewayHttpExecutionPipelineTest {
 
@@ -45,6 +46,30 @@ class GatewayHttpExecutionPipelineTest {
 
         assertEquals(204, response.status());
         assertEquals(List.of("cors"), calls);
+    }
+
+    @Test
+    void additionalFilterRunsInStageOrderWithoutReplacingMandatoryStages() {
+        List<String> calls = new ArrayList<>();
+        top.egon.cola.component.yuheng.core.filter.GatewayFilter extra =
+                new top.egon.cola.component.yuheng.core.filter.GatewayFilter() {
+                    @Override public String id() { return "extra"; }
+                    @Override public top.egon.cola.component.yuheng.core.filter.GatewayFilterStage stage() {
+                        return top.egon.cola.component.yuheng.core.filter.GatewayFilterStage.AUTHORIZATION;
+                    }
+                    @Override public int order() { return 0; }
+                    @Override public Publisher<GatewayResponse> filter(
+                            top.egon.cola.component.yuheng.core.exchange.GatewayExchange exchange,
+                            GatewayFilterChain chain) {
+                        calls.add("extra");
+                        return chain.filter(exchange);
+                    }
+                };
+        var pipeline = new GatewayHttpExecutionPipeline(List.of(extra));
+        assertEquals(200, pipeline.execute(new TestExchange(calls, false)).block().status());
+        assertEquals(List.of("cors", "security", "extra", "governance", "invocation"), calls);
+        assertThrows(IllegalArgumentException.class,
+                () -> new GatewayHttpExecutionPipeline(List.of(extra, extra)));
     }
 
     private static final class TestExchange

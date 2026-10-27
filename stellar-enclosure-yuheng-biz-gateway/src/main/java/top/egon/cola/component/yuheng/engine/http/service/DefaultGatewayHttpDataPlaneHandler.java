@@ -13,6 +13,8 @@ import top.egon.cola.component.yuheng.runtime.http.service.GatewayOutboundHttpRe
 import top.egon.cola.component.yuheng.engine.http.domain.GatewayRequestBodyTooLargeException;
 import top.egon.cola.component.yuheng.engine.http.domain.GatewayResponseBodyTooLargeException;
 import top.egon.cola.component.yuheng.engine.http.security.GatewayHttpSecurityProcessor;
+import top.egon.cola.component.yuheng.engine.rule.domain.ApiRpcGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.engine.http.routing.HttpRequestRouter;
 
 import org.reactivestreams.Publisher;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
@@ -87,6 +89,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import static top.egon.cola.component.yuheng.engine.http.response.HttpErrorResponseFactory.error;
+import static top.egon.cola.component.yuheng.engine.http.response.HttpErrorResponseFactory.rpcError;
+import static top.egon.cola.component.yuheng.engine.http.response.HttpErrorResponseFactory.trafficError;
+import static top.egon.cola.component.yuheng.engine.http.response.HttpErrorResponseFactory.withSecurityHeaders;
+
 /**
  * 中文说明：{@code DefaultGatewayHttpDataPlaneHandler} 是处理器，位于当前 Gateway 模块的相关包中，负责Default网关HttpDataPlane处理器相关的职责与边界。
  * English summary: {@code DefaultGatewayHttpDataPlaneHandler} is a default gateway http data plane handler handler in the current Gateway module; it owns the default gateway http data plane handler-related responsibility and boundary.
@@ -112,6 +119,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
      * 用法 / Usage: 该字段通过 {@code DefaultGatewayHttpDataPlaneHandler} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code DefaultGatewayHttpDataPlaneHandler}; do not couple callers to its representation when the owning type exposes an API.
      */
     private final HttpRequestNormalizer normalizer;
+
+    private final HttpRequestRouter requestRouter;
 
     /**
      * 中文说明：保存 路由索引 对应的状态、依赖或配置值；字段类型为 {@code Supplier<CompiledHttpRouteIndex>}，由 {@code DefaultGatewayHttpDataPlaneHandler} 在其生命周期内读取或更新。
@@ -958,6 +967,7 @@ public final class DefaultGatewayHttpDataPlaneHandler
                         4 * 1024 * 1024
                 )
         );
+        requestRouter = new HttpRequestRouter(this.normalizer, resourceGuard);
     }
 
     /**
@@ -994,6 +1004,14 @@ public final class DefaultGatewayHttpDataPlaneHandler
     public Mono<GatewayOutboundHttpResponse> handle(
             AccessZone accessZone,
             GatewayInboundHttpRequest request) {
+        return handle(accessZone, request, null, routeIndex.get());
+    }
+
+    public Mono<GatewayOutboundHttpResponse> handle(
+            AccessZone accessZone,
+            GatewayInboundHttpRequest request,
+            ApiRpcGatewayCompiledRulesDTO rules,
+            CompiledHttpRouteIndex requestRoutes) {
         GatewayTraceContext selectedTrace = traceContext(
                 request.headers()
         );
@@ -1006,20 +1024,11 @@ public final class DefaultGatewayHttpDataPlaneHandler
         observation.scope(engineEnv, engineNamespace);
         GatewayTraceContext trace = observation.trace();
         try {
-            NormalizedHttpRequest normalized = normalizer.normalize(
-                    request.method(),
-                    request.host(),
-                    request.uri(),
-                    request.headers()
-            );
-            resourceGuard.validate(normalized);
-            String routeMethod = routeMethod(request, normalized.method());
-            HttpRouteMatch match = routeIndex.get().match(
-                    normalized.host(),
-                    routeMethod,
-                    normalized.normalizedPath(),
-                    accessZone
-            ).orElse(null);
+            HttpRequestRouter.Match resolved = requestRouter.resolve(
+                    accessZone, request, requestRoutes, true);
+            NormalizedHttpRequest normalized = resolved.request();
+            String routeMethod = resolved.method();
+            HttpRouteMatch match = resolved.route();
             if (match == null) {
                 return Mono.just(observed(
                         error(
@@ -1066,7 +1075,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                     match,
                     routeMethod,
                     trace,
-                    observation
+                    observation,
+                    rules
             );
             return executionPipeline.execute(exchange)
                     .map(response -> exchange.failed()
@@ -1127,6 +1137,14 @@ public final class DefaultGatewayHttpDataPlaneHandler
     public Mono<GatewayWebSocketHandshakeResult> prepareWebSocket(
             AccessZone accessZone,
             GatewayInboundHttpRequest request) {
+        return prepareWebSocket(accessZone, request, null, routeIndex.get());
+    }
+
+    public Mono<GatewayWebSocketHandshakeResult> prepareWebSocket(
+            AccessZone accessZone,
+            GatewayInboundHttpRequest request,
+            ApiRpcGatewayCompiledRulesDTO rules,
+            CompiledHttpRouteIndex requestRoutes) {
         GatewayTraceContext selectedTrace = traceContext(request.headers());
         GatewayCallObservation observation = GatewayCallObservation.start(
                 selectedTrace,
@@ -1137,19 +1155,10 @@ public final class DefaultGatewayHttpDataPlaneHandler
         observation.scope(engineEnv, engineNamespace);
         GatewayTraceContext trace = observation.trace();
         try {
-            NormalizedHttpRequest normalized = normalizer.normalize(
-                    request.method(),
-                    request.host(),
-                    request.uri(),
-                    request.headers()
-            );
-            resourceGuard.validate(normalized);
-            HttpRouteMatch match = routeIndex.get().match(
-                    normalized.host(),
-                    normalized.method(),
-                    normalized.normalizedPath(),
-                    accessZone
-            ).orElse(null);
+            HttpRequestRouter.Match resolved = requestRouter.resolve(
+                    accessZone, request, requestRoutes, false);
+            NormalizedHttpRequest normalized = resolved.request();
+            HttpRouteMatch match = resolved.route();
             if (match == null || accessZone == AccessZone.PUBLIC
                     && !match.route().externalAccessible()) {
                 return Mono.just(GatewayWebSocketHandshakeResult.rejected(
@@ -1177,7 +1186,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                             normalized,
                             match,
                             trace,
-                            observation
+                            observation,
+                            rules
                     )
             ).doOnCancel(() -> publish(
                     observation,
@@ -1218,30 +1228,6 @@ public final class DefaultGatewayHttpDataPlaneHandler
     }
 
     /**
-     * 中文说明：执行 路由方法 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the route method operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code DefaultGatewayHttpDataPlaneHandler.routeMethod(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param request 参数 请求；parameter request。
-     * @param method 参数 方法；parameter method。
-     * @return 返回 路由方法 的处理结果；returns the result of the operation.
-     */
-    private String routeMethod(
-            GatewayInboundHttpRequest request,
-            String method) {
-        if (!"OPTIONS".equalsIgnoreCase(method)) {
-            return method;
-        }
-        String requested = firstHeader(
-                request.headers(),
-                "access-control-request-method"
-        );
-        return requested == null || requested.isBlank()
-                ? method
-                : requested.trim().toUpperCase(java.util.Locale.ROOT);
-    }
-
-    /**
      * 中文说明：执行 invokeUpstream 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
      * English summary: Executes the invoke upstream operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
      *
@@ -1262,7 +1248,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
             GatewayHttpSecurityProcessor.Outcome security,
             GatewayTraceContext trace,
             GatewayCallObservation observation,
-            GatewayTrafficGovernance.RequestPermit permit) {
+            GatewayTrafficGovernance.RequestPermit permit,
+            ApiRpcGatewayCompiledRulesDTO rules) {
         long requestLimit = permit.requestSizeLimit(
                 match.route().transportPolicy().maxRequestBodyBytes()
         );
@@ -1323,7 +1310,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                             permit,
                             attempts.incrementAndGet(),
                             failedProviders,
-                            commitGuard
+                            commitGuard,
+                            rules
                     ),
                     this::retryable,
                     RetryableHttpStatusException.class::isInstance
@@ -1409,11 +1397,13 @@ public final class DefaultGatewayHttpDataPlaneHandler
             GatewayTrafficGovernance.RequestPermit requestPermit,
             int attemptNumber,
             Set<String> failedProviders,
-            GatewayCommitGuard commitGuard) {
+            GatewayCommitGuard commitGuard,
+            ApiRpcGatewayCompiledRulesDTO rules) {
         ProviderSelectionHandle selection = providerSelector.select(
                 match.route().upstream(),
                 match.route().policyRefs(),
-                failedProviders
+                failedProviders,
+                rules
         );
         ProviderInstance provider = selection.instance();
         GatewayTrafficGovernance.AttemptPermit attemptPermit;
@@ -1484,7 +1474,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                                         "RPC body"
                                 ),
                                 headers,
-                                requestPermit.timeout()
+                                requestPermit.timeout(),
+                                rules
                         )
                         .onErrorResume(
                                 HttpRpcUpstreamAdapter
@@ -1768,25 +1759,6 @@ public final class DefaultGatewayHttpDataPlaneHandler
                 : java.util.Optional.of(String.join("; ", allowed));
     }
 
-    private GatewayOutboundHttpResponse withSecurityHeaders(
-            GatewayOutboundHttpResponse response,
-            Map<String, List<String>> securityHeaders) {
-        if (securityHeaders == null || securityHeaders.isEmpty()) {
-            return response;
-        }
-        Map<String, List<String>> merged = new LinkedHashMap<>(
-                response.headers());
-        securityHeaders.forEach((name, values) -> merged.merge(
-                name.toLowerCase(java.util.Locale.ROOT),
-                List.copyOf(values),
-                (existing, replacement) -> {
-                    List<String> combined = new java.util.ArrayList<>(existing);
-                    combined.addAll(replacement);
-                    return List.copyOf(combined);
-                }));
-        return response.withHeadersAndBody(merged, response.body());
-    }
-
     /**
      * 中文说明：执行 restoreOriginalBearer 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
      * English summary: Executes the restore original bearer operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
@@ -1808,115 +1780,6 @@ public final class DefaultGatewayHttpDataPlaneHandler
                             + security.forwardingCredential().tokenReference())
             );
         }
-    }
-
-    /**
-     * 中文说明：执行 error 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the error operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code DefaultGatewayHttpDataPlaneHandler.error(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param status 参数 status；parameter status。
-     * @param code 参数 code；parameter code。
-     * @param traceId 参数 traceId；parameter trace id。
-     * @return 返回 error 的处理结果；returns the result of the operation.
-     */
-    private GatewayOutboundHttpResponse error(
-            int status,
-            String code,
-            String traceId) {
-        return error(status, code, traceId, Map.of());
-    }
-
-    private GatewayOutboundHttpResponse error(
-            int status,
-            String code,
-            String traceId,
-            Map<String, List<String>> extraHeaders) {
-        String body = "{\"success\":false,\"code\":\""
-                + code
-                + "\",\"traceId\":\""
-                + traceId
-                + "\"}";
-        GatewayOutboundHttpResponse response = new GatewayOutboundHttpResponse(
-                status,
-                Map.of(
-                        "content-type",
-                        List.of("application/json; charset=UTF-8")
-                ),
-                reactor.core.publisher.Flux.just(
-                        BUFFER_FACTORY.wrap(body.getBytes(
-                                java.nio.charset.StandardCharsets.UTF_8
-                        ))
-                )
-        );
-        return withSecurityHeaders(response, extraHeaders);
-    }
-
-    /**
-     * 中文说明：执行 流量Error 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the traffic error operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code DefaultGatewayHttpDataPlaneHandler.trafficError(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param rejected 参数 rejected；parameter rejected。
-     * @param traceId 参数 traceId；parameter trace id。
-     * @return 返回 流量Error 的处理结果；returns the result of the operation.
-     */
-    private GatewayOutboundHttpResponse trafficError(
-            GatewayTrafficRejectedException rejected,
-            String traceId) {
-        GatewayOutboundHttpResponse response = error(
-                rejected.httpStatus(),
-                rejected.code(),
-                traceId
-        );
-        if (rejected.retryAfterMillis() == 0) {
-            return response;
-        }
-        Map<String, List<String>> headers = new LinkedHashMap<>(
-                response.headers()
-        );
-        headers.put(
-                "retry-after",
-                List.of(Long.toString(Math.max(
-                        1,
-                        (rejected.retryAfterMillis() + 999) / 1000
-                )))
-        );
-        return response.withHeadersAndBody(
-                headers,
-                response.body()
-        );
-    }
-
-    /**
-     * 中文说明：执行 rpcError 操作；该方法是 {@code DefaultGatewayHttpDataPlaneHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the rpc error operation; this method is the invocation entry point on {@code DefaultGatewayHttpDataPlaneHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code DefaultGatewayHttpDataPlaneHandler.rpcError(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param failure 参数 failure；parameter failure。
-     * @param traceId 参数 traceId；parameter trace id。
-     * @return 返回 rpcError 的处理结果；returns the result of the operation.
-     */
-    private GatewayOutboundHttpResponse rpcError(
-            HttpRpcUpstreamAdapter.HttpRpcUpstreamException failure,
-            String traceId) {
-        int status = switch (failure.status().getCode()) {
-            case INVALID_ARGUMENT, FAILED_PRECONDITION -> 400;
-            case UNAUTHENTICATED -> 401;
-            case PERMISSION_DENIED -> 403;
-            case NOT_FOUND -> 404;
-            case ALREADY_EXISTS, ABORTED -> 409;
-            case RESOURCE_EXHAUSTED -> 429;
-            case DEADLINE_EXCEEDED -> 504;
-            case UNAVAILABLE -> 503;
-            default -> 502;
-        };
-        return error(
-                status,
-                "YUHENG_RPC_UPSTREAM_"
-                        + failure.status().getCode().name(),
-                traceId
-        );
     }
 
     /**
@@ -2281,6 +2144,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
     private final class HttpStageExchange
             extends AbstractGatewayHttpStageExchange {
 
+        private final ApiRpcGatewayCompiledRulesDTO rules;
+
         /**
          * 中文说明：保存 accessZone 对应的状态、依赖或配置值；字段类型为 {@code AccessZone}，由 {@code DefaultGatewayHttpDataPlaneHandler.HttpStageExchange} 在其生命周期内读取或更新。
          * English summary: Holds the state, dependency, or configuration represented by access zone; its type is {@code AccessZone}, and {@code DefaultGatewayHttpDataPlaneHandler.HttpStageExchange} reads or updates it during its lifecycle.
@@ -2381,7 +2246,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                 HttpRouteMatch match,
                 String routeMethod,
                 GatewayTraceContext trace,
-                GatewayCallObservation observation) {
+                GatewayCallObservation observation,
+                ApiRpcGatewayCompiledRulesDTO rules) {
             super(request, gatewayContext(accessZone, match, trace));
             this.accessZone = accessZone;
             this.normalized = normalized;
@@ -2389,6 +2255,7 @@ public final class DefaultGatewayHttpDataPlaneHandler
             this.routeMethod = routeMethod;
             this.trace = trace;
             this.observation = observation;
+            this.rules = rules;
         }
 
         /**
@@ -2402,12 +2269,11 @@ public final class DefaultGatewayHttpDataPlaneHandler
         @Override
         public Publisher<GatewayResponse> cors(
                 GatewayFilterChain chain) {
-            cors = corsProcessor.evaluate(
-                    match.route().policyRefs(),
-                    inbound(),
-                    routeMethod,
-                    trace.traceId()
-            );
+            cors = rules == null
+                    ? corsProcessor.evaluate(match.route().policyRefs(), inbound(),
+                            routeMethod, trace.traceId())
+                    : corsProcessor.evaluate(match.route().policyRefs(), inbound(),
+                            routeMethod, trace.traceId(), rules.corsPolicies());
             return cors.preflightResponse()
                     .<Publisher<GatewayResponse>>map(this::respond)
                     .orElseGet(() -> chain.filter(this));
@@ -2429,7 +2295,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                             inbound(),
                             normalized,
                             match,
-                            trace.traceId()
+                            trace.traceId(),
+                            rules
                     )
                     .flatMap(outcome -> {
                         security = outcome;
@@ -2457,7 +2324,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
             return trafficGovernance.acquire(
                             match.route().policyRefs(),
                             context,
-                            upstreamTimeout
+                            upstreamTimeout,
+                            rules
                     )
                     .flatMap(acquired -> {
                         permit = acquired;
@@ -2482,7 +2350,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                     security,
                     trace,
                     observation,
-                    permit
+                    permit,
+                    rules
             )
                     .map(response -> withSecurityHeaders(
                             response,
@@ -2619,6 +2488,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
     private final class WebSocketStageExchange
             extends AbstractGatewayHttpStageExchange {
 
+        private final ApiRpcGatewayCompiledRulesDTO rules;
+
         /**
          * 中文说明：保存 accessZone 对应的状态、依赖或配置值；字段类型为 {@code AccessZone}，由 {@code DefaultGatewayHttpDataPlaneHandler.WebSocketStageExchange} 在其生命周期内读取或更新。
          * English summary: Holds the state, dependency, or configuration represented by access zone; its type is {@code AccessZone}, and {@code DefaultGatewayHttpDataPlaneHandler.WebSocketStageExchange} reads or updates it during its lifecycle.
@@ -2701,13 +2572,15 @@ public final class DefaultGatewayHttpDataPlaneHandler
                 NormalizedHttpRequest normalized,
                 HttpRouteMatch match,
                 GatewayTraceContext trace,
-                GatewayCallObservation observation) {
+                GatewayCallObservation observation,
+                ApiRpcGatewayCompiledRulesDTO rules) {
             super(request, gatewayContext(accessZone, match, trace));
             this.accessZone = accessZone;
             this.normalized = normalized;
             this.match = match;
             this.trace = trace;
             this.observation = observation;
+            this.rules = rules;
         }
 
         /**
@@ -2720,12 +2593,11 @@ public final class DefaultGatewayHttpDataPlaneHandler
          */
         @Override
         public Publisher<GatewayResponse> cors(GatewayFilterChain chain) {
-            GatewayCorsProcessor.Decision decision = corsProcessor.evaluate(
-                    match.route().policyRefs(),
-                    inbound(),
-                    normalized.method(),
-                    trace.traceId()
-            );
+            GatewayCorsProcessor.Decision decision = rules == null
+                    ? corsProcessor.evaluate(match.route().policyRefs(), inbound(),
+                            normalized.method(), trace.traceId())
+                    : corsProcessor.evaluate(match.route().policyRefs(), inbound(),
+                            normalized.method(), trace.traceId(), rules.corsPolicies());
             return decision.preflightResponse()
                     .<Publisher<GatewayResponse>>map(this::respond)
                     .orElseGet(() -> chain.filter(this));
@@ -2747,7 +2619,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                             inbound(),
                             normalized,
                             match,
-                            trace.traceId()
+                            trace.traceId(),
+                            rules
                     )
                     .flatMap(outcome -> {
                         security = outcome;
@@ -2774,7 +2647,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
                                     inbound(),
                                     security
                             ),
-                            upstreamTimeout
+                            upstreamTimeout,
+                            rules
                     )
                     .flatMap(acquired -> {
                         requestPermit = acquired;
@@ -2809,7 +2683,8 @@ public final class DefaultGatewayHttpDataPlaneHandler
             ProviderSelectionHandle selection = providerSelector.select(
                     match.route().upstream(),
                     match.route().policyRefs(),
-                    Set.of()
+                    Set.of(),
+                    rules
             );
             ProviderInstance provider = selection.instance();
             GatewayTrafficGovernance.AttemptPermit attemptPermit;

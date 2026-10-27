@@ -2,6 +2,7 @@ package top.egon.cola.component.yuheng.runtime.provider.service;
 
 import top.egon.cola.component.yuheng.core.provider.ProviderServiceKey;
 import top.egon.cola.component.yuheng.runtime.provider.domain.ProviderSelectionHandle;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 
 import java.util.Set;
 
@@ -54,5 +55,13 @@ public interface ProviderSelector {
             Set<String> policyRefs,
             Set<String> excludedRuntimeIdentities) {
         return select(serviceKey, policyRefs);
+    }
+
+    default ProviderSelectionHandle select(
+            ProviderServiceKey serviceKey,
+            Set<String> policyRefs,
+            Set<String> excludedRuntimeIdentities,
+            GatewayCompiledRulesDTO rules) {
+        return select(serviceKey, policyRefs, excludedRuntimeIdentities);
     }
 }

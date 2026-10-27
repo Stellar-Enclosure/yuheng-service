@@ -9,6 +9,7 @@ import top.egon.cola.component.yuheng.core.route.HttpRouteMatch;
 import top.egon.cola.component.yuheng.core.security.GatewayCredential;
 import top.egon.cola.component.yuheng.core.security.GatewayRouteSecurityType;
 import top.egon.cola.component.yuheng.core.security.TrustedIdentity;
+import top.egon.cola.component.yuheng.engine.rule.domain.ApiRpcGatewayCompiledRulesDTO;
 
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,16 @@ public interface GatewayHttpSecurityProcessor {
             NormalizedHttpRequest normalized,
             HttpRouteMatch route,
             String traceId);
+
+    default Mono<Outcome> authorize(
+            AccessZone accessZone,
+            GatewayInboundHttpRequest request,
+            NormalizedHttpRequest normalized,
+            HttpRouteMatch route,
+            String traceId,
+            ApiRpcGatewayCompiledRulesDTO rules) {
+        return authorize(accessZone, request, normalized, route, traceId);
+    }
 
     /**
      * 中文说明：{@code Outcome} 是不可变数据载体，位于当前 Gateway 模块的相关包中，负责Outcome相关的职责与边界。

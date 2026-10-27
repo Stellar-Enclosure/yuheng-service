@@ -119,7 +119,20 @@ public final class RuleBackedHttpGatewaySecurityProcessor
             NormalizedHttpRequest normalized,
             HttpRouteMatch route,
             String traceId) {
-        ApiRpcGatewayCompiledRulesDTO current = rules.get();
+        return authorize(accessZone, request, normalized, route, traceId, rules.get());
+    }
+
+    @Override
+    public Mono<Outcome> authorize(
+            AccessZone accessZone,
+            GatewayInboundHttpRequest request,
+            NormalizedHttpRequest normalized,
+            HttpRouteMatch route,
+            String traceId,
+            ApiRpcGatewayCompiledRulesDTO current) {
+        if (current == null) {
+            current = Objects.requireNonNull(rules.get(), "compiled rules");
+        }
         List<GatewaySecurityPolicy> policies = route.route().policyRefs()
                 .stream()
                 .map(current.securityPolicies()::get)

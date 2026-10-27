@@ -22,6 +22,7 @@ import top.egon.cola.component.yuheng.core.transport.EffectiveGatewayTransportPo
 import top.egon.cola.component.yuheng.runtime.http.adapter.HttpUpstreamAdapter;
 import top.egon.cola.component.yuheng.runtime.http.domain.HttpUpstreamRequest;
 import top.egon.cola.component.yuheng.runtime.operation.adapter.HttpRpcUpstreamAdapter;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -112,10 +113,19 @@ public final class DefaultGatewayOperationTransport
             ProviderInstance provider,
             EngineGatewayOperationInvoker.PreparedRequest request,
             Duration timeout) {
+        return invoke(provider, request, timeout, null);
+    }
+
+    @Override
+    public Mono<GatewayInvocationResult> invoke(
+            ProviderInstance provider,
+            EngineGatewayOperationInvoker.PreparedRequest request,
+            Duration timeout,
+            GatewayCompiledRulesDTO rules) {
         Mono<GatewayOutboundHttpResponse> response =
                 provider.serviceKey().protocolType()
                         == ProviderProtocolType.RPC
-                        ? rpc(provider, request, timeout)
+                        ? rpc(provider, request, timeout, rules)
                         : http(provider, request, timeout);
         return response.flatMap(this::aggregate);
     }
@@ -160,7 +170,8 @@ public final class DefaultGatewayOperationTransport
     private Mono<GatewayOutboundHttpResponse> rpc(
             ProviderInstance provider,
             EngineGatewayOperationInvoker.PreparedRequest request,
-            Duration timeout) {
+            Duration timeout,
+            GatewayCompiledRulesDTO rules) {
         String rawPath = rawPath(request.pathAndQuery());
         String rawQuery = rawQuery(request.pathAndQuery());
         RuntimeHttpRoute route = syntheticRoute(request, provider, rawPath);
@@ -177,7 +188,8 @@ public final class DefaultGatewayOperationTransport
                 ),
                 request.body(),
                 request.headers(),
-                timeout
+                timeout,
+                rules
         );
     }
 

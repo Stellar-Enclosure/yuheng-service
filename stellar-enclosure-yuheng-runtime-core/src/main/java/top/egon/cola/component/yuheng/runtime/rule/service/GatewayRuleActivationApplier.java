@@ -15,16 +15,16 @@ import top.egon.cola.component.tianshu.api.refresh.DdcConfigApplier;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivation;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivationMode;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuleSnapshot;
-import top.egon.cola.component.yuheng.core.provider.ProviderServiceKey;
 import top.egon.cola.component.yuheng.runtime.provider.service.ProviderDirectory;
 import top.egon.cola.component.yuheng.runtime.observability.domain.GatewayTelemetry;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.LinkedHashSet;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * 中文说明：{@code GatewayRuleActivationApplier} 是类型，位于当前 Gateway 模块的相关包中，负责网关规则ActivationApplier相关的职责与边界。
@@ -114,13 +114,8 @@ public final class GatewayRuleActivationApplier<T extends GatewayCompiledRulesDT
     @Qualifier("gatewayTelemetry")
     private final GatewayTelemetry telemetry;
 
-    /**
-     * 中文说明：保存 active 对应的状态、依赖或配置值；字段类型为 {@code AtomicReference<T>}，由 {@code GatewayRuleActivationApplier} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by active; its type is {@code AtomicReference<T>}, and {@code GatewayRuleActivationApplier} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayRuleActivationApplier} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayRuleActivationApplier}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final AtomicReference<T> active =
+    /** The active generation owns one reference until another generation replaces it. */
+    private final AtomicReference<Generation> active =
             new AtomicReference<>();
 
     /**
@@ -196,31 +191,21 @@ public final class GatewayRuleActivationApplier<T extends GatewayCompiledRulesDT
             updateStage(GatewayRuleApplyStage.SCHEMA_VALIDATED, null);
             T prepared = validateCompiled(snapshot, compiler.compile(snapshot));
             updateStage(GatewayRuleApplyStage.COMPILED, null);
-            T previous = active.get();
-            Set<ProviderServiceKey> additions = difference(
-                    prepared.providerServices(),
-                    previous == null
-                            ? Set.of()
-                            : previous.providerServices()
-            );
-            providerDirectory.activate(additions);
+            providerDirectory.activate(prepared.providerServices());
             updateStage(GatewayRuleApplyStage.RESOURCE_PREPARED, null);
             try {
                 lkgRepository.persistAndActivate(snapshot, snapshotJson);
             } catch (RuntimeException failure) {
-                providerDirectory.release(additions);
+                providerDirectory.release(prepared.providerServices());
                 throw failure;
             }
             updateStage(GatewayRuleApplyStage.DURABLE_STAGED, null);
             updateStage(GatewayRuleApplyStage.ACTIVE_POINTER_WRITTEN, null);
-            active.set(prepared);
+            Generation previous = active.getAndSet(new Generation(prepared));
             updateStage(GatewayRuleApplyStage.MEMORY_ACTIVATED, null);
             chunks.removeRelease(activation.releaseId());
             if (previous != null) {
-                providerDirectory.release(difference(
-                        previous.providerServices(),
-                        prepared.providerServices()
-                ));
+                previous.release();
             }
             status.set(successStatus(prepared, version));
             operation.success();
@@ -295,7 +280,7 @@ public final class GatewayRuleActivationApplier<T extends GatewayCompiledRulesDT
         }
         T prepared = validateCompiled(snapshot, compiler.compile(snapshot));
         providerDirectory.activate(prepared.providerServices());
-        active.set(prepared);
+        active.set(new Generation(prepared));
         status.set(successStatus(prepared, 0));
         return true;
     }
@@ -308,7 +293,83 @@ public final class GatewayRuleActivationApplier<T extends GatewayCompiledRulesDT
      * @return 返回 active 的处理结果；returns the result of the operation.
      */
     public T active() {
-        return active.get();
+        Generation generation = active.get();
+        return generation == null ? null : generation.rules;
+    }
+
+    /** Pins a complete rule generation and its provider subscriptions for one request. */
+    public Lease<T> acquire() {
+        for (;;) {
+            Generation generation = active.get();
+            if (generation == null) {
+                return null;
+            }
+            if (generation.retain()) {
+                if (generation == active.get()) {
+                    return new Lease<>(generation.rules, generation::release);
+                }
+                generation.release();
+            }
+        }
+    }
+
+    public static final class Lease<R extends GatewayCompiledRulesDTO> implements AutoCloseable {
+        private final R rules;
+        private final Runnable release;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        private Lease(R rules, Runnable release) {
+            this.rules = rules;
+            this.release = release;
+        }
+
+        public R rules() {
+            return rules;
+        }
+
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                release.run();
+            }
+        }
+    }
+
+    private final class Generation {
+        private final T rules;
+        private final AtomicInteger references = new AtomicInteger(1);
+
+        private Generation(T rules) {
+            this.rules = rules;
+        }
+
+        private boolean retain() {
+            int count = references.get();
+            while (count != 0) {
+                if (references.compareAndSet(count, count + 1)) {
+                    return true;
+                }
+                count = references.get();
+            }
+            return false;
+        }
+
+        private void release() {
+            if (references.decrementAndGet() == 0) {
+                Runnable cleanup = () -> {
+                    try {
+                        providerDirectory.release(rules.providerServices());
+                    } catch (RuntimeException failure) {
+                        log.warn("Failed to release retired gateway provider subscriptions", failure);
+                    }
+                };
+                try {
+                    Schedulers.boundedElastic().schedule(cleanup);
+                } catch (java.util.concurrent.RejectedExecutionException rejected) {
+                    cleanup.run();
+                }
+            }
+        }
     }
 
     /**
@@ -372,23 +433,6 @@ public final class GatewayRuleActivationApplier<T extends GatewayCompiledRulesDT
                     "YUHENG_RULE_CHECKSUM_MISMATCH: activation"
             );
         }
-    }
-
-    /**
-     * 中文说明：执行 difference 操作；该方法是 {@code GatewayRuleActivationApplier} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the difference operation; this method is the invocation entry point on {@code GatewayRuleActivationApplier} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayRuleActivationApplier.difference(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param left 参数 left；parameter left。
-     * @param right 参数 right；parameter right。
-     * @return 返回 difference 的处理结果；returns the result of the operation.
-     */
-    private Set<ProviderServiceKey> difference(
-            Set<ProviderServiceKey> left,
-            Set<ProviderServiceKey> right) {
-        Set<ProviderServiceKey> result = new LinkedHashSet<>(left);
-        result.removeAll(right);
-        return Set.copyOf(result);
     }
 
     /**
