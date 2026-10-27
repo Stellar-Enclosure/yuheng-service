@@ -92,7 +92,7 @@ class PermissionProducerCoverageTest {
             }
         }
         walk(top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadCommandDTO.class, false, resources, fields, external, new HashSet<>());
-        assertThat(apiKeys).hasSize(95);
+        assertThat(apiKeys).hasSize(97);
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.API)
                 .map(PermissionManifest.ResourceDefinition::key).toList()).containsExactlyInAnyOrderElementsOf(apiKeys);
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.FIELD)

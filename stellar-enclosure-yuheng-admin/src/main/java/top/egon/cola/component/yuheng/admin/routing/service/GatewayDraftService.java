@@ -35,6 +35,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
@@ -48,6 +49,11 @@ import top.egon.cola.component.yuheng.admin.shared.domain.bo.IdempotencyBO;
  */
 @Service
 public class GatewayDraftService {
+
+    private static final String YAML_SOURCE_FIELD = "yuhengRouteSource";
+    private static final String YAML_SOURCE = "YAML";
+    private final top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser yamlRoutes =
+            new top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser();
 
     /**
      * 中文说明：表示 SCOPE 这一固定值；它属于 {@code GatewayDraftService} 的状态、类型或协议取值，用于保持调用方与所属类型之间的语义一致。
@@ -247,6 +253,11 @@ public class GatewayDraftService {
         if (replay != null) {
             return replay;
         }
+        if (YAML_SOURCE.equals(canonicalContent.get(YAML_SOURCE_FIELD))
+                || store.routes(gatewayGroupId).stream()
+                .anyMatch(route -> route.getRouteId().equals(routeId) && yamlManaged(route))) {
+            throw new IllegalArgumentException("YAML-managed routes must be changed through YAML import");
+        }
         top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO operation =
                 catalog.findOperation(command.operationId())
                         .orElseThrow(() -> new GatewayAdminNotFoundException(
@@ -324,6 +335,10 @@ public class GatewayDraftService {
                 gatewayGroupId,
                 control.expectedRevision()
         );
+        if (store.routes(gatewayGroupId).stream()
+                .anyMatch(route -> route.getRouteId().equals(routeId) && yamlManaged(route))) {
+            throw new IllegalArgumentException("YAML-managed routes must be changed through YAML import");
+        }
         store.deleteRoute(gatewayGroupId, routeId);
         return finish(
                 draft,
@@ -338,6 +353,163 @@ public class GatewayDraftService {
                 clock.instant()
         );
     }
+
+    @Transactional(readOnly = true)
+    public top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayYamlRoutePreviewVO previewYamlRoutes(
+            String gatewayGroupId,
+            top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO request) {
+        return yamlPlan(gatewayGroupId, request).preview();
+    }
+
+    @Transactional
+    public GatewayDraftMutationResultVO importYamlRoutes(
+            String gatewayGroupId,
+            top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO request,
+            AdminActor actor,
+            RequestAuditContext auditRequest) {
+        var document = yamlRoutes.parse(request.yaml());
+        String payloadSha = digest(Map.of(
+                "action", "IMPORT_YAML_ROUTES",
+                "document", document,
+                "expectedRevision", request.expectedRevision(),
+                "changeReason", request.changeReason(),
+                "adoptExisting", request.adoptExisting(),
+                "replaceManaged", request.replaceManaged()));
+        GatewayDraftMutationResultVO replay = replay(
+                gatewayGroupId, request.idempotencyKey(), payloadSha);
+        if (replay != null) {
+            return replay;
+        }
+        YamlRoutePlan plan = yamlPlan(gatewayGroupId, request, document);
+        Instant now = clock.instant();
+        for (var route : document.routes()) {
+            Map<String, Object> content = new java.util.LinkedHashMap<>(route.content());
+            content.put(YAML_SOURCE_FIELD, YAML_SOURCE);
+            store.upsertRoute(new top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO(
+                    gatewayGroupId, route.id(), route.operationId(), Map.copyOf(content),
+                    route.enabled(), now, actor.actorId()));
+        }
+        plan.preview().deleted().forEach(id -> store.deleteRoute(gatewayGroupId, id));
+        return finish(plan.draft(), "ROUTE_MANIFEST", gatewayGroupId, "IMPORT",
+                request.changeReason(), request.idempotencyKey(), payloadSha,
+                actor, auditRequest, now);
+    }
+
+    private YamlRoutePlan yamlPlan(
+            String groupId,
+            top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO request) {
+        return yamlPlan(groupId, request, yamlRoutes.parse(request.yaml()));
+    }
+
+    private YamlRoutePlan yamlPlan(
+            String groupId,
+            top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO request,
+            top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser.Document document) {
+        if (!groupId.equals(document.gatewayGroup())) {
+            throw new IllegalArgumentException("YAML gateway-group does not match the requested group");
+        }
+        GatewayDraftBO draft = editable(groupId, request.expectedRevision());
+        var current = store.routes(groupId).stream().collect(java.util.stream.Collectors.toMap(
+                top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO::getRouteId,
+                java.util.function.Function.identity()));
+        var result = new java.util.LinkedHashMap<String,
+                top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser.Route>();
+        current.forEach((id, route) -> result.put(id,
+                new top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser.Route(
+                        id, route.getOperationId(), route.getContent(), route.isEnabled())));
+        List<String> created = new ArrayList<>();
+        List<String> updated = new ArrayList<>();
+        List<String> deleted = new ArrayList<>();
+        Map<String, Object> changes = new java.util.TreeMap<>();
+        Set<String> incoming = document.routes().stream().map(
+                top.egon.cola.component.yuheng.admin.routing.yaml.GatewayYamlRouteParser.Route::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (request.replaceManaged()) {
+            current.values().stream().filter(GatewayDraftService::yamlManaged)
+                    .filter(route -> !incoming.contains(route.getRouteId()))
+                    .forEach(route -> {
+                        deleted.add(route.getRouteId());
+                        result.remove(route.getRouteId());
+                        changes.put(route.getRouteId(), Map.of("action", "DELETE",
+                                "before", yamlPreview(route.getOperationId(), route.isEnabled(), route.getContent()),
+                                "after", Map.of()));
+                    });
+        }
+        for (var route : document.routes()) {
+            var old = current.get(route.id());
+            if (old != null && !yamlManaged(old) && !request.adoptExisting()) {
+                throw new IllegalArgumentException("route is not YAML-managed: " + route.id());
+            }
+            var operation = catalog.findOperation(route.operationId())
+                    .orElseThrow(() -> new GatewayAdminNotFoundException(
+                            "gateway operation " + route.operationId() + " was not found"));
+            if (isPublic(route.content()) && !operation.isExternalAccessible()) {
+                throw new IllegalArgumentException("PUBLIC route references an internal-only operation");
+            }
+            var issues = transportValidator.validate(route.content(),
+                    GatewayProtocol.valueOf(operation.getProtocol()),
+                    operationResponseMode(route.operationId()));
+            if (!issues.isEmpty()) {
+                throw new IllegalArgumentException("invalid route " + route.id() + ": "
+                        + issues.getFirst().code() + " " + issues.getFirst().message());
+            }
+            Map<String, Object> expected = new java.util.LinkedHashMap<>(route.content());
+            expected.put(YAML_SOURCE_FIELD, YAML_SOURCE);
+            if (old == null) {
+                created.add(route.id());
+                changes.put(route.id(), Map.of("action", "CREATE", "before", Map.of(),
+                        "after", yamlPreview(route.operationId(), route.enabled(), route.content())));
+            } else if (!old.getOperationId().equals(route.operationId())
+                    || old.isEnabled() != route.enabled()
+                    || !routeMapper.canonicalize(old.getContent()).equals(expected)) {
+                updated.add(route.id());
+                changes.put(route.id(), Map.of("action", "UPDATE",
+                        "before", yamlPreview(old.getOperationId(), old.isEnabled(), old.getContent()),
+                        "after", yamlPreview(route.operationId(), route.enabled(), route.content())));
+            }
+            result.put(route.id(), route);
+        }
+        yamlRoutes.validateRoutes(groupId, List.copyOf(result.values()));
+        java.util.Collections.sort(created);
+        java.util.Collections.sort(updated);
+        java.util.Collections.sort(deleted);
+        return new YamlRoutePlan(draft,
+                new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayYamlRoutePreviewVO(
+                        draft.getRevision(), created, updated, deleted, changes));
+    }
+
+    private Map<String, Object> yamlPreview(
+            String operationId, boolean enabled, Map<String, Object> content) {
+        Map<String, Object> route = new java.util.LinkedHashMap<>();
+        Map<String, Object> canonical = routeMapper.canonicalize(content);
+        for (String field : List.of("host", "httpMethod", "pathPattern", "accessZones", "priority")) {
+            if (canonical.containsKey(field)) {
+                route.put(field, canonical.get(field));
+            }
+        }
+        Object transport = canonical.get("transportPolicy");
+        if (transport instanceof Map<?, ?> values) {
+            Map<String, Object> safe = new java.util.LinkedHashMap<>();
+            for (String field : List.of("profile", "transportProtocol", "requestBodyMode", "responseMode",
+                    "maxRequestBodyBytes", "connectTimeoutMs", "responseHeaderTimeoutMs", "streamIdleTimeoutMs",
+                    "totalTimeoutMs", "websocketIdleTimeoutMs", "websocketMaxFrameBytes",
+                    "bodyLogEnabled", "retryEnabled")) {
+                if (values.containsKey(field)) {
+                    safe.put(field, values.get(field));
+                }
+            }
+            route.put("transportPolicy", safe);
+        }
+        return Map.of("operationId", operationId, "enabled", enabled, "content", route);
+    }
+
+    private static boolean yamlManaged(
+            top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO route) {
+        return YAML_SOURCE.equals(route.getContent().get(YAML_SOURCE_FIELD));
+    }
+
+    private record YamlRoutePlan(GatewayDraftBO draft,
+            top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayYamlRoutePreviewVO preview) { }
 
     /**
      * 中文说明：执行 put策略 操作；该方法是 {@code GatewayDraftService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。

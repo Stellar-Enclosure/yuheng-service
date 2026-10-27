@@ -6,6 +6,47 @@
 订阅规则和 Provider 租约，MVC/WebFlux/RPC Provider 注册并上报接口，RPC Consumer
 只发现内部 Yuheng。Nginx、生产 HA、外部 IAM 与生产 TLS 证书不属于该 Demo。
 
+## YAML 路由草稿
+
+Biz 网关路由可以用下面的 YAML 描述，`gateway-group` 必须与 Admin API 的网关组 ID 相同，
+`operation-id` 必须引用已登记的现有 Operation。文件是配置输入示例，不会被 Engine 自动加载。
+
+```yaml
+egon:
+  yuheng:
+    route-spec:
+      schema-version: 1
+      gateway-group: group-1
+      routes:
+        - id: order-by-id
+          operation-id: operation-1
+          predicates:
+            - Host=api.example.com
+            - Method=GET
+            - Path=/api/biz/orders/{id}
+          access-zones: [PUBLIC]
+          priority: 100
+          enabled: true
+```
+
+当前格式要求每条路由各有一个 `Host`、`Method` 和 `Path`。`transport-policy` 可选，其内部字段
+与现有草稿的 `transportPolicy` 相同。暂不支持任意 `uri`、Header/Query Predicate 或 YAML Filter；
+未知字段和 Predicate 会被拒绝。Provider、鉴权和治理策略仍由关联的 Operation 提供。
+
+以具有 `yuheng:drafts:write` Scope 和对应能力的身份，向以下接口发送 JSON 请求：
+
+- `POST /api/v1/yuheng/admin/yuheng-groups/{gatewayGroupId}/draft/routes/yaml/preview`：校验 YAML、
+  Operation 和现有路由冲突，返回将创建、更新、删除的路由 ID 及其匹配和传输字段前后值；不修改草稿。
+- `POST /api/v1/yuheng/admin/yuheng-groups/{gatewayGroupId}/draft/routes/yaml`：在一个事务中导入草稿，
+  返回现有的草稿修订结果。导入之后仍需使用现有的草稿校验、Diff 和 Release 流程发布。
+
+两个接口的 JSON 请求都包含 `yaml`（文件全文字符串）、`expectedRevision`、`idempotencyKey`、
+`changeReason`、`adoptExisting` 和 `replaceManaged`。后两个布尔值缺省为 `false`：
+`adoptExisting=true` 明确将同 ID 的已有手工路由交给 YAML 管理；`replaceManaged=true` 删除
+此前由 YAML 管理但本文件未列出的路由，不删除手工路由。被 YAML 接管后，原单条路由 API 不再
+允许修改或删除该路由，需通过 YAML 导入变更。导入使用修订号和幂等键，失败事务不应产生部分草稿；
+规则仍以现有 `v1` Release、Tianshu 分发和 LKG 机制运行，不会直接覆盖运行时路由。
+
 ## 前置与证据边界
 
 需要 JDK 25、Docker Compose、`curl`、`jq`、`openssl`，以及可用的 Maven Wrapper。

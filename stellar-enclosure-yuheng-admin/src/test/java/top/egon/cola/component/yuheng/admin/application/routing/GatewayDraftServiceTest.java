@@ -51,6 +51,80 @@ class GatewayDraftServiceTest {
             Instant.parse("2026-07-30T08:00:00Z");
 
     @Test
+    void yamlPreviewAndImportOnlyReplaceManagedRoutes() {
+        Fixture fixture = fixture();
+        AtomicReference<IdempotencyBO> saved = new AtomicReference<>();
+        when(fixture.idempotency.find("YUHENG_DRAFT", "group-1", "yaml-idempotency"))
+                .thenAnswer(ignored -> Optional.ofNullable(saved.get()));
+        doAnswer(invocation -> {
+            saved.set(invocation.getArgument(0));
+            return null;
+        }).when(fixture.idempotency).save(any());
+        Map<String, Object> old = Map.of("host", "api.example.com", "httpMethod", "GET",
+                "pathPattern", "/old", "accessZones", List.of("PUBLIC"),
+                "priority", 0, "yuhengRouteSource", "YAML");
+        Map<String, Object> manual = Map.of("host", "api.example.com", "httpMethod", "GET",
+                "pathPattern", "/manual", "accessZones", List.of("PUBLIC"), "priority", 0);
+        when(fixture.store.routes("group-1")).thenReturn(List.of(
+                new GatewayRouteDraftBO("group-1", "old", "operation-1", old, true, NOW, "admin"),
+                new GatewayRouteDraftBO("group-1", "manual", "operation-1", manual, true, NOW, "admin")));
+        var request = yamlRequest(false, true);
+
+        var preview = fixture.service.previewYamlRoutes("group-1", request);
+        assertThat(preview.created()).containsExactly("orders");
+        assertThat(preview.deleted()).containsExactly("old");
+        assertThat(preview.updated()).isEmpty();
+        assertThat(preview.changes()).containsKeys("orders", "old");
+        verify(fixture.store, never()).upsertRoute(any());
+
+        var result = fixture.service.importYamlRoutes("group-1", request, actor(), request());
+        assertThat(result.revision()).isEqualTo(1);
+        assertThat(fixture.service.importYamlRoutes("group-1", request, actor(), request()).replayed()).isTrue();
+        ArgumentCaptor<GatewayRouteDraftBO> route = ArgumentCaptor.forClass(GatewayRouteDraftBO.class);
+        verify(fixture.store).upsertRoute(route.capture());
+        assertThat(route.getValue().getContent()).containsEntry("yuhengRouteSource", "YAML");
+        verify(fixture.store).deleteRoute("group-1", "old");
+        verify(fixture.store, never()).deleteRoute("group-1", "manual");
+    }
+
+    @Test
+    void yamlImportRequiresExplicitAdoptionAndManualApiCannotChangeOwnedRoutes() {
+        Fixture fixture = fixture();
+        Map<String, Object> manual = Map.of("host", "api.example.com", "httpMethod", "POST",
+                "pathPattern", "/api/biz/orders", "accessZones", List.of("PUBLIC"), "priority", 0);
+        when(fixture.store.routes("group-1")).thenReturn(List.of(
+                new GatewayRouteDraftBO("group-1", "orders", "operation-1", manual, true, NOW, "admin")));
+        assertThatThrownBy(() -> fixture.service.previewYamlRoutes("group-1", yamlRequest(false, false)))
+                .hasMessageContaining("not YAML-managed");
+        assertThat(fixture.service.previewYamlRoutes("group-1", yamlRequest(true, false)).updated())
+                .containsExactly("orders");
+
+        Map<String, Object> managed = new LinkedHashMap<>(manual);
+        managed.put("yuhengRouteSource", "YAML");
+        when(fixture.store.routes("group-1")).thenReturn(List.of(
+                new GatewayRouteDraftBO("group-1", "orders", "operation-1", managed, true, NOW, "admin")));
+        assertThatThrownBy(() -> fixture.service.putRoute("group-1", "orders", mutation(manual), actor(), request()))
+                .hasMessageContaining("YAML-managed");
+        verify(fixture.store, never()).upsertRoute(any());
+    }
+
+    private top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO yamlRequest(
+            boolean adopt, boolean replace) {
+        return new top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO("""
+                egon:
+                  yuheng:
+                    route-spec:
+                      schema-version: 1
+                      gateway-group: group-1
+                      routes:
+                        - id: orders
+                          operation-id: operation-1
+                          predicates: [Host=api.example.com, Method=POST, Path=/api/biz/orders]
+                          access-zones: [PUBLIC]
+                """, 0, "yaml-idempotency", "import routes", adopt, replace);
+    }
+
+    @Test
     void normalizesBeforeDigestAndStorage() {
         Fixture fixture = fixture();
         AtomicReference<top.egon.cola.component.yuheng.admin.shared.domain.bo.IdempotencyBO> saved =

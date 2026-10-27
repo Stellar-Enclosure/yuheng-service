@@ -89,7 +89,7 @@ class GatewayManagedEntryPointTest {
                 count++;
             }
         }
-        assertThat(count).isEqualTo(90); verifyNoInteractions(loader);
+        assertThat(count).isEqualTo(92); verifyNoInteractions(loader);
     }
 
     @Test
@@ -124,6 +124,22 @@ class GatewayManagedEntryPointTest {
         assertThat(mapper.readValue("{\"displayName\":null}", GatewayGroupCreateRequestDTO.class).displayName()).isNull();
         assertThatThrownBy(() -> mapper.readValue("{\"ownerActorId\":\"1\"}", GatewayGroupCreateRequestDTO.class)).hasStackTraceContaining("FIELD_BINDING_UNKNOWN_OR_DUPLICATE");
         assertThatThrownBy(() -> mapper.readValue("{\"id\":\"1\"}", GatewayGroupVO.class)).hasStackTraceContaining("FIELD_ACCESS_DENIED");
+        String yamlRequest = "{\"yaml\":\"egon: {}\",\"expectedRevision\":0,"
+                + "\"idempotencyKey\":\"key\",\"changeReason\":\"import\","
+                + "\"adoptExisting\":false,\"replaceManaged\":false}";
+        authenticate(manifest, Set.of(GatewayPermissionCodes.READ), Set.of(GatewayPermissionCodes.DRAFTS_WRITE));
+        assertThatThrownBy(() -> mapper.readValue(yamlRequest,
+                top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO.class))
+                .hasStackTraceContaining("FIELD_ACCESS_DENIED");
+        authenticate(manifest, Set.of(GatewayPermissionCodes.DRAFTS_WRITE), Set.of(GatewayPermissionCodes.DRAFTS_WRITE));
+        assertThat(mapper.readValue(yamlRequest,
+                top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO.class).yaml())
+                .isEqualTo("egon: {}");
+        var preview = new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayYamlRoutePreviewVO(
+                0, List.of("route-1"), List.of(), List.of(), Map.of("route-1",
+                Map.of("action", "CREATE", "before", Map.of(),
+                        "after", Map.of("operationId", "operation-1"))));
+        assertThat(mapper.writeValueAsString(preview)).contains("route-1", "operation-1", "CREATE");
         var ai = converter.getObjectMappersForType(LlmModelCommandDTO.class).get(org.springframework.http.MediaType.ALL);
         authenticate(manifest, Set.of(GatewayPermissionCodes.LLM_READ), Set.of(GatewayPermissionCodes.LLM_WRITE));
         assertThatThrownBy(() -> ai.readValue("{\"routes\":[{\"channelKey\":\"local\"}]}", LlmModelCommandDTO.class)).hasStackTraceContaining("FIELD_ACCESS_DENIED");

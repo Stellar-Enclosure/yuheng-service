@@ -53,6 +53,43 @@ class GatewayDraftTransportWorkflowTest {
             Instant.parse("2026-07-30T08:00:00Z");
 
     @Test
+    void previewsAndImportsYamlThroughDraftApi() throws Exception {
+        Fixture fixture = fixture();
+        String yaml = """
+                egon:
+                  yuheng:
+                    route-spec:
+                      schema-version: 1
+                      gateway-group: group-1
+                      routes:
+                        - id: route-1
+                          operation-id: operation-1
+                          predicates: [Host=ai.example.com, Method=POST, Path=/v1/**]
+                          access-zones: [PUBLIC]
+                """;
+        String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of(
+                "yaml", yaml, "expectedRevision", 0, "idempotencyKey", "idem-1",
+                "changeReason", "import routes", "adoptExisting", false, "replaceManaged", false));
+        String base = "/api/v1/yuheng/admin/yuheng-groups/group-1/draft";
+
+        fixture.mockMvc.perform(post(base + "/routes/yaml/preview")
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.created[0]").value("route-1"));
+        fixture.mockMvc.perform(post(base + "/routes/yaml")
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value(1));
+        fixture.mockMvc.perform(get(base))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.routes[0].content.yuhengRouteSource").value("YAML"))
+                .andExpect(jsonPath("$.routes[0].content.pathPattern").value("/v1/**"));
+        fixture.mockMvc.perform(post(base + "/validate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+    }
+
+    @Test
     void savesReadsAndValidatesCanonicalOpenAiTransportPolicy()
             throws Exception {
         Fixture fixture = fixture();

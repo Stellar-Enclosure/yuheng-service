@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftMutationRequestDTO;
 import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftPolicyRequestDTO;
 import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftRouteRequestDTO;
+import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayYamlRoutesRequestDTO;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayYamlRoutePreviewVO;
 import top.egon.cola.component.yuheng.admin.routing.service.GatewayDraftService;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
 import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
@@ -77,6 +79,37 @@ public class GatewayDraftController {
     public top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO get(
             @PathVariable String gatewayGroupId) {
         return service.get(gatewayGroupId);
+    }
+
+    @PermissionResource(key = "yuheng.api.gatewayDraft.previewYamlRoutes", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.previewYamlRoutes",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @Operation(operationId = "admin.gatewayDraftController.previewYamlRoutes")
+    @EgonGatewayPolicy(exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @PostMapping("/routes/yaml/preview")
+    @PreAuthorize("hasAuthority('SCOPE_yuheng:drafts:write') and (hasAnyAuthority('CAP_yuheng:drafts:write','CAP_*'))")
+    public GatewayYamlRoutePreviewVO previewYamlRoutes(
+            @PathVariable String gatewayGroupId,
+            @Valid @RequestBody GatewayYamlRoutesRequestDTO request) {
+        return service.previewYamlRoutes(gatewayGroupId, request);
+    }
+
+    @PermissionResource(key = "yuheng.api.gatewayDraft.importYamlRoutes", type = ResourceType.API,
+            labelPage = "gateway.permissions", labelKey = "api.gatewayDraft.importYamlRoutes",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @RequiresPermissions(codes = GatewayPermissionCodes.DRAFTS_WRITE)
+    @Operation(operationId = "admin.gatewayDraftController.importYamlRoutes")
+    @EgonGatewayPolicy(exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
+    @PostMapping("/routes/yaml")
+    @PreAuthorize("hasAuthority('SCOPE_yuheng:drafts:write') and (hasAnyAuthority('CAP_yuheng:drafts:write','CAP_*'))")
+    public top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftMutationResultVO importYamlRoutes(
+            @PathVariable String gatewayGroupId,
+            @Valid @RequestBody GatewayYamlRoutesRequestDTO request,
+            AdminActor actor) {
+        return service.importYamlRoutes(gatewayGroupId, request, actor, audit());
     }
 
     /**
