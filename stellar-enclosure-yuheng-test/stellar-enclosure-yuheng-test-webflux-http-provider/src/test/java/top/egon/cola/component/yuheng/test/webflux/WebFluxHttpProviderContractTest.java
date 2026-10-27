@@ -1,5 +1,52 @@
 package top.egon.cola.component.yuheng.test.webflux;
 
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import java.time.Clock;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Optional;
+import org.mapstruct.factory.Mappers;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.core.env.Environment;
+import org.springframework.test.web.client.ExpectedCount;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.match.MockRestRequestMatchers;
+import org.springframework.test.web.client.response.MockRestResponseCreators;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.web.client.RestTemplate;
+import top.egon.cola.platform.tianquan.shoubing.contract.state.IdentityAuditReceipt;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditEvent;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditFingerprint;
+import top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder;
+import top.egon.cola.platform.tianquan.shoubing.core.resource.ResourceServerStatus;
+import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthUsageObservationProperties;
+import top.egon.cola.platform.tianquan.shoubing.starter.audit.TokenUsageAuditComponent;
+import top.egon.cola.platform.tianquan.shoubing.starter.autoconfigure.IdpStarterProperties;
+import top.egon.cola.platform.tianquan.shoubing.starter.observability.IdpSecurityObservationReceiverEnum;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.IdpJwtVerifier;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.IdpObservedVerificationComponent;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.OAuthRevocationReader;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.ServiceAccessTokenVerifier;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.TenantIssuerAuthenticationManagerComponent;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.TrustedIssuerRegistry;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.UserAccessTokenVerifier;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.VerifiedPrincipalConverter;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.reactive.ReactiveOAuthRevocationReader;
+import top.egon.cola.platform.tianquan.shoubing.starter.security.domain.converter.TokenUsageAuditEventConverter;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClient;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityOAuthClientStateReader;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityResourceServerState;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityResourceServerStateReader;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -69,11 +116,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
 
 @SpringBootTest(
         classes = GatewayWebFluxHttpTestProviderApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://idp.example.test/jwks"
 )
 @AutoConfigureWebTestClient
 @Import(WebFluxHttpProviderContractTest.ProviderTestConfiguration.class)
@@ -98,7 +145,7 @@ class WebFluxHttpProviderContractTest {
     private int port;
 
     @Test
-    void reportsAnnotatedMonoEndpointAndAutoRegisters() {
+    void reportsAnnotatedMonoEndpointAndAutoRegisters() throws Exception {
         assertNotNull(runtime);
         assertEquals(1, registry.registrations.get());
         assertEquals(
@@ -119,10 +166,7 @@ class WebFluxHttpProviderContractTest {
         );
         assertTrue(registry.registration.port() > 0);
 
-        webTestClient.mutateWith(mockJwt().authorities(
-                        new org.springframework.security.core.authority
-                                .SimpleGrantedAuthority(
-                                "SCOPE_yuheng.openapi.read")))
+        webTestClient.mutate().defaultHeader("Authorization", "Bearer " + documentToken("yuheng.openapi.read")).build()
                 .get()
                 .uri("/v3/api-docs/inventory-reactive")
                 .exchange()
@@ -154,15 +198,12 @@ class WebFluxHttpProviderContractTest {
     }
 
     @Test
-    void groupedDocumentsRequireTheGatewayOpenApiScope() {
+    void groupedDocumentsRequireTheGatewayOpenApiScope() throws Exception {
         webTestClient.get()
                 .uri("/v3/api-docs/inventory-reactive")
                 .exchange()
                 .expectStatus().isUnauthorized();
-        webTestClient.mutateWith(mockJwt().authorities(
-                        new org.springframework.security.core.authority
-                                .SimpleGrantedAuthority(
-                                "SCOPE_yuheng.other")))
+        webTestClient.mutate().defaultHeader("Authorization", "Bearer " + documentToken("yuheng.other")).build()
                 .get()
                 .uri("/v3/api-docs/inventory-reactive")
                 .exchange()
@@ -257,7 +298,7 @@ class WebFluxHttpProviderContractTest {
                 .expectHeader().contentTypeCompatibleWith("audio/mpeg")
                 .expectHeader().valueEquals(
                         "Content-Disposition",
-                        "attachment; filename=\"stellar-enclosure-yuheng-test-audio.bin\""
+                        "attachment; filename=\"yuheng-test-audio.bin\""
                 )
                 .expectHeader().valueEquals("Content-Encoding", "identity")
                 .expectBody(byte[].class)
@@ -268,10 +309,7 @@ class WebFluxHttpProviderContractTest {
         assertEquals((byte) 0xff, binary[0]);
         assertEquals((byte) 0x80, binary[3]);
 
-        webTestClient.mutateWith(mockJwt().authorities(
-                        new org.springframework.security.core.authority
-                                .SimpleGrantedAuthority(
-                                "SCOPE_yuheng.openapi.read")))
+        webTestClient.mutate().defaultHeader("Authorization", "Bearer " + documentToken("yuheng.openapi.read")).build()
                 .get()
                 .uri("/v3/api-docs/inventory-reactive")
                 .exchange()
@@ -382,11 +420,93 @@ class WebFluxHttpProviderContractTest {
         return operationIds;
     }
 
+
+    @Autowired
+    private RSAKey documentSigningKey;
+
+    @org.springframework.beans.factory.annotation.Value("${egon.cola.component.yuheng.openapi.resource-uri}")
+    private String documentResource;
+
+    private String documentToken(String scope) throws Exception {
+        Instant now = Instant.now();
+        var claims = new LinkedHashMap<String, Object>();
+        claims.put("iss", "https://idp.example.test/tenants/1001"); claims.put("aud", List.of(documentResource));
+        claims.put("sub", "docs-client"); claims.put("client_id", "docs-client"); claims.put("jti", "901"); claims.put("tenant_id", "1001");
+        claims.put("iat", now.minusSeconds(1).getEpochSecond()); claims.put("nbf", now.minusSeconds(1).getEpochSecond()); claims.put("exp", now.plusSeconds(300).getEpochSecond());
+        claims.put("principal_type", "SERVICE"); claims.put("scope_context", "TENANT"); claims.put("scope", scope); claims.put("authorization_id", "801");
+        claims.put("client_registration_id", "501"); claims.put("security_version", Map.of("realm", 1L, "client", 2L));
+        claims.put("resource_version", 7L); claims.put("source_biz", "biz"); claims.put("source_app", "provider"); claims.put("source_env", "test");
+        claims.put("credential_id", "credential-1"); claims.put("app_id", "provider-app");
+        var jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(new JOSEObjectType("at+jwt")).keyID("docs-key").build(), JWTClaimsSet.parse(claims));
+        jwt.sign(new RSASSASigner(documentSigningKey));
+        return jwt.serialize();
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties({
             DdcProperties.class
     })
     static class ProviderTestConfiguration {
+
+        @Bean
+        static BeanFactoryPostProcessor documentIdentity(Environment environment) throws Exception {
+            var key = new RSAKeyGenerator(2048).keyID("docs-key").algorithm(JWSAlgorithm.RS256).generate();
+            return factory -> {
+                var clock = Clock.systemUTC();
+                var issuer = URI.create("https://idp.example.test/tenants/1001");
+                var resource = URI.create(environment.getRequiredProperty("egon.cola.component.yuheng.openapi.resource-uri"));
+                var properties = new IdpStarterProperties();
+                properties.setResourceServerId("provider-resource"); properties.setResourceUri(resource);
+                properties.getRevocation().setPrimaryEndpoint("rediss://redis.example.test:6379");
+                properties.getRevocation().setEpoch("fixture-epoch");
+                var trust = new IdpStarterProperties.TrustedIssuerSettings();
+                trust.setIssuer(issuer.toASCIIString()); trust.setJwksUri(issuer + "/.well-known/jwks.json");
+                trust.setRealmType("TENANT"); trust.setRealmKey("tenant:1001"); trust.setTenantId("1001");
+                trust.setStatus("ACTIVE"); trust.setTrustVersion(1);
+                properties.setTrustedIssuers(Map.of("tenant-1001", trust));
+                var managers = new TenantIssuerAuthenticationManagerComponent(new TrustedIssuerRegistry(properties), properties, clock);
+                managers.initialize();
+                var rest = (RestTemplate) ReflectionTestUtils.getField(managers, "jwksRestOperations");
+                var jwks = MockRestServiceServer.bindTo(rest).build();
+                jwks.expect(ExpectedCount.manyTimes(), MockRestRequestMatchers.requestTo(issuer + "/.well-known/jwks.json"))
+                        .andRespond(MockRestResponseCreators.withSuccess(new JWKSet(key.toPublicJWK()).toString(), MediaType.APPLICATION_JSON));
+                var validator = new LocalValidatorFactoryBean(); validator.afterPropertiesSet();
+                factory.registerSingleton("documentValidator", validator);
+                ((DefaultListableBeanFactory) factory).registerDisposableBean("documentValidator", validator::close);
+                var authority = mock(IdentityAuthorityClient.class);
+                when(authority.appendAudit(any())).thenAnswer(call -> {
+                    TokenUsageAuditEvent event = call.getArgument(0);
+                    return new IdentityAuditReceipt(java.util.UUID.randomUUID().toString(), event.eventId(),
+                            TokenUsageAuditFingerprint.of(event), event.issuer().toASCIIString(), "controlled-service",
+                            event.resource(), "STORED", event.occurredAt());
+                });
+                var audit = new TokenUsageAuditComponent(ignored -> authority, clock, validator, IdpSecurityMetricsRecorder.NOOP);
+                var observations = new IdpObservedVerificationComponent(audit, Mappers.getMapper(TokenUsageAuditEventConverter.class),
+                        new OAuthUsageObservationProperties(true, issuer, false, IdpSecurityObservationReceiverEnum.APPLICATION),
+                        IdpSecurityMetricsRecorder.NOOP, clock, validator, resource);
+                IdentityResourceServerStateReader resources = id -> Optional.of(new IdentityResourceServerState(
+                        "provider-resource", resource, "biz", "provider", "test", ResourceServerStatus.ACTIVE, 7));
+                var clients = mock(IdentityOAuthClientStateReader.class);
+                var converter = Mappers.getMapper(VerifiedPrincipalConverter.class);
+                var verifier = IdpJwtVerifier.createConfigured(null, resources, clients, "provider-resource", resource,
+                        "platform", clock, managers, ignored -> OAuthRevocationReader.Result.valid(), converter, null, observations);
+                var revocations = mock(ReactiveOAuthRevocationReader.class);
+                when(revocations.check(any())).thenReturn(reactor.core.publisher.Mono.just(OAuthRevocationReader.Result.valid()));
+                factory.registerSingleton("documentSigningKey", key);
+                factory.registerSingleton("idpStarterProperties", properties);
+                factory.registerSingleton("idpClock", clock);
+                factory.registerSingleton("tenantIssuerAuthenticationManagerComponent", managers);
+                factory.registerSingleton("identityResourceServerStateReader", resources);
+                factory.registerSingleton("identityOAuthClientStateReader", clients);
+                factory.registerSingleton("verifiedPrincipalConverter", converter);
+                factory.registerSingleton("reactiveOAuthRevocationReader", revocations);
+                factory.registerSingleton("idpObservedVerificationComponent", observations);
+                factory.registerSingleton("userAccessTokenVerifier", new UserAccessTokenVerifier(verifier));
+                factory.registerSingleton("serviceAccessTokenVerifier", new ServiceAccessTokenVerifier(verifier));
+                factory.registerSingleton("jacksonObjectMapper", new ObjectMapper().findAndRegisterModules());
+            };
+        }
+
 
         @Bean
         RecordingRegistry recordingRegistry() {

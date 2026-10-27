@@ -37,7 +37,7 @@ class GatewayComposeConfigurationTest {
         for (String name : List.of("stellar-enclosure-yuheng-biz-gateway", "stellar-enclosure-yuheng-biz-gateway-2", "stellar-enclosure-yuheng-mcp-gateway", "stellar-enclosure-yuheng-mcp-gateway-2")) {
             var service = map(services.get(name));
             var environment = map(service.get("environment"));
-            boolean mcp = name.startsWith("yuheng-mcp");
+            boolean mcp = name.startsWith("stellar-enclosure-yuheng-mcp");
             assertThat(environment).containsEntry("EGON_COLA_COMPONENT_TIANSHU_APP_CODE", mcp ? "gme" : "ge")
                     .containsEntry("EGON_COLA_COMPONENT_TIANSHU_BIZ_CODE", "${YUHENG_BIZ_CODE}")
                     .containsEntry("EGON_COLA_COMPONENT_TIANSHU_ENV", "${YUHENG_ENV:-local}")
@@ -84,7 +84,7 @@ class GatewayComposeConfigurationTest {
             assertThat(environment).containsEntry("EGON_COLA_COMPONENT_TIANSHU_RPC_TLS_CERTIFICATE_CHAIN_PATH",
                     "/run/egon-tls/" + role + ".crt");
             assertThat(environment).containsEntry("SERVER_ADDRESS", "0.0.0.0");
-            if (role.startsWith("yuheng-mcp")) {
+            if (role.startsWith("stellar-enclosure-yuheng-mcp")) {
                 assertThat(environment).containsEntry("YUHENG_MCP_ENGINE_CERTIFICATE_CHAIN_PATH", "/run/egon-tls/" + role + ".crt")
                         .containsEntry("YUHENG_MCP_ENGINE_DEVELOPMENT_PLAINTEXT", "false")
                         .containsEntry("YUHENG_MCP_ENGINE_OUTBOUND_RPC_DEVELOPMENT_PLAINTEXT", "false");
@@ -144,14 +144,10 @@ class GatewayComposeConfigurationTest {
     }
 
     private static final Path YUHENG_DEPLOYMENT = Path.of(
-            "stellar-enclosure-platform",
-            "stellar-enclosure-yuheng",
             "deployment"
     );
 
     private static final Path HTTP_PROVIDER_APPLICATION = Path.of(
-            "stellar-enclosure-platform",
-            "stellar-enclosure-yuheng",
             "stellar-enclosure-yuheng-test",
             "stellar-enclosure-yuheng-test-http-provider",
             "src",
@@ -161,8 +157,6 @@ class GatewayComposeConfigurationTest {
     );
 
     private static final Path WEBFLUX_PROVIDER_APPLICATION = Path.of(
-            "stellar-enclosure-platform",
-            "stellar-enclosure-yuheng",
             "stellar-enclosure-yuheng-test",
             "stellar-enclosure-yuheng-test-webflux-http-provider",
             "src",
@@ -605,7 +599,7 @@ class GatewayComposeConfigurationTest {
                     "unknown demo service " + serviceName
             );
         };
-        return "stellar-enclosure-platform/stellar-enclosure-yuheng/"
+        return "yuheng-service/"
                 + "stellar-enclosure-yuheng-test/"
                 + "stellar-enclosure-yuheng-test-" + moduleName
                 + "/target/" + artifactName;

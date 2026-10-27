@@ -12,8 +12,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GatewayTestApplicationPackagingTest {
 
     private static final Path TEST_MODULES = Path.of(
-            "stellar-enclosure-platform",
-            "stellar-enclosure-yuheng",
             "stellar-enclosure-yuheng-test"
     );
 

@@ -16,8 +16,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GatewayDemoScriptContractTest {
 
     private static final Path DEPLOYMENT = projectFile(Path.of(
-            "stellar-enclosure-platform",
-            "stellar-enclosure-yuheng",
             "deployment"
     ));
 

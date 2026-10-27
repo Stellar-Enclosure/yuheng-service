@@ -2,13 +2,11 @@ package top.egon.cola.component.yuheng.openapi.webmvc;
 
 import io.swagger.v3.oas.annotations.Operation;
 import java.net.URI;
-import java.nio.file.Path;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,12 +28,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class GatewayOpenApiWebMvcContractTest {
     private static final URI RESOURCE = URI.create("https://order-service.example.test");
-    @TempDir Path temporary;
     private final GatewayOpenApiWebMvcSecurityAutoConfigurationTest fixture = new GatewayOpenApiWebMvcSecurityAutoConfigurationTest();
 
     @BeforeEach
     void setup() throws Exception {
-        fixture.temporary = temporary;
         fixture.setupPipeline(RESOURCE, Map.ofEntries(
                 Map.entry("egon.cola.component.yuheng.openapi.enabled", true),
                 Map.entry("egon.cola.component.yuheng.openapi.biz-code", "trade"),

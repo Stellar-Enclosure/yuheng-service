@@ -3038,32 +3038,26 @@ class XingyuanResourceAuthorizationIT {
     }
 
     @Test
-    void taskSpoolFaultUsesTheOriginalReadinessAndOnlyRemovesItsOwnFile(@org.junit.jupiter.api.io.TempDir Path temporary) throws Exception {
+    void taskSpoolFaultOnlyRemovesItsOwnFile(@org.junit.jupiter.api.io.TempDir Path temporary) throws Exception {
         Path root = temporary.toRealPath(); Files.setPosixFilePermissions(root, PosixFilePermissions.fromString("rwx------"));
         Path evidence = root.resolve("evidence"), directory = evidence.resolve("oauth-spool-yuheng");
         Files.createDirectory(evidence, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
         Files.createDirectory(directory, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
-        Path key = root.resolve("test-hmac"); Files.write(key, new byte[32]); Files.setPosixFilePermissions(key, PosixFilePermissions.fromString("rw-------"));
-        var audit = new top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthAuditProperties("task:audit", directory, 512, key);
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            var original = new top.egon.cola.platform.tianquan.shoubing.starter.observability.IdpSecurityObservationReadinessComponent(audit, validators.getValidator());
-            try (var lease = original.acquireSpoolLease()) {
-                var ready = original.readiness(lease); assertThat(ready.getAsBoolean()).isTrue();
-                for (String kind : List.of("DEAD", "CAPACITY")) {
-                    try (var fault = createTaskSpoolFault(root, directory, kind, 512)) {
-                        assertThat(Files.getPosixFilePermissions(fault.path)).isEqualTo(PosixFilePermissions.fromString("rw-------"));
-                        assertThat(ready.getAsBoolean()).isFalse();
-                    }
-                    assertThat(ready.getAsBoolean()).isTrue();
-                }
-                var fault = createTaskSpoolFault(root, directory, "DEAD", 512);
-                Files.move(fault.path, fault.path.resolveSibling("retained-original.dead"));
-                Files.writeString(fault.path, "foreign replacement", java.nio.file.StandardOpenOption.CREATE_NEW);
-                Files.setPosixFilePermissions(fault.path, PosixFilePermissions.fromString("rw-------"));
-                assertThatThrownBy(fault::close).hasMessage("XINGYUAN_TARGET_UNSAFE");
-                assertThat(Files.readString(fault.path)).isEqualTo("foreign replacement");
+        for (String kind : List.of("DEAD", "CAPACITY")) {
+            Path owned;
+            try (var fault = createTaskSpoolFault(root, directory, kind, 512)) {
+                owned = fault.path;
+                assertThat(Files.getPosixFilePermissions(owned)).isEqualTo(PosixFilePermissions.fromString("rw-------"));
+                assertThat(Files.size(owned)).isPositive();
             }
+            assertThat(Files.exists(owned)).isFalse();
         }
+        var fault = createTaskSpoolFault(root, directory, "DEAD", 512);
+        Files.move(fault.path, fault.path.resolveSibling("retained-original.dead"));
+        Files.writeString(fault.path, "foreign replacement", java.nio.file.StandardOpenOption.CREATE_NEW);
+        Files.setPosixFilePermissions(fault.path, PosixFilePermissions.fromString("rw-------"));
+        assertThatThrownBy(fault::close).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThat(Files.readString(fault.path)).isEqualTo("foreign replacement");
     }
 
     @Test

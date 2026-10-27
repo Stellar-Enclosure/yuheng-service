@@ -11,9 +11,6 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,14 +30,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.redisson.api.RedissonClient;
 import org.redisson.api.RedissonReactiveClient;
 import org.redisson.api.RScript;
 import org.redisson.api.RScriptReactive;
-import org.redisson.api.RStream;
-import org.redisson.api.stream.StreamMessageId;
-import org.redisson.api.stream.StreamAddArgs;
 import org.redisson.client.codec.StringCodec;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -79,8 +71,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 import top.egon.cola.platform.tianquan.shoubing.core.resource.ResourceServerStatus;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.AuditDeliveryProperties;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthAuditProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthUsageObservationProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.TokenUsageAuditComponent;
 import top.egon.cola.platform.tianquan.shoubing.starter.autoconfigure.IdpStarterProperties;
@@ -96,31 +86,32 @@ import top.egon.cola.platform.tianquan.shoubing.starter.security.reactive.Reacti
 import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityOAuthClientStateReader;
 import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityResourceServerState;
 import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityResourceServerStateReader;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import top.egon.cola.platform.tianquan.shoubing.contract.state.IdentityAuditReceipt;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditEvent;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditFingerprint;
+import top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClient;
 
 class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
     private static final URI ISSUER = URI.create("https://idp.example/tenants/1001");
     private static final URI RESOURCE = URI.create("https://api.example/provider");
     private static final Instant NOW = Instant.parse("2026-10-12T00:00:00Z");
     private static final String SCOPE = "yuheng.openapi.read";
-    private static final String STREAM = "egon:oauth:audit:v1";
-    @TempDir Path temporary;
     private final LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     private final AtomicReference<Mono<List<Object>>> snapshot = new AtomicReference<>(Mono.just(List.of("V", "ACTIVE")));
     private final AtomicInteger documents = new AtomicInteger();
     private final AtomicInteger snapshots = new AtomicInteger();
     private final AtomicInteger auditEvents = new AtomicInteger();
     private final AtomicBoolean blockingPortOnEventThread = new AtomicBoolean();
-    @SuppressWarnings("unchecked") private final RStream<String, String> stream = mock(RStream.class);
+    private final IdentityAuthorityClient authority = mock(IdentityAuthorityClient.class);
     AnnotationConfigApplicationContext context;
     WebTestClient client;
     private RSAKey key;
@@ -145,10 +136,11 @@ class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
         var jwks = MockRestServiceServer.bindTo((RestTemplate) rest.get(managers)).build();
         jwks.expect(ExpectedCount.manyTimes(), MockRestRequestMatchers.requestTo(ISSUER + "/.well-known/jwks.json"))
                 .andRespond(MockRestResponseCreators.withSuccess(new JWKSet(key.toPublicJWK()).toString(), MediaType.APPLICATION_JSON));
-        var redis = mock(RedissonClient.class); doReturn(stream).when(redis).getStream(eq(STREAM), eq(StringCodec.INSTANCE));
-        when(stream.add(any(StreamAddArgs.class))).thenAnswer(invocation -> {
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            if (event == null) { return null; }
             blockingPortOnEventThread.compareAndSet(false, Schedulers.isInNonBlockingThread());
-            auditEvents.incrementAndGet(); return new StreamMessageId(1, auditEvents.get());
+            auditEvents.incrementAndGet(); return auditReceipt(event);
         });
         var reactiveRedis = mock(RedissonReactiveClient.class);
         var script = mock(RScriptReactive.class); when(reactiveRedis.getScript(StringCodec.INSTANCE)).thenReturn(script);
@@ -159,11 +151,8 @@ class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
             return snapshot.get();
         })).when(script).eval(eq(RScript.Mode.READ_ONLY), anyString(), eq(RScript.ReturnType.LIST), anyList(), any(Object[].class));
         var revocation = new ReactiveOAuthRevocationReader(reactiveRedis, registry, properties);
-        var secret = temporary.resolve("audit.key"); Files.writeString(secret, "0123456789abcdef0123456789abcdef");
-        Files.setPosixFilePermissions(secret, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
         var mapper = new ObjectMapper().findAndRegisterModules();
-        var producer = new TokenUsageAuditComponent(redis, mapper, new OAuthAuditProperties(STREAM, temporary.resolve("spool"), 1_048_576, secret),
-                new AuditDeliveryProperties(), clock, validator);
+        var producer = new TokenUsageAuditComponent(issuer -> authority, clock, validator, IdpSecurityMetricsRecorder.NOOP);
         var events = (TokenUsageAuditEventConverter) Class.forName(TokenUsageAuditEventConverter.class.getName() + "Impl").getConstructor().newInstance();
         var observer = new IdpObservedVerificationComponent(producer, events,
                 new OAuthUsageObservationProperties(true, ISSUER, false, IdpSecurityObservationReceiverEnum.APPLICATION), observation -> { }, clock, validator, resource);
@@ -232,16 +221,36 @@ class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
 
     @Test
     void auditFailureMustBe503WithoutReturningADocument() throws Exception {
-        when(stream.add(any(StreamAddArgs.class))).thenThrow(new org.redisson.client.RedisException("controlled unavailable"));
+        when(authority.appendAudit(any())).thenThrow(new IllegalStateException("controlled unavailable"));
+        assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
+    }
+
+    @Test
+    void missingAuditReceiptMustBe503WithoutReturningADocument() throws Exception {
+        when(authority.appendAudit(any())).thenReturn(null);
+        assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
+    }
+
+    @Test
+    void mismatchedAuditReceiptMustBe503WithoutReturningADocument() throws Exception {
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            return new IdentityAuditReceipt(java.util.UUID.randomUUID().toString(), event.eventId(),
+                    "0".repeat(64), event.issuer().toASCIIString(), "controlled-service",
+                    event.resource(), "STORED", event.occurredAt());
+        });
         assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
     }
 
     @Test
     void denialAuditFailureMustBe503AfterAConfirmedTokenUse() throws Exception {
-        when(stream.add(any(StreamAddArgs.class))).thenReturn(new StreamMessageId(1, 1))
-                .thenThrow(new org.redisson.client.RedisException("controlled denied delivery failure"));
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            return event == null ? null : auditReceipt(event);
+        })
+                .thenThrow(new IllegalStateException("controlled denied delivery failure"));
         assertRejected(token(RESOURCE, "at+jwt", "SERVICE", "provider:read"), 503);
-        org.mockito.Mockito.verify(stream, org.mockito.Mockito.times(2)).add(any(StreamAddArgs.class));
+        org.mockito.Mockito.verify(authority, org.mockito.Mockito.times(2)).appendAudit(any());
     }
 
     @Test
@@ -304,10 +313,10 @@ class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
     @Test
     void cancellationDuringDenialDeliveryMustNotBlockTheEventThread() throws Exception {
         var entered = new CountDownLatch(1); var release = new java.util.concurrent.CompletableFuture<Void>(); var cancelled = new CountDownLatch(1);
-        when(stream.add(any(StreamAddArgs.class))).thenAnswer(invocation -> {
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
             int count = auditEvents.incrementAndGet();
             if (count == 2) { entered.countDown(); release.join(); }
-            return new StreamMessageId(1, count);
+            return auditReceipt(invocation.getArgument(0));
         });
         var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/v3/api-docs/fixture")
                 .header("Authorization", "Bearer " + token(RESOURCE, "at+jwt", "SERVICE", "provider:read")));
@@ -399,5 +408,11 @@ class GatewayOpenApiWebFluxSecurityAutoConfigurationTest {
                 .isEqualTo(ConditionalOnWebApplication.Type.REACTIVE);
         assertThat(configuration.getAnnotation(ConditionalOnClass.class).value())
                 .contains(ServerHttpSecurity.class, SecurityWebFilterChain.class, OpenApiResource.class);
+    }
+
+    private static IdentityAuditReceipt auditReceipt(TokenUsageAuditEvent event) {
+        return new IdentityAuditReceipt(java.util.UUID.randomUUID().toString(), event.eventId(),
+                TokenUsageAuditFingerprint.of(event), event.issuer().toASCIIString(), "controlled-service",
+                event.resource(), "STORED", event.occurredAt());
     }
 }

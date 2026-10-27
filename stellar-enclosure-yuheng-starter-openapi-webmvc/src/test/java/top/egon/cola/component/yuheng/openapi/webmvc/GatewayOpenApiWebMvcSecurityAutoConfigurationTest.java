@@ -3,7 +3,6 @@ package top.egon.cola.component.yuheng.openapi.webmvc;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.io.TempDir;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,9 +17,6 @@ import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.net.URI;
-import java.nio.file.Path;
-import java.nio.file.Files;
-import java.nio.file.attribute.PosixFilePermission;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -31,10 +27,6 @@ import java.util.Optional;
 import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import org.redisson.api.RedissonClient;
-import org.redisson.api.RStream;
-import org.redisson.api.stream.StreamMessageId;
-import org.redisson.api.stream.StreamAddArgs;
 import org.redisson.client.codec.StringCodec;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Bean;
@@ -73,8 +65,6 @@ import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityResourceSe
 import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityOAuthClientStateReader;
 import top.egon.cola.platform.tianquan.shoubing.starter.autoconfigure.IdpStarterProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.TokenUsageAuditComponent;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthAuditProperties;
-import top.egon.cola.platform.tianquan.shoubing.starter.audit.AuditDeliveryProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.audit.OAuthUsageObservationProperties;
 import top.egon.cola.platform.tianquan.shoubing.starter.observability.IdpSecurityObservationReceiverEnum;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.domain.converter.TokenUsageAuditEventConverter;
@@ -84,14 +74,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springdoc.webmvc.api.OpenApiResource;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import top.egon.cola.platform.tianquan.shoubing.contract.state.IdentityAuditReceipt;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditEvent;
+import top.egon.cola.platform.tianquan.shoubing.core.audit.TokenUsageAuditFingerprint;
+import top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder;
+import top.egon.cola.platform.tianquan.shoubing.starter.state.IdentityAuthorityClient;
 
 class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
 
@@ -99,12 +91,10 @@ class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
     private static final URI RESOURCE = URI.create("https://api.example/provider");
     private static final Instant NOW = Instant.parse("2026-10-12T00:00:00Z");
     private static final String SCOPE = "yuheng.openapi.read";
-    private static final String STREAM = "egon:oauth:audit:v1";
-    @TempDir Path temporary;
     private final LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     private final AtomicReference<OAuthRevocationReader.Result> revocation = new AtomicReference<>(OAuthRevocationReader.Result.valid());
     private final AtomicInteger documents = new AtomicInteger();
-    @SuppressWarnings("unchecked") private final RStream<String, String> stream = mock(RStream.class);
+    private final IdentityAuthorityClient authority = mock(IdentityAuthorityClient.class);
     AnnotationConfigWebApplicationContext context;
     MockMvc mvc;
     private RSAKey key;
@@ -128,13 +118,12 @@ class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
         var jwks = MockRestServiceServer.bindTo((RestTemplate) rest.get(managers)).build();
         jwks.expect(ExpectedCount.manyTimes(), MockRestRequestMatchers.requestTo(ISSUER + "/.well-known/jwks.json"))
                 .andRespond(MockRestResponseCreators.withSuccess(new JWKSet(key.toPublicJWK()).toString(), MediaType.APPLICATION_JSON));
-        var redis = mock(RedissonClient.class); doReturn(stream).when(redis).getStream(eq(STREAM), eq(StringCodec.INSTANCE));
-        when(stream.add(any(StreamAddArgs.class))).thenReturn(new StreamMessageId(1, 1));
-        var secret = temporary.resolve("audit.key"); Files.writeString(secret, "0123456789abcdef0123456789abcdef");
-        Files.setPosixFilePermissions(secret, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            return event == null ? null : auditReceipt(event);
+        });
         var mapper = new ObjectMapper().findAndRegisterModules();
-        var producer = new TokenUsageAuditComponent(redis, mapper, new OAuthAuditProperties(STREAM, temporary.resolve("spool"), 1_048_576, secret),
-                new AuditDeliveryProperties(), clock, validator);
+        var producer = new TokenUsageAuditComponent(issuer -> authority, clock, validator, IdpSecurityMetricsRecorder.NOOP);
         var eventConverter = (TokenUsageAuditEventConverter) Class.forName(TokenUsageAuditEventConverter.class.getName() + "Impl").getConstructor().newInstance();
         var observer = new IdpObservedVerificationComponent(producer, eventConverter,
                 new OAuthUsageObservationProperties(true, ISSUER, false, IdpSecurityObservationReceiverEnum.APPLICATION), observation -> { }, clock, validator, resource);
@@ -198,16 +187,36 @@ class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
 
     @Test
     void auditFailureMustBe503WithoutReturningADocument() throws Exception {
-        when(stream.add(any(StreamAddArgs.class))).thenThrow(new org.redisson.client.RedisException("controlled unavailable"));
+        when(authority.appendAudit(any())).thenThrow(new IllegalStateException("controlled unavailable"));
+        assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
+    }
+
+    @Test
+    void missingAuditReceiptMustBe503WithoutReturningADocument() throws Exception {
+        when(authority.appendAudit(any())).thenReturn(null);
+        assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
+    }
+
+    @Test
+    void mismatchedAuditReceiptMustBe503WithoutReturningADocument() throws Exception {
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            return new IdentityAuditReceipt(java.util.UUID.randomUUID().toString(), event.eventId(),
+                    "0".repeat(64), event.issuer().toASCIIString(), "controlled-service",
+                    event.resource(), "STORED", event.occurredAt());
+        });
         assertRejected(token(RESOURCE, "at+jwt", "SERVICE", SCOPE), 503);
     }
 
     @Test
     void denialAuditFailureMustBe503AfterAConfirmedTokenUse() throws Exception {
-        when(stream.add(any(StreamAddArgs.class))).thenReturn(new StreamMessageId(1, 1))
-                .thenThrow(new org.redisson.client.RedisException("controlled denied delivery failure"));
+        when(authority.appendAudit(any())).thenAnswer(invocation -> {
+            TokenUsageAuditEvent event = invocation.getArgument(0);
+            return event == null ? null : auditReceipt(event);
+        })
+                .thenThrow(new IllegalStateException("controlled denied delivery failure"));
         assertRejected(token(RESOURCE, "at+jwt", "SERVICE", "provider:read"), 503);
-        org.mockito.Mockito.verify(stream, org.mockito.Mockito.times(2)).add(any(StreamAddArgs.class));
+        org.mockito.Mockito.verify(authority, org.mockito.Mockito.times(2)).appendAudit(any());
     }
 
     @Test
@@ -221,7 +230,7 @@ class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
             assertThat(response.getHeader("Cache-Control")).contains("no-store");
         }
         assertThat(documents.get()).isZero();
-        org.mockito.Mockito.verify(stream, org.mockito.Mockito.times(4)).add(any(StreamAddArgs.class));
+        org.mockito.Mockito.verify(authority, org.mockito.Mockito.times(4)).appendAudit(any());
     }
 
     @Test
@@ -332,5 +341,11 @@ class GatewayOpenApiWebMvcSecurityAutoConfigurationTest {
                 .value())
                 .contains(HttpSecurity.class, SecurityFilterChain.class,
                         OpenApiResource.class);
+    }
+
+    private static IdentityAuditReceipt auditReceipt(TokenUsageAuditEvent event) {
+        return new IdentityAuditReceipt(java.util.UUID.randomUUID().toString(), event.eventId(),
+                TokenUsageAuditFingerprint.of(event), event.issuer().toASCIIString(), "controlled-service",
+                event.resource(), "STORED", event.occurredAt());
     }
 }
