@@ -8,6 +8,7 @@ import top.egon.cola.component.yuheng.contract.mcp.protocol.McpJsonRpcResponse;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimePrompt;
 import top.egon.cola.component.yuheng.mcp.common.protocol.McpProtocolException;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 import top.egon.cola.component.yuheng.mcp.common.security.McpSecurityGate;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodHandler;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
@@ -97,7 +98,8 @@ public final class McpPromptsGetHandler implements McpMethodHandler {
             McpRequestContext context) {
         McpRuntimePrompt prompt = prompt(
                 context.server().serverCode(),
-                string(request.params().get("name"), "name")
+                string(request.params().get("name"), "name"),
+                context.attributes()
         );
         McpPromptDriver driver = drivers.get(prompt.sourceType());
         if (driver == null) {
@@ -139,8 +141,8 @@ public final class McpPromptsGetHandler implements McpMethodHandler {
      * @param name 参数 name；parameter name。
      * @return 返回 提示词 的处理结果；returns the result of the operation.
      */
-    private McpRuntimePrompt prompt(String serverCode, String name) {
-        CompiledMcpRules active = rules.get();
+    private McpRuntimePrompt prompt(String serverCode, String name, Map<String, Object> attributes) {
+        CompiledMcpRules active = McpRequestRules.resolve(attributes, rules);
         McpRuntimePrompt prompt = active == null
                 ? null
                 : active.promptsByQualifiedName().get(

@@ -11,6 +11,9 @@ import top.egon.cola.component.yuheng.core.operation.GatewayOperationInvocation;
 import top.egon.cola.component.yuheng.core.operation.GatewayOperationInvoker;
 import top.egon.cola.component.yuheng.mcp.task.domain.McpTask;
 import top.egon.cola.component.yuheng.mcp.task.service.McpTaskExecutor;
+import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
 
 import java.net.URI;
 import java.util.Base64;
@@ -68,6 +71,8 @@ public final class McpTaskOperationExecutor implements McpTaskExecutor {
      */
     private final McpTaskServiceTokenSupplier tokenSupplier;
 
+    private final GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation;
+
     /**
      * 创建无状态任务执行器。
      * Creates a stateless task executor.
@@ -80,6 +85,16 @@ public final class McpTaskOperationExecutor implements McpTaskExecutor {
             ObjectMapper objectMapper,
             Function<String, URI> resourceResolver,
             McpTaskServiceTokenSupplier tokenSupplier
+    ) {
+        this(operationInvoker, objectMapper, resourceResolver, tokenSupplier, null);
+    }
+
+    public McpTaskOperationExecutor(
+            GatewayOperationInvoker operationInvoker,
+            ObjectMapper objectMapper,
+            Function<String, URI> resourceResolver,
+            McpTaskServiceTokenSupplier tokenSupplier,
+            GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation
     ) {
         this.operationInvoker = Objects.requireNonNull(
                 operationInvoker,
@@ -94,6 +109,7 @@ public final class McpTaskOperationExecutor implements McpTaskExecutor {
                 tokenSupplier,
                 "tokenSupplier"
         );
+        this.activation = activation;
     }
 
     /**
@@ -113,8 +129,28 @@ public final class McpTaskOperationExecutor implements McpTaskExecutor {
                     "code", "MCP_TASK_OPERATION_MISSING"
             )));
         }
+        if (activation == null) {
+            return execute(task, operationId, resourceResolver);
+        }
+        return Mono.defer(() -> {
+            var lease = activation.acquire();
+            if (lease == null) {
+                return Mono.error(new IllegalStateException("YUHENG_RULES_NOT_READY"));
+            }
+            var snapshot = lease.rules();
+            return Mono.defer(() -> Mono.from(execute(task, operationId,
+                            serverCode -> URI.create(snapshot.mcpRules().server(serverCode)
+                                    .orElseThrow(() -> new IllegalStateException("MCP_TASK_SERVER_NOT_FOUND"))
+                                    .resourceUri()))))
+                    .contextWrite(context -> context.put(GatewayCompiledRulesDTO.class, snapshot))
+                    .doFinally(signal -> lease.close());
+        });
+    }
+
+    private Publisher<Outcome> execute(
+            McpTask task, String operationId, Function<String, URI> resolver) {
         URI resourceUri = Objects.requireNonNull(
-                resourceResolver.apply(task.serverCode()),
+                resolver.apply(task.serverCode()),
                 "resourceUri"
         );
         String serviceToken = required(

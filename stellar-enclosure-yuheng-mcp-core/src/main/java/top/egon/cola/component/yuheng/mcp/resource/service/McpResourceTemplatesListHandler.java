@@ -93,7 +93,8 @@ public final class McpResourceTemplatesListHandler
             );
         }
         return Flux.fromIterable(catalog.templates(
-                        context.server().serverCode()
+                        context.server().serverCode(),
+                        context.attributes()
                 ))
                 .concatMap(template -> Mono.from(
                                 security.authorizeResourceRead(

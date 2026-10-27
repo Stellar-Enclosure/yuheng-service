@@ -97,7 +97,8 @@ public final class McpSubscriptionsListenHandler implements McpMethodHandler {
         String cursor = optional(request.params().get("cursor"));
         McpResourceCatalog.ResolvedResource resolved = catalog.resolve(
                 context.server().serverCode(),
-                uri
+                uri,
+                context.attributes()
         );
         McpSecurityGate.IdentityContext identity = identity(context);
         Publisher<Void> authorization = resolved.resource() != null

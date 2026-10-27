@@ -5,6 +5,7 @@ import top.egon.cola.component.yuheng.core.mcp.app.McpAppArtifactStore;
 import top.egon.cola.component.yuheng.mcp.app.domain.McpAppSecurityValidator;
 import top.egon.cola.component.yuheng.mcp.resource.service.McpResourceDriver;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -71,7 +72,12 @@ public final class McpAppRuntime {
      * @return 返回 read 的处理结果；returns the result of the operation.
      */
     public AppContent read(String serverCode, String resourceUri) {
-        McpRuntimeApp app = active().appsByQualifiedName().values().stream()
+        return read(serverCode, resourceUri, Map.of());
+    }
+
+    public AppContent read(String serverCode, String resourceUri, Map<String, Object> attributes) {
+        McpRuntimeApp app = McpRequestRules.resolveOrEmpty(attributes, rules)
+                .appsByQualifiedName().values().stream()
                 .filter(McpRuntimeApp::enabled)
                 .filter(candidate -> candidate.serverCode().equals(serverCode))
                 .filter(candidate -> candidate.resourceUri().equals(resourceUri))
@@ -108,18 +114,6 @@ public final class McpAppRuntime {
         value.put("permissions", app.permissions());
         value.put("allowed-tools", app.allowedTools());
         return Map.copyOf(value);
-    }
-
-    /**
-     * 中文说明：执行 active 操作；该方法是 {@code McpAppRuntime} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the active operation; this method is the invocation entry point on {@code McpAppRuntime} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpAppRuntime.active(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 active 的处理结果；returns the result of the operation.
-     */
-    private CompiledMcpRules active() {
-        CompiledMcpRules value = rules.get();
-        return value == null ? CompiledMcpRules.empty() : value;
     }
 
     /**

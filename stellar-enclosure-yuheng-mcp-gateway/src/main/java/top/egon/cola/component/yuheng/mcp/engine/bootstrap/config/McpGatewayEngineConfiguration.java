@@ -526,7 +526,8 @@ public class McpGatewayEngineConfiguration {
                                                 "MCP_TASK_SERVER_NOT_FOUND"
                                         ))
                                 .resourceUri()),
-                        tokenSupplier
+                        tokenSupplier,
+                        activation
                 ),
                 properties.nodeId(),
                 mcpProperties.getTasks().getLeaseDuration(),
@@ -588,9 +589,10 @@ public class McpGatewayEngineConfiguration {
         mcpProperties.validate();
         Duration sessionTtl = mcpProperties.getSessionTtl();
         Duration streamWait = mcpProperties.getStreamWait();
-        Supplier<CompiledMcpRules> mcpRules = () -> activation.active() == null
-                ? null
-                : activation.active().mcpRules();
+        Supplier<CompiledMcpRules> mcpRules = () -> {
+            var current = activation.active();
+            return current == null ? null : current.mcpRules();
+        };
         var toolCatalog = new McpToolCatalog(mcpRules);
         SingleFlightSnapshotLoader snapshotLoader = snapshots.getIfAvailable();
         DataSource dataSource = dataSources.getIfAvailable();
@@ -635,9 +637,7 @@ public class McpGatewayEngineConfiguration {
                 )
         );
         McpAppRuntime appRuntime = new McpAppRuntime(
-                () -> activation.active() == null
-                        ? null
-                        : activation.active().mcpRules(),
+                mcpRules,
                 new FileSystemMcpAppArtifactReader(Path.of(
                         mcpProperties.getArtifactRoot()
                 )),
@@ -765,15 +765,13 @@ public class McpGatewayEngineConfiguration {
                 mcpTelemetry
         );
         return new McpEngineHttpHandler(
-                () -> activation.active() == null
-                        ? null
-                        : activation.active().mcpRules(),
+                mcpRules,
                 dispatcher,
                 sessionStore,
                 sessionStore,
                 new McpGatewayIdentityAuthenticator(
                         new GatewaySecurityChain(capabilities),
-                        server -> managedSecurityPolicy(activation, capabilities, server),
+                        (server, context) -> managedSecurityPolicy(activation, capabilities, server, context),
                         properties.nodeId(),
                         gatewayClock
                 ),
@@ -798,8 +796,12 @@ public class McpGatewayEngineConfiguration {
     private static GatewaySecurityPolicy managedSecurityPolicy(
             GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation,
             GatewaySecurityCapabilityRegistry capabilities,
-            McpRuntimeServer server) {
-        var active = activation.active();
+            McpRuntimeServer server,
+            reactor.util.context.ContextView context) {
+        McpGatewayCompiledRulesDTO active = context.getOrDefault(McpGatewayCompiledRulesDTO.class, null);
+        if (active == null) {
+            active = activation.active();
+        }
         if (active == null || !activation.status().ready()
                 || !server.enabled()
                 || !server.equals(active.mcpRules().serversByCode().get(server.serverCode()))) {
@@ -901,7 +903,8 @@ public class McpGatewayEngineConfiguration {
                 objectMapper,
                 properties.outbound().requestTimeout(),
                 maximumRequestBytes,
-                maximumResponseBytes
+                maximumResponseBytes,
+                activation::acquire
         );
     }
 
@@ -1022,9 +1025,15 @@ public class McpGatewayEngineConfiguration {
     }
 
     @Bean("mcpGatewayHttpDataPlaneHandlerAdapter")
-    public McpGatewayHttpDataPlaneHandlerAdapter mcpGatewayHttpDataPlaneHandlerAdapter(
+    public McpGatewayHttpDataPlaneHandlerAdapter pinnedMcpGatewayHttpDataPlaneHandlerAdapter(
             @Qualifier("gatewayMcpHttpHandler") McpEngineHttpHandler handler,
-            McpGatewayEngineProperties properties) {
+            McpGatewayEngineProperties properties,
+            @Qualifier("gatewayRuleActivationApplier") GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation) {
+        return new McpGatewayHttpDataPlaneHandlerAdapter(handler, properties.listener(), activation);
+    }
+
+    public McpGatewayHttpDataPlaneHandlerAdapter mcpGatewayHttpDataPlaneHandlerAdapter(
+            McpEngineHttpHandler handler, McpGatewayEngineProperties properties) {
         return new McpGatewayHttpDataPlaneHandlerAdapter(handler, properties.listener());
     }
 

@@ -107,6 +107,25 @@ class McpAppSecurityTest {
     }
 
     @Test
+    void appResourceUsesTheRequestSnapshotAfterTheActiveCatalogChanges() {
+        McpRuntimeApp app = app(SAFE_HTML, SAFE_CSP);
+        var old = new McpRuleCompiler().compile(new McpRuleContent(
+                List.of(new McpRuntimeServer("server-id", "sales", "Sales", null, null,
+                        Set.of(McpProtocolDialect.STABLE_2025_11_25),
+                        "https://resource.egon.top/yuheng", 30L, true)),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(app), List.of(), List.of()));
+        var attributes = top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules.bind(java.util.Map.of(), old);
+        var current = top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules.empty();
+        var runtime = new McpAppRuntime(() -> current,
+                ignored -> new McpAppArtifactStore.ArtifactContent(SAFE_HTML, sha256(SAFE_HTML), SAFE_HTML.length),
+                new McpAppSecurityValidator());
+        var catalog = new McpResourceCatalog(() -> current, new McpResourceUriValidator());
+        var resolved = catalog.resolve("sales", app.resourceUri(), attributes);
+        var resource = Mono.from(new AppUiResourceDriver(runtime).read(resolved.request(attributes))).block();
+        assertArrayEquals(SAFE_HTML, resource.data());
+    }
+
+    @Test
     void rejectsDigestMismatchAndHostileNavigation() {
         McpAppSecurityValidator validator = new McpAppSecurityValidator();
         McpRuntimeApp app = app(SAFE_HTML, SAFE_CSP);

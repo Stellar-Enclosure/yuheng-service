@@ -83,7 +83,8 @@ public final class McpToolsListHandler implements McpMethodHandler {
             McpJsonRpcRequest request,
             McpRequestContext context) {
         List<Map<String, Object>> tools = catalog.tools(
-                context.server().serverCode()
+                        context.server().serverCode(),
+                        context.attributes()
         ).stream().map(this::describe).toList();
         return Mono.just(McpJsonRpcResponse.success(
                 request.id(),

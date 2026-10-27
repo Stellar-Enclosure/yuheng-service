@@ -10,6 +10,7 @@ import top.egon.cola.component.yuheng.mcp.prompt.service.McpPromptDriver;
 import top.egon.cola.component.yuheng.mcp.common.protocol.McpProtocolException;
 import top.egon.cola.component.yuheng.mcp.resource.service.McpResourceCatalog;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 import top.egon.cola.component.yuheng.mcp.common.security.McpSecurityGate;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodHandler;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
@@ -125,12 +126,14 @@ public final class McpCompletionHandler implements McpMethodHandler {
                     context.server().serverCode(),
                     string(reference.get("name"), "ref.name"),
                     argumentName,
-                    identity
+                    identity,
+                    context.attributes()
             );
             case "ref/resource" -> resource(
                     context.server().serverCode(),
                     string(reference.get("uri"), "ref.uri"),
-                    identity
+                    identity,
+                    context.attributes()
             );
             default -> throw McpPromptDriver.invalid(
                     "MCP completion reference type is invalid"
@@ -187,8 +190,9 @@ public final class McpCompletionHandler implements McpMethodHandler {
             String serverCode,
             String name,
             String argumentName,
-            McpSecurityGate.IdentityContext identity) {
-        CompiledMcpRules active = rules.get();
+            McpSecurityGate.IdentityContext identity,
+            Map<String, Object> attributes) {
+        CompiledMcpRules active = McpRequestRules.resolve(attributes, rules);
         McpRuntimePrompt prompt = active == null
                 ? null
                 : active.promptsByQualifiedName().get(
@@ -232,10 +236,12 @@ public final class McpCompletionHandler implements McpMethodHandler {
     private Resolved resource(
             String serverCode,
             String uri,
-            McpSecurityGate.IdentityContext identity) {
+            McpSecurityGate.IdentityContext identity,
+            Map<String, Object> attributes) {
         McpResourceCatalog.ResolvedResource resolved = resources.resolve(
                 serverCode,
-                uri
+                uri,
+                attributes
         );
         Publisher<Void> authorization = resolved.resource() != null
                 ? security.authorizeResourceRead(

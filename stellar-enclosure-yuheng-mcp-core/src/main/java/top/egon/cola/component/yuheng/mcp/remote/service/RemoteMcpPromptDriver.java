@@ -7,6 +7,7 @@ import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimePrompt;
 import top.egon.cola.component.yuheng.core.mcp.remote.RemoteAuthProvider;
 import top.egon.cola.component.yuheng.mcp.prompt.service.McpPromptDriver;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 import top.egon.cola.component.yuheng.mcp.common.security.McpSecurityGate;
 import top.egon.cola.component.yuheng.mcp.common.telemetry.McpTelemetry;
 
@@ -106,7 +107,7 @@ public final class RemoteMcpPromptDriver implements McpPromptDriver {
             Map<String, String> arguments,
             Map<String, Object> attributes) {
         McpNamespaceRouter.Binding binding = router.binding(
-                active(),
+                McpRequestRules.resolveOrEmpty(attributes, rules),
                 prompt.remoteMountId(),
                 "PROMPT",
                 prompt.name()
@@ -174,18 +175,6 @@ public final class RemoteMcpPromptDriver implements McpPromptDriver {
             result.add(new Message(role, text));
         });
         return new Result(description, result);
-    }
-
-    /**
-     * 中文说明：执行 active 操作；该方法是 {@code RemoteMcpPromptDriver} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the active operation; this method is the invocation entry point on {@code RemoteMcpPromptDriver} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code RemoteMcpPromptDriver.active(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 active 的处理结果；returns the result of the operation.
-     */
-    private CompiledMcpRules active() {
-        CompiledMcpRules value = rules.get();
-        return value == null ? CompiledMcpRules.empty() : value;
     }
 
     /**

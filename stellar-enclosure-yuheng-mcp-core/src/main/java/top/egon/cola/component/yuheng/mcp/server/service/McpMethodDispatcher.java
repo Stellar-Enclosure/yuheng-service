@@ -10,6 +10,7 @@ import top.egon.cola.component.yuheng.contract.mcp.protocol.McpJsonRpcResponse;
 import top.egon.cola.component.yuheng.mcp.common.protocol.McpProtocolException;
 import top.egon.cola.component.yuheng.mcp.common.telemetry.McpTelemetry;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -173,7 +174,7 @@ public final class McpMethodDispatcher {
                 remote instanceof String value && !value.isBlank()
                         ? value
                         : null,
-                context.attributes()
+                McpRequestRules.withoutRules(context.attributes())
         );
     }
 

@@ -23,6 +23,7 @@ import top.egon.cola.component.yuheng.core.security.GatewaySecurityPolicy;
 import top.egon.cola.component.yuheng.core.security.SecurityFailureMode;
 import top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityChain;
 import top.egon.cola.component.yuheng.runtime.security.domain.GatewaySecurityException;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 import top.egon.cola.component.yuheng.mcp.common.transport.McpHttpRequest;
 
 import java.time.Clock;
@@ -35,6 +36,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.BiFunction;
+import reactor.util.context.ContextView;
 
 /**
  * Adapts the published Gateway security policy to MCP ingress; retains the legacy constructor.
@@ -86,7 +89,7 @@ public final class McpGatewayIdentityAuthenticator
     private final String issuer;
 
     /** Managed hosts resolve the explicit published policy for each selected server. */
-    private final Function<McpRuntimeServer, GatewaySecurityPolicy> policies;
+    private final BiFunction<McpRuntimeServer, ContextView, GatewaySecurityPolicy> policies;
 
     /**
      * 中文说明：保存 引擎NodeId 对应的状态、依赖或配置值；字段类型为 {@code String}，由 {@code McpGatewayIdentityAuthenticator} 在其生命周期内读取或更新。
@@ -135,6 +138,15 @@ public final class McpGatewayIdentityAuthenticator
             Function<McpRuntimeServer, GatewaySecurityPolicy> policies,
             String engineNodeId,
             Clock clock) {
+        this(security, (server, context) -> policies.apply(server), engineNodeId, clock);
+        Objects.requireNonNull(policies, "policies");
+    }
+
+    public McpGatewayIdentityAuthenticator(
+            GatewaySecurityChain security,
+            BiFunction<McpRuntimeServer, ContextView, GatewaySecurityPolicy> policies,
+            String engineNodeId,
+            Clock clock) {
         this.security = Objects.requireNonNull(security, "security");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.issuer = null;
@@ -159,14 +171,14 @@ public final class McpGatewayIdentityAuthenticator
             return authenticate(request, server, IDENTITY_ONLY_POLICY)
                     .onErrorResume(ignored -> Mono.empty());
         }
-        return Mono.fromSupplier(() -> {
-                    GatewaySecurityPolicy policy = policies.apply(server);
+        return Mono.deferContextual(context -> Mono.fromSupplier(() -> {
+                    GatewaySecurityPolicy policy = policies.apply(server, context);
                     if (policy == null || policy.authenticationMode() != AuthenticationMode.REQUIRED
                             || policy.requiredOAuthScopes().isEmpty()) {
                         throw GatewaySecurityException.providerError();
                     }
                     return policy;
-                })
+                }))
                 .onErrorMap(error -> !(error instanceof GatewaySecurityException),
                         error -> GatewaySecurityException.providerError())
                 .flatMap(policy -> authenticate(request, server, policy));
@@ -176,6 +188,17 @@ public final class McpGatewayIdentityAuthenticator
             McpHttpRequest request,
             McpRuntimeServer server,
             GatewaySecurityPolicy policy) {
+        return Mono.deferContextual(context -> {
+            GatewayCompiledRulesDTO rules = context.getOrDefault(GatewayCompiledRulesDTO.class, null);
+            return authenticate(request, server, policy, rules == null ? "mcp-runtime" : rules.releaseId());
+        });
+    }
+
+    private Mono<Map<String, Object>> authenticate(
+            McpHttpRequest request,
+            McpRuntimeServer server,
+            GatewaySecurityPolicy policy,
+            String releaseId) {
         Instant startedAt = clock.instant();
         Instant deadline = startedAt.plus(
                 policy.providerTimeout()
@@ -198,7 +221,7 @@ public final class McpGatewayIdentityAuthenticator
                 traceId,
                 requestId,
                 deadline,
-                "mcp-runtime",
+                releaseId,
                 securityAttributes(server)
         );
         GatewayContext context = new GatewayContext(
@@ -211,7 +234,7 @@ public final class McpGatewayIdentityAuthenticator
                 engineNodeId,
                 "yuheng.mcp." + server.serverCode(),
                 null,
-                "mcp-runtime",
+                releaseId,
                 anonymous,
                 null,
                 deadline,

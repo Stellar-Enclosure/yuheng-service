@@ -106,14 +106,34 @@ class McpGatewayEngineContextTest {
 
     @Test
     void generatedRuntimeConstructorsPreserveDependencyQualifiers() {
-        for (Class<?> type : new Class<?>[]{McpGatewayEngineRuntime.class, McpGatewayHttpServer.class,
-                top.egon.cola.component.yuheng.mcp.engine.http.service.McpGatewayHttpDataPlaneHandlerAdapter.class}) {
+        for (Class<?> type : new Class<?>[]{McpGatewayEngineRuntime.class, McpGatewayHttpServer.class}) {
             assertEquals(1, type.getConstructors().length);
             for (var parameter : type.getConstructors()[0].getParameters()) {
                 assertNotNull(parameter.getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class),
                         type.getSimpleName() + ": " + parameter.getName());
             }
         }
+        Class<?> adapter = top.egon.cola.component.yuheng.mcp.engine.http.service.McpGatewayHttpDataPlaneHandlerAdapter.class;
+        assertEquals(2, adapter.getConstructors().length);
+        for (var constructor : adapter.getConstructors()) {
+            for (var parameter : constructor.getParameters()) {
+                assertNotNull(parameter.getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class),
+                        adapter.getSimpleName() + ": " + parameter.getName());
+            }
+        }
+    }
+
+    @Test
+    void dataPlaneBeanFactoryRequiresTheSnapshotActivation() throws Exception {
+        var method = McpGatewayEngineConfiguration.class.getDeclaredMethod(
+                "pinnedMcpGatewayHttpDataPlaneHandlerAdapter",
+                top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpEngineHttpHandler.class,
+                top.egon.cola.component.yuheng.mcp.engine.config.McpGatewayEngineProperties.class,
+                top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.class);
+        assertArrayEquals(new String[]{"mcpGatewayHttpDataPlaneHandlerAdapter"},
+                method.getAnnotation(org.springframework.context.annotation.Bean.class).value());
+        assertEquals("gatewayRuleActivationApplier", method.getParameters()[2]
+                .getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value());
     }
 
     @Test

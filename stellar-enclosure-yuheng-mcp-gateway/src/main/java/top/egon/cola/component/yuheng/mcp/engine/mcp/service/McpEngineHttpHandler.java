@@ -21,6 +21,9 @@ import top.egon.cola.component.yuheng.mcp.common.protocol.McpProtocolException;
 import top.egon.cola.component.yuheng.mcp.common.protocol.RcMcpDialectAdapter;
 import top.egon.cola.component.yuheng.mcp.common.protocol.StableMcpDialectAdapter;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
+import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodDispatcher;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
 import top.egon.cola.component.yuheng.mcp.common.transport.McpHttpRequest;
@@ -244,6 +247,25 @@ public final class McpEngineHttpHandler {
      */
     public Mono<McpHttpResponse> handle(McpHttpRequest request) {
         Objects.requireNonNull(request, "request");
+        if (!supports(request.path())
+                || request.body().getBytes(StandardCharsets.UTF_8).length > maximumBodyBytes) {
+            return handleWithRules(request, null);
+        }
+        return Mono.defer(() -> handleWithRules(request, rules.get()));
+    }
+
+    public Mono<McpHttpResponse> handle(
+            McpHttpRequest request, McpGatewayCompiledRulesDTO snapshot) {
+        Objects.requireNonNull(request, "request");
+        Mono<McpHttpResponse> result = Mono.defer(() -> handleWithRules(
+                request, snapshot == null ? null : snapshot.mcpRules()));
+        return snapshot == null ? result : result.contextWrite(context ->
+                context.put(GatewayCompiledRulesDTO.class, snapshot)
+                        .put(McpGatewayCompiledRulesDTO.class, snapshot));
+    }
+
+    private Mono<McpHttpResponse> handleWithRules(
+            McpHttpRequest request, CompiledMcpRules requestRules) {
         if (!supports(request.path())) {
             return Mono.just(error(404, "MCP_ENDPOINT_NOT_FOUND", null));
         }
@@ -252,7 +274,7 @@ public final class McpEngineHttpHandler {
             return Mono.just(error(413, "MCP_BODY_TOO_LARGE", null));
         }
         return Mono.usingWhen(Mono.fromSupplier(McpRequestObservationComponent::new),
-                        observation -> Mono.defer(() -> route(request))
+                        observation -> Mono.defer(() -> route(request, requestRules))
                                 .map(response -> { observation.requireAvailable(); return response; })
                                 .onErrorMap(observation::preserveSecurityFailure)
                                 .contextWrite(context -> context.put(McpRequestObservationComponent.class, observation)
@@ -293,7 +315,9 @@ public final class McpEngineHttpHandler {
                                 "MCP_INTERNAL_ERROR",
                                 "MCP request processing failed"
                         ))
-                );
+                )
+                .contextWrite(context -> requestRules == null ? context
+                        : context.put(CompiledMcpRules.class, requestRules));
     }
 
     /**
@@ -304,15 +328,15 @@ public final class McpEngineHttpHandler {
      * @param request 参数 请求；parameter request。
      * @return 返回 路由 的处理结果；returns the result of the operation.
      */
-    private Mono<McpHttpResponse> route(McpHttpRequest request) {
+    private Mono<McpHttpResponse> route(McpHttpRequest request, CompiledMcpRules requestRules) {
         String path = path(request.path());
         if (path.startsWith(METADATA_PATH_PREFIX)) {
-            return metadata(request, serverCode(path, METADATA_PATH_PREFIX));
+            return metadata(request, serverCode(path, METADATA_PATH_PREFIX), requestRules);
         }
         if (path.startsWith(LEGACY_PATH_PREFIX)) {
-            return legacy(request, serverCode(path, LEGACY_PATH_PREFIX));
+            return legacy(request, serverCode(path, LEGACY_PATH_PREFIX), requestRules);
         }
-        return current(request, serverCode(path, MCP_PATH_PREFIX));
+        return current(request, serverCode(path, MCP_PATH_PREFIX), requestRules);
     }
 
     /**
@@ -326,11 +350,12 @@ public final class McpEngineHttpHandler {
      */
     private Mono<McpHttpResponse> metadata(
             McpHttpRequest request,
-            String serverCode) {
+            String serverCode,
+            CompiledMcpRules requestRules) {
         if (!"GET".equals(request.method())) {
             throw transport(405, "MCP_METHOD_NOT_ALLOWED", null);
         }
-        McpRuntimeServer server = server(serverCode);
+        McpRuntimeServer server = server(serverCode, requestRules);
         return Mono.just(McpHttpResponse.json(
                 200,
                 json(Map.of(
@@ -353,8 +378,9 @@ public final class McpEngineHttpHandler {
      */
     private Mono<McpHttpResponse> current(
             McpHttpRequest request,
-            String serverCode) {
-        McpRuntimeServer server = server(serverCode);
+            String serverCode,
+            CompiledMcpRules requestRules) {
+        McpRuntimeServer server = server(serverCode, requestRules);
         if (isRc(request)) {
             return authenticate(request, server)
                     .flatMap(identity -> dispatch(
@@ -457,8 +483,9 @@ public final class McpEngineHttpHandler {
      */
     private Mono<McpHttpResponse> legacy(
             McpHttpRequest request,
-            String serverCode) {
-        McpRuntimeServer server = server(serverCode);
+            String serverCode,
+            CompiledMcpRules requestRules) {
+        McpRuntimeServer server = server(serverCode, requestRules);
         requireDialect(server, McpProtocolDialect.LEGACY_2024_SSE);
         return switch (request.method()) {
             case "GET" -> authenticate(request, server)
@@ -760,7 +787,9 @@ public final class McpEngineHttpHandler {
                                 server,
                                 dialect,
                                 sessionId,
-                                Map.copyOf(attributes)
+                                reactor.hasKey(CompiledMcpRules.class)
+                                        ? McpRequestRules.bind(attributes, reactor.get(CompiledMcpRules.class))
+                                        : Map.copyOf(attributes)
                         )
                 ))
                 .next().map(response -> {
@@ -885,8 +914,7 @@ public final class McpEngineHttpHandler {
      * @param serverCode 参数 服务器Code；parameter server code。
      * @return 返回 服务器 的处理结果；returns the result of the operation.
      */
-    private McpRuntimeServer server(String serverCode) {
-        CompiledMcpRules active = rules.get();
+    private McpRuntimeServer server(String serverCode, CompiledMcpRules active) {
         if (active == null) {
             throw transport(503, "MCP_RULES_UNAVAILABLE", null);
         }

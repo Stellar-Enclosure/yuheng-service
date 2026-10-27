@@ -9,6 +9,7 @@ import top.egon.cola.component.yuheng.contract.mcp.protocol.McpJsonRpcResponse;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimePrompt;
 import top.egon.cola.component.yuheng.mcp.common.protocol.McpProtocolException;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 import top.egon.cola.component.yuheng.mcp.common.security.McpSecurityGate;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodHandler;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
@@ -84,7 +85,7 @@ public final class McpPromptsListHandler implements McpMethodHandler {
             McpJsonRpcRequest request,
             McpRequestContext context) {
         McpSecurityGate.IdentityContext identity = identity(context);
-        return Flux.fromIterable(prompts(context.server().serverCode()))
+        return Flux.fromIterable(prompts(context.server().serverCode(), context.attributes()))
                 .concatMap(prompt -> Mono.from(
                                 security.authorizePrompt(prompt, identity)
                         ).thenReturn(describe(prompt))
@@ -107,8 +108,8 @@ public final class McpPromptsListHandler implements McpMethodHandler {
      * @param serverCode 参数 服务器Code；parameter server code。
      * @return 返回 prompts 的处理结果；returns the result of the operation.
      */
-    private List<McpRuntimePrompt> prompts(String serverCode) {
-        CompiledMcpRules active = rules.get();
+    private List<McpRuntimePrompt> prompts(String serverCode, Map<String, Object> attributes) {
+        CompiledMcpRules active = McpRequestRules.resolve(attributes, rules);
         if (active == null) {
             return List.of();
         }

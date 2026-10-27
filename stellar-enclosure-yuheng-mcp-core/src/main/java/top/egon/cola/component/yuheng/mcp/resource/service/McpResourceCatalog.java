@@ -6,6 +6,7 @@ import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeApp;
 import top.egon.cola.component.yuheng.mcp.app.service.AppUiResourceDriver;
 import top.egon.cola.component.yuheng.mcp.resource.domain.McpResourceUriValidator;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -64,7 +65,14 @@ public final class McpResourceCatalog {
      * @return 返回 resources 的处理结果；returns the result of the operation.
      */
     public List<McpRuntimeResource> resources(String serverCode) {
-        CompiledMcpRules current = active();
+        return resources(serverCode, Map.of());
+    }
+
+    public List<McpRuntimeResource> resources(String serverCode, Map<String, Object> attributes) {
+        return resources(serverCode, McpRequestRules.resolveOrEmpty(attributes, rules));
+    }
+
+    private List<McpRuntimeResource> resources(String serverCode, CompiledMcpRules current) {
         ArrayList<McpRuntimeResource> result = new ArrayList<>(
                 current.resourcesByQualifiedName()
                 .values().stream()
@@ -111,7 +119,14 @@ public final class McpResourceCatalog {
      * @return 返回 templates 的处理结果；returns the result of the operation.
      */
     public List<McpRuntimeResourceTemplate> templates(String serverCode) {
-        CompiledMcpRules current = active();
+        return templates(serverCode, Map.of());
+    }
+
+    public List<McpRuntimeResourceTemplate> templates(String serverCode, Map<String, Object> attributes) {
+        return templates(serverCode, McpRequestRules.resolveOrEmpty(attributes, rules));
+    }
+
+    private List<McpRuntimeResourceTemplate> templates(String serverCode, CompiledMcpRules current) {
         return current.templatesByQualifiedName().values().stream()
                 .filter(McpRuntimeResourceTemplate::enabled)
                 .filter(template -> template.serverCode().equals(serverCode))
@@ -135,13 +150,18 @@ public final class McpResourceCatalog {
      * @return 返回 resolve 的处理结果；returns the result of the operation.
      */
     public ResolvedResource resolve(String serverCode, String uri) {
+        return resolve(serverCode, uri, Map.of());
+    }
+
+    public ResolvedResource resolve(String serverCode, String uri, Map<String, Object> attributes) {
+        CompiledMcpRules current = McpRequestRules.resolveOrEmpty(attributes, rules);
         URI validated = validator.validate(uri);
-        for (McpRuntimeResource resource : resources(serverCode)) {
+        for (McpRuntimeResource resource : resources(serverCode, current)) {
             if (validator.validate(resource.uri()).equals(validated)) {
                 return ResolvedResource.exact(resource, validated.toString());
             }
         }
-        for (McpRuntimeResourceTemplate template : templates(serverCode)) {
+        for (McpRuntimeResourceTemplate template : templates(serverCode, current)) {
             Map<String, String> variables = match(template, validated);
             if (variables != null) {
                 return ResolvedResource.template(
@@ -201,18 +221,6 @@ public final class McpResourceCatalog {
             }
         }
         return Collections.unmodifiableMap(variables);
-    }
-
-    /**
-     * 中文说明：执行 active 操作；该方法是 {@code McpResourceCatalog} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the active operation; this method is the invocation entry point on {@code McpResourceCatalog} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpResourceCatalog.active(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 active 的处理结果；returns the result of the operation.
-     */
-    private CompiledMcpRules active() {
-        CompiledMcpRules active = rules.get();
-        return active == null ? CompiledMcpRules.empty() : active;
     }
 
     /**

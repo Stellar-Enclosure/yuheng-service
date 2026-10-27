@@ -96,7 +96,8 @@ public final class McpResourcesReadHandler implements McpMethodHandler {
         String uri = string(request.params().get("uri"));
         McpResourceCatalog.ResolvedResource resolved = catalog.resolve(
                 context.server().serverCode(),
-                uri
+                uri,
+                context.attributes()
         );
         McpSecurityGate.IdentityContext identity;
         try {

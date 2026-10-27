@@ -82,7 +82,8 @@ public final class McpResourcesListHandler implements McpMethodHandler {
             McpRequestContext context) {
         McpSecurityGate.IdentityContext identity = identity(context);
         return Flux.fromIterable(catalog.resources(
-                        context.server().serverCode()
+                        context.server().serverCode(),
+                        context.attributes()
                 ))
                 .concatMap(resource -> Mono.from(
                                 security.authorizeResourceRead(

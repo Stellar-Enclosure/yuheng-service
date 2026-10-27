@@ -156,6 +156,44 @@ class McpGatewayIdentityAuthenticatorTest {
         assertUnavailable(unavailable, SERVER);
     }
 
+    @Test
+    void managedPolicyUsesPinnedSnapshotInsteadOfNewActiveRules() throws Exception {
+        var oldActivation = activation(List.of(source("old-policy", List.of("yuheng.mcp.billing"),
+                List.of("billing:old"))));
+        var oldSnapshot = oldActivation.active();
+        var newActivation = activation(List.of(source("new-policy", List.of("yuheng.mcp.billing"),
+                List.of("billing:new"))));
+        var method = McpGatewayEngineConfiguration.class.getDeclaredMethod("managedSecurityPolicy",
+                GatewayRuleActivationApplier.class, GatewaySecurityCapabilityRegistry.class,
+                McpRuntimeServer.class, reactor.util.context.ContextView.class);
+        method.setAccessible(true);
+        GatewaySecurityPolicy resolved = (GatewaySecurityPolicy) method.invoke(null, newActivation,
+                mock(GatewaySecurityCapabilityRegistry.class), SERVER,
+                reactor.util.context.Context.of(McpGatewayCompiledRulesDTO.class, oldSnapshot));
+        assertEquals("old-policy", resolved.policyId());
+        assertEquals(Set.of("billing:old"), resolved.requiredOAuthScopes());
+        verify(newActivation, never()).active();
+    }
+
+    @Test
+    void authenticationContextRecordsThePinnedRelease() {
+        var chain = mock(GatewaySecurityChain.class);
+        var policy = policy(List.of(source("policy-1", List.of("yuheng.mcp.billing"), List.of("billing:read"))));
+        var snapshot = mock(top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO.class);
+        when(snapshot.releaseId()).thenReturn("release-old");
+        when(chain.execute(any(), any(), same(policy), any())).thenAnswer(call -> {
+            GatewayAuthContext context = call.getArgument(1);
+            assertEquals("release-old", context.releaseId());
+            return Mono.error(new GatewaySecurityException("denied", 403, "PERMISSION_DENIED"));
+        });
+        var authenticator = new McpGatewayIdentityAuthenticator(chain, selected -> policy, "node-1", Clock.systemUTC());
+        assertThrows(GatewaySecurityException.class, () -> authenticator.authenticate(REQUEST, SERVER)
+                .contextWrite(context -> context.put(
+                        top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO.class, snapshot))
+                .block(Duration.ofSeconds(2)));
+        verify(chain).execute(any(), any(), same(policy), any());
+    }
+
     private static GatewayRuntimePolicy source(String id, List<String> operations, List<String> scopes) {
         return new GatewayRuntimePolicy(id, "SECURITY", "PUBLIC", Map.of(
                 "operationIds", operations, "requiredOAuthScopes", scopes,
@@ -183,9 +221,11 @@ class McpGatewayIdentityAuthenticatorTest {
             McpRuntimeServer server) {
         try {
             var method = McpGatewayEngineConfiguration.class.getDeclaredMethod("managedSecurityPolicy",
-                    GatewayRuleActivationApplier.class, GatewaySecurityCapabilityRegistry.class, McpRuntimeServer.class);
+                    GatewayRuleActivationApplier.class, GatewaySecurityCapabilityRegistry.class, McpRuntimeServer.class,
+                    reactor.util.context.ContextView.class);
             method.setAccessible(true);
-            return (GatewaySecurityPolicy) method.invoke(null, activation, mock(GatewaySecurityCapabilityRegistry.class), server);
+            return (GatewaySecurityPolicy) method.invoke(null, activation, mock(GatewaySecurityCapabilityRegistry.class),
+                    server, reactor.util.context.Context.empty());
         } catch (InvocationTargetException failure) {
             throw (RuntimeException) failure.getCause();
         } catch (ReflectiveOperationException failure) {

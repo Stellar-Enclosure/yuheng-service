@@ -257,6 +257,83 @@ class McpFederationTest {
         assertTrue(second.get().closed.get());
     }
 
+    @Test
+    void sameFingerprintWithDifferentEndpointUsesItsOwnClient() {
+        var created = new java.util.ArrayList<McpRuntimeRemoteProvider>();
+        McpRemoteClientPool clients = new McpRemoteClientPool(provider -> {
+            created.add(provider);
+            return new TrackingRemoteClient();
+        }, request -> Mono.just(RemoteAuthProvider.OutboundAuthentication.none()));
+        McpRuntimeRemoteProvider first = provider("fingerprint-1");
+        McpRuntimeRemoteProvider changed = new McpRuntimeRemoteProvider(first.providerId(), first.providerCode(),
+                first.displayName(), first.dialect(), first.transportType(), "https://other.example.test/rpc",
+                first.authProfileReference(), first.tlsProfileReference(), first.capabilityFingerprint(), true);
+        McpDialectTranslator.OutboundCall call = new McpDialectTranslator().outbound(
+                McpProtocolDialect.STABLE_2025_11_25, McpProtocolDialect.RC_2026_07_28,
+                "tools/list", Map.of(), Map.of(), Map.of());
+
+        Mono.from(clients.exchange(first, call, RemoteAuthProvider.AuthContext.system())).block();
+        Mono.from(clients.exchange(changed, call, RemoteAuthProvider.AuthContext.system())).block();
+        Mono.from(clients.exchange(first, call, RemoteAuthProvider.AuthContext.system())).block();
+        assertEquals(List.of(first, changed), created);
+        clients.close();
+    }
+
+    @Test
+    void remoteToolResourceAndPromptUseTheBoundProviderVersion() {
+        var base = rules();
+        var resource = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeResource(
+                "resource", "developer", "github.read", "egon://developer/read", null, "text/plain",
+                "REMOTE_MCP", null, "mount-1", Map.of("remoteUri", "egon://remote/read"),
+                Set.of(), 1024, true);
+        var prompt = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimePrompt(
+                "prompt", "developer", "github.review", null, "REMOTE_MCP", null, null,
+                "mount-1", List.of(), Set.of(), true);
+        var first = provider("fingerprint-1");
+        var changed = new McpRuntimeRemoteProvider(first.providerId(), first.providerCode(), first.displayName(),
+                first.dialect(), first.transportType(), "https://other.example.test/rpc",
+                first.authProfileReference(), first.tlsProfileReference(), first.capabilityFingerprint(), true);
+        var oldContent = new McpRuleContent(base.servers(), base.tools(), List.of(resource), List.of(),
+                List.of(prompt), List.of(), List.of(), List.of(first), base.remoteMounts());
+        var newContent = new McpRuleContent(base.servers(), base.tools(), List.of(resource), List.of(),
+                List.of(prompt), List.of(), List.of(), List.of(changed), base.remoteMounts());
+        CompiledMcpRules old = new McpRuleCompiler().compile(oldContent);
+        CompiledMcpRules newer = new McpRuleCompiler().compile(newContent);
+        var active = new AtomicReference<>(newer);
+        var requests = new java.util.ArrayList<RemoteMcpClient.ExchangeRequest>();
+        McpRemoteClientPool clients = new McpRemoteClientPool(ignored -> request -> {
+            requests.add(request);
+            Map<String, Object> result = switch (request.method()) {
+                case "resources/read" -> Map.of("contents", List.of(Map.of("mimeType", "text/plain", "text", "old")));
+                case "prompts/get" -> Map.of("messages", List.of(Map.of("role", "user", "content", Map.of("text", "old"))));
+                default -> Map.of("content", List.of(Map.of("type", "text", "text", "old")));
+            };
+            return Mono.just(RemoteMcpClient.ExchangeResponse.success(result, Map.of()));
+        }, ignored -> Mono.just(RemoteAuthProvider.OutboundAuthentication.none()));
+        var router = new McpNamespaceRouter();
+        var translator = new McpDialectTranslator();
+        Map<String, Object> attributes = top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules.bind(
+                context().attributes(), old);
+        var boundContext = new McpRequestContext(context().server(), context().dialect(),
+                context().sessionId(), attributes);
+        var toolHandler = new McpToolsCallHandler(new McpToolCatalog(active::get), new McpResultBinder(MAPPER),
+                ignored -> Mono.error(new AssertionError("remote tool must not use local operation")),
+                allowAll(), MAPPER, null, active::get,
+                new RemoteMcpToolDriver(active::get, clients, router, translator));
+        Mono.from(toolHandler.handle(new McpJsonRpcRequest("2.0", 1, "tools/call",
+                Map.of("name", "github.create_issue", "arguments", Map.of()), Map.of()), boundContext)).block();
+        var resourceDriver = new RemoteMcpResourceDriver(active::get, clients, router, translator);
+        Mono.from(resourceDriver.read(new top.egon.cola.component.yuheng.mcp.resource.service.McpResourceDriver.ReadRequest(
+                "developer", "github.read", "egon://developer/read", "text/plain", null,
+                resource.configuration(), Map.of(), 1024, attributes))).block();
+        Mono.from(new RemoteMcpPromptDriver(active::get, clients, router, translator)
+                .render(prompt, Map.of(), attributes)).block();
+
+        assertEquals(3, requests.size());
+        assertTrue(requests.stream().allMatch(request -> request.provider().equals(first)));
+        clients.close();
+    }
+
     private McpRuleContent rules() {
         return new McpRuleContent(
                 List.of(server()),

@@ -47,6 +47,25 @@ egon:
 允许修改或删除该路由，需通过 YAML 导入变更。导入使用修订号和幂等键，失败事务不应产生部分草稿；
 规则仍以现有 `v1` Release、Tianshu 分发和 LKG 机制运行，不会直接覆盖运行时路由。
 
+## MCP 请求规则版本
+
+MCP 数据面在收到受支持的 HTTP 请求时取得一次规则快照租约。Server 及其认证策略、Tool、
+Resource、Prompt、补全、远程挂载和本地 Operation 均使用该快照；规则发布不会让同一请求混用
+新旧版本。Provider 实例健康、令牌撤销和外部授权状态仍按现有实时机制处理。响应体完成、取消或
+被放弃时释放租约；SSE 等长连接在关闭前会保留所需的旧规则和 Provider 引用。没有可用规则时维持
+原有的 `MCP_RULES_UNAVAILABLE` 响应。
+远程 MCP 客户端按完整 Provider 配置区分，版本切换不会中途关闭旧请求使用的客户端；这些客户端
+由连接池生命周期统一关闭。
+
+生产配置使用带 `GatewayRuleActivationApplier` 的三参数 MCP HTTP 适配器。原两参数构造器为嵌入式
+调用保留兼容，但它没有完整 Release 的租约来源：若继续使用该构造器，MCP 目录会固定为一次读取的
+版本，Operation 仍独立取得活动版本，不能声称具备完整请求级一致性。需要这一保证的嵌入式调用应
+传入相应的 Activation Applier，并确保 Reactor 上下文传递到 Operation 调用。
+
+持久任务的创建请求使用创建时的快照；稍后 Worker 的每次执行是独立工作单元，在执行开始时取得
+自己的快照，并用它同时解析 Server Resource 和 Operation。重试可以使用更新后的已激活版本，
+不承诺长期保留任务创建时的内存快照。
+
 ## 前置与证据边界
 
 需要 JDK 25、Docker Compose、`curl`、`jq`、`openssl`，以及可用的 Maven Wrapper。

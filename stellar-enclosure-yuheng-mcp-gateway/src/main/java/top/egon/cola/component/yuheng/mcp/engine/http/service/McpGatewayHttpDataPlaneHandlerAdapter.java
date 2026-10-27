@@ -1,7 +1,6 @@
 package top.egon.cola.component.yuheng.mcp.engine.http.service;
 
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.buffer.DataBufferLimitException;
@@ -14,14 +13,19 @@ import top.egon.cola.component.yuheng.mcp.common.transport.McpHttpRequest;
 import top.egon.cola.component.yuheng.mcp.common.transport.McpHttpResponse;
 import top.egon.cola.component.yuheng.mcp.engine.config.McpGatewayEngineProperties;
 import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpEngineHttpHandler;
+import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
 import top.egon.cola.component.yuheng.runtime.http.domain.GatewayHttpFlushMode;
 import top.egon.cola.component.yuheng.runtime.http.domain.GatewayInboundHttpRequest;
 import top.egon.cola.component.yuheng.runtime.http.service.GatewayHttpDataPlaneHandler;
 import top.egon.cola.component.yuheng.runtime.http.service.GatewayOutboundHttpResponse;
+import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
+import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 中文说明：只适配 MCP HTTP，不为普通 API 请求提供回退路由。
@@ -29,7 +33,6 @@ import java.util.Map;
  * 用法 / Usage: Construct with validated listener limits and the role-local MCP handler.
  */
 @Slf4j
-@RequiredArgsConstructor
 public final class McpGatewayHttpDataPlaneHandlerAdapter implements GatewayHttpDataPlaneHandler {
 
     @NonNull
@@ -38,6 +41,22 @@ public final class McpGatewayHttpDataPlaneHandlerAdapter implements GatewayHttpD
     @NonNull
     @Qualifier("mcpGatewayListenerProperties")
     private final McpGatewayEngineProperties.ListenerProperties properties;
+    private final GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation;
+
+    public McpGatewayHttpDataPlaneHandlerAdapter(
+            @Qualifier("gatewayMcpHttpHandler") McpEngineHttpHandler handler,
+            @Qualifier("mcpGatewayListenerProperties") McpGatewayEngineProperties.ListenerProperties properties) {
+        this(handler, properties, null);
+    }
+
+    public McpGatewayHttpDataPlaneHandlerAdapter(
+            @Qualifier("gatewayMcpHttpHandler") McpEngineHttpHandler handler,
+            @Qualifier("mcpGatewayListenerProperties") McpGatewayEngineProperties.ListenerProperties properties,
+            @Qualifier("gatewayRuleActivationApplier") GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> activation) {
+        this.handler = Objects.requireNonNull(handler, "handler");
+        this.properties = Objects.requireNonNull(properties, "properties");
+        this.activation = activation;
+    }
 
     @Override
     public Mono<GatewayOutboundHttpResponse> handle(AccessZone zone, GatewayInboundHttpRequest request) {
@@ -45,6 +64,35 @@ public final class McpGatewayHttpDataPlaneHandlerAdapter implements GatewayHttpD
             return request.body().doOnNext(DataBufferUtils::release).then(
                     Mono.just(GatewayOutboundHttpResponse.text(404, "MCP_ROUTE_NOT_FOUND")));
         }
+        return Mono.defer(() -> {
+            var lease = activation == null ? null : activation.acquire();
+            McpGatewayCompiledRulesDTO snapshot = lease == null ? null : lease.rules();
+            Mono<GatewayOutboundHttpResponse> response = Mono.defer(() -> process(
+                    zone, request, snapshot));
+            if (lease == null) {
+                return response;
+            }
+            return response.map(value -> value
+                            .withBody(value.body().contextWrite(context -> context
+                                    .put(GatewayCompiledRulesDTO.class, snapshot)
+                                    .put(McpGatewayCompiledRulesDTO.class, snapshot)
+                                    .put(CompiledMcpRules.class, snapshot.mcpRules()))
+                                    .doFinally(signal -> lease.close()))
+                            .onAbandon(lease::close))
+                    .doOnSuccess(value -> {
+                        if (value == null) {
+                            lease.close();
+                        }
+                    })
+                    .doOnError(failure -> lease.close())
+                    .doOnCancel(lease::close)
+                    .doOnDiscard(GatewayOutboundHttpResponse.class,
+                            GatewayOutboundHttpResponse::abandon);
+        });
+    }
+
+    private Mono<GatewayOutboundHttpResponse> process(
+            AccessZone zone, GatewayInboundHttpRequest request, McpGatewayCompiledRulesDTO snapshot) {
         return DataBufferUtils.join(request.body(), Math.toIntExact(properties.maximumRequestBytes()))
                 .map(buffer -> {
                     try {
@@ -63,11 +111,12 @@ public final class McpGatewayHttpDataPlaneHandlerAdapter implements GatewayHttpD
                     });
                     String remote = request.remoteAddress() == null ? "unknown"
                             : request.remoteAddress().getAddress().getHostAddress();
-                    return handler.handle(new McpHttpRequest(request.method(), request.uri(),
+                    McpHttpRequest input = new McpHttpRequest(request.method(), request.uri(),
                             Map.copyOf(headers), body,
-                            Map.of("accessZone", zone.name(), "remoteAddress", remote)));
+                            Map.of("accessZone", zone.name(), "remoteAddress", remote));
+                    return (activation == null ? handler.handle(input) : handler.handle(input, snapshot))
+                            .map(this::adapt);
                 })
-                .map(this::adapt)
                 .onErrorResume(DataBufferLimitException.class, ignored -> Mono.just(
                         new GatewayOutboundHttpResponse(413,
                                 Map.of("content-type", java.util.List.of("application/json; charset=UTF-8")),

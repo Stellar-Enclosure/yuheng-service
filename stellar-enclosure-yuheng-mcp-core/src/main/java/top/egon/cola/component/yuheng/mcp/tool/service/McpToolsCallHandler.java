@@ -19,6 +19,7 @@ import top.egon.cola.component.yuheng.mcp.common.security.McpSecurityDigests;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodHandler;
 import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 import top.egon.cola.component.yuheng.mcp.task.domain.McpTask;
 import top.egon.cola.component.yuheng.mcp.task.service.McpTaskService;
 import top.egon.cola.component.yuheng.mcp.common.telemetry.McpTelemetry;
@@ -248,7 +249,8 @@ public final class McpToolsCallHandler implements McpMethodHandler {
         String name = string(request.params().get("name"), "name");
         McpRuntimeTool tool = catalog.tool(
                 context.server().serverCode(),
-                name
+                name,
+                context.attributes()
         ).orElseThrow(() -> invalid("MCP tool was not found"));
         Map<String, Object> arguments = arguments(
                 request.params().get("arguments")
@@ -290,7 +292,8 @@ public final class McpToolsCallHandler implements McpMethodHandler {
                                         traceHeaders(context),
                                         McpTelemetry.current(
                                                 context.attributes()
-                                        )
+                                        ),
+                                        context.attributes()
                                 ))
                                 .map(result -> McpJsonRpcResponse.success(
                                         request.id(),
@@ -312,7 +315,7 @@ public final class McpToolsCallHandler implements McpMethodHandler {
                                     attribute(context, "clientIp"),
                                     traceHeaders(context)
                             );
-                    McpRuntimeTaskPolicy policy = taskPolicy(tool);
+                    McpRuntimeTaskPolicy policy = taskPolicy(tool, context.attributes());
                     if (policy == null) {
                         return Mono.from(McpTelemetry.observeChild(
                                         context.attributes(),
@@ -382,8 +385,8 @@ public final class McpToolsCallHandler implements McpMethodHandler {
      * @param tool 参数 工具；parameter tool。
      * @return 返回 任务策略 的处理结果；returns the result of the operation.
      */
-    private McpRuntimeTaskPolicy taskPolicy(McpRuntimeTool tool) {
-        CompiledMcpRules active = rules.get();
+    private McpRuntimeTaskPolicy taskPolicy(McpRuntimeTool tool, Map<String, Object> attributes) {
+        CompiledMcpRules active = McpRequestRules.resolve(attributes, rules);
         if (active == null) {
             return null;
         }

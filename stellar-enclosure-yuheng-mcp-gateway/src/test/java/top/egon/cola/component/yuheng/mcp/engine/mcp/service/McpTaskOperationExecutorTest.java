@@ -14,8 +14,74 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 class McpTaskOperationExecutorTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void workerPinsServerResourceAndOperationForOneExecution() {
+        var activation = (top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier<
+                top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO>)
+                mock(top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.class);
+        var lease = (top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.Lease<
+                top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO>)
+                mock(top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.Lease.class);
+        var snapshot = mock(top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO.class);
+        var rules = mock(top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules.class);
+        var server = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer(
+                "server", "local", "Local", null, null,
+                java.util.Set.of(top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect.STABLE_2025_11_25),
+                "https://resource.example/old", 0, true);
+        when(activation.acquire()).thenReturn(lease);
+        when(lease.rules()).thenReturn(snapshot);
+        when(snapshot.mcpRules()).thenReturn(rules);
+        when(rules.server("local")).thenReturn(java.util.Optional.of(server));
+        var resource = new AtomicReference<URI>();
+        var seen = new AtomicReference<top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO>();
+        McpTaskOperationExecutor executor = new McpTaskOperationExecutor(
+                invocation -> Mono.deferContextual(context -> {
+                    seen.set(context.get(top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO.class));
+                    return Mono.just(new GatewayInvocationResult(200, Map.of(), "{}".getBytes(StandardCharsets.UTF_8)));
+                }), new ObjectMapper(), ignored -> { throw new AssertionError("active resolver must not be read"); },
+                (tenant, uri) -> { resource.set(uri); return "service-token"; }, activation);
+
+        assertThat(Mono.from(executor.execute(task())).block()).isNotNull();
+        assertThat(resource).hasValue(URI.create("https://resource.example/old"));
+        assertThat(seen).hasValue(snapshot);
+        verify(lease).close();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void cancellingWorkerExecutionReleasesItsSnapshot() {
+        var activation = (top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier<
+                top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO>)
+                mock(top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.class);
+        var lease = (top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.Lease<
+                top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO>)
+                mock(top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier.Lease.class);
+        var snapshot = mock(top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO.class);
+        var rules = mock(top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules.class);
+        var server = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer(
+                "server", "local", "Local", null, null,
+                java.util.Set.of(top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect.STABLE_2025_11_25),
+                "https://resource.example/old", 0, true);
+        when(activation.acquire()).thenReturn(lease);
+        when(lease.rules()).thenReturn(snapshot);
+        when(snapshot.mcpRules()).thenReturn(rules);
+        when(rules.server("local")).thenReturn(java.util.Optional.of(server));
+        var executor = new McpTaskOperationExecutor(ignored -> Mono.never(), new ObjectMapper(),
+                ignored -> URI.create("https://unused.example"), (tenant, uri) -> "service-token", activation);
+
+        var subscription = Mono.from(executor.execute(task())).subscribe();
+        verify(lease, never()).close();
+        subscription.dispose();
+        verify(lease).close();
+    }
 
     @Test
     void exchangesTheDurableUserTaskForAnExactResourceServiceToken() {

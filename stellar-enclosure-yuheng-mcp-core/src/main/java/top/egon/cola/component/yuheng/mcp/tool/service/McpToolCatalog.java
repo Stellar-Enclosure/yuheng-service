@@ -2,8 +2,10 @@ package top.egon.cola.component.yuheng.mcp.tool.service;
 
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool;
 import top.egon.cola.component.yuheng.mcp.rule.domain.CompiledMcpRules;
+import top.egon.cola.component.yuheng.mcp.rule.domain.McpRequestRules;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -58,7 +60,11 @@ public final class McpToolCatalog {
      * @return 返回 tools 的处理结果；returns the result of the operation.
      */
     public List<McpRuntimeTool> tools(String serverCode) {
-        CompiledMcpRules current = active();
+        return tools(serverCode, Map.of());
+    }
+
+    public List<McpRuntimeTool> tools(String serverCode, Map<String, Object> attributes) {
+        CompiledMcpRules current = McpRequestRules.resolveOrEmpty(attributes, rules);
         return current.toolsByQualifiedName().values().stream()
                 .filter(McpRuntimeTool::enabled)
                 .filter(tool -> tool.serverCode().equals(serverCode))
@@ -99,7 +105,12 @@ public final class McpToolCatalog {
      * @return 返回 工具 的处理结果；returns the result of the operation.
      */
     public Optional<McpRuntimeTool> tool(String serverCode, String name) {
-        CompiledMcpRules current = active();
+        return tool(serverCode, name, Map.of());
+    }
+
+    public Optional<McpRuntimeTool> tool(String serverCode, String name,
+            Map<String, Object> attributes) {
+        CompiledMcpRules current = McpRequestRules.resolveOrEmpty(attributes, rules);
         return current.tool(serverCode, name)
                 .filter(McpRuntimeTool::enabled)
                 .filter(tool -> tool.operationId() != null
@@ -110,15 +121,4 @@ public final class McpToolCatalog {
                 ));
     }
 
-    /**
-     * 中文说明：执行 active 操作；该方法是 {@code McpToolCatalog} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the active operation; this method is the invocation entry point on {@code McpToolCatalog} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpToolCatalog.active(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 active 的处理结果；returns the result of the operation.
-     */
-    private CompiledMcpRules active() {
-        CompiledMcpRules value = rules.get();
-        return value == null ? CompiledMcpRules.empty() : value;
-    }
 }

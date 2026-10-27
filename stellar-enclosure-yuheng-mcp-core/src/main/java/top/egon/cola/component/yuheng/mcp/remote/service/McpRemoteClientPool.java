@@ -92,12 +92,10 @@ public final class McpRemoteClientPool implements AutoCloseable {
     private final AtomicLong requestIds = new AtomicLong();
 
     /**
-     * 中文说明：保存 entries 对应的状态、依赖或配置值；字段类型为 {@code Map<String, Entry>}，由 {@code McpRemoteClientPool} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by entries; its type is {@code Map<String, Entry>}, and {@code McpRemoteClientPool} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code McpRemoteClientPool} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code McpRemoteClientPool}; do not couple callers to its representation when the owning type exposes an API.
+     * The factory receives the full provider definition. Distinct definitions must not
+     * share a client merely because their capability fingerprints match.
      */
-    private final Map<String, Entry> entries = new ConcurrentHashMap<>();
+    private final Map<McpRuntimeRemoteProvider, Entry> entries = new ConcurrentHashMap<>();
 
     /**
      * 中文说明：创建 {@code McpRemoteClientPool} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
@@ -239,7 +237,7 @@ public final class McpRemoteClientPool implements AutoCloseable {
      * @return 返回 健康 的处理结果；returns the result of the operation.
      */
     public Health health(McpRuntimeRemoteProvider provider) {
-        Entry entry = entries.get(key(provider));
+        Entry entry = entries.get(provider);
         if (entry == null) {
             return new Health("NOT_CONNECTED", 0, maxConcurrentCalls);
         }
@@ -316,24 +314,11 @@ public final class McpRemoteClientPool implements AutoCloseable {
      * @return 返回 entry 的处理结果；returns the result of the operation.
      */
     private Entry entry(McpRuntimeRemoteProvider provider) {
-        String key = key(provider);
-        return entries.computeIfAbsent(key, ignored -> new Entry(
+        return entries.computeIfAbsent(provider, ignored -> new Entry(
                 factory.create(provider),
                 new Semaphore(maxConcurrentCalls),
                 new Circuit()
         ));
-    }
-
-    /**
-     * 中文说明：执行 键 操作；该方法是 {@code McpRemoteClientPool} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the key operation; this method is the invocation entry point on {@code McpRemoteClientPool} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpRemoteClientPool.key(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param provider 参数 提供方；parameter provider。
-     * @return 返回 键 的处理结果；returns the result of the operation.
-     */
-    private String key(McpRuntimeRemoteProvider provider) {
-        return provider.providerId() + "\u0000" + provider.capabilityFingerprint();
     }
 
     /**

@@ -66,7 +66,8 @@ public final class AppUiResourceDriver implements McpResourceDriver {
         return Mono.fromSupplier(() -> {
             McpAppRuntime.AppContent app = runtime.read(
                     request.serverCode(),
-                    request.uri()
+                    request.uri(),
+                    request.attributes()
             );
             Content bounded = McpResourceDriver.bounded(
                     request,
