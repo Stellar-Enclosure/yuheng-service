@@ -602,7 +602,8 @@ public class McpGatewayEngineConfiguration {
                     McpRequestObservationComponent observation = context.getOrDefault(McpRequestObservationComponent.class, null);
                     return reactor.core.publisher.Mono.error(observation == null ? GatewaySecurityException.providerError() : observation.unavailable(null));
                 })
-                : Rbac3McpAuthorizationAdapter.createConfigured(snapshotLoader, auditObserver, securityMetrics, validator);
+                : Rbac3McpAuthorizationAdapter.createConfigured(snapshotLoader, auditObserver, securityMetrics, validator,
+                        properties.serviceScopeBindings(), gatewayClock);
         MpMcpApprovalAdapter approvalAdapter = approvalPorts.getIfAvailable();
         McpApprovalPort approvals = approvalAdapter == null
                 ? request -> reactor.core.publisher.Mono.just(

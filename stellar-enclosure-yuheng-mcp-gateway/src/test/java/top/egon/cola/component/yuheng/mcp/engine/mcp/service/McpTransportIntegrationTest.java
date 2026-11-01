@@ -153,6 +153,97 @@ public class McpTransportIntegrationTest {
         }
     }
 
+    @Test
+    void enforcesVerifiedServiceScopesForToolCallsWithoutStartingAListener() {
+        var now = Instant.parse("2026-08-02T05:00:00Z");
+        var resourceUri = java.net.URI.create("https://resource.egon.top/yuheng-mcp");
+        for (String outcome : List.of("ALLOW", "MISSING_IMPLICIT_SCOPE", "MISSING_EXTRA_SCOPE", "EXPIRED_HANDOFF", "FOREIGN_SCOPE")) {
+            var scopes = new java.util.HashSet<>(Set.of("yuheng:read", "tool:pay", "invoice:pay"));
+            if ("MISSING_IMPLICIT_SCOPE".equals(outcome)) { scopes.remove("tool:pay"); }
+            if ("MISSING_EXTRA_SCOPE".equals(outcome)) { scopes.remove("invoice:pay"); }
+            var principal = new top.egon.cola.platform.tianquan.shoubing.contract.ServiceIdentityPrincipal("finance-service", "1001", "finance-service", "service-token-1",
+                    resourceUri, 1, scopes, "finance", "finance-service", "test", "credential-1", now.minusSeconds(30), now.plusSeconds(300));
+            var proof = new top.egon.cola.platform.tianquan.shoubing.starter.security.domain.TokenAuditProofBO(java.net.URI.create("https://tianquan-shoubing.internal"),
+                    resourceUri, null, "a".repeat(64), "b".repeat(64));
+            var anonymous = new top.egon.cola.component.yuheng.core.security.GatewayAuthContext(top.egon.cola.component.yuheng.contract.protocol.AccessZone.PUBLIC,
+                    top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP, "yuheng.mcp.billing", null, "published-policy", "/mcp/billing", "POST", Set.of("bearer"),
+                    top.egon.cola.component.yuheng.core.context.GatewayPrincipal.anonymous(), "127.0.0.1", "service-trace", "service-request", now.plusSeconds(30), "release-1",
+                    Map.of("tianquan-shoubing.resource-uri", resourceUri.toString()), Set.of("yuheng:read"));
+            var observer = mock(top.egon.cola.platform.tianquan.shoubing.starter.security.IdpObservedVerificationComponent.class);
+            when(observer.authorizationDenied(any(), any())).thenReturn(true);
+            var loader = mock(top.egon.cola.platform.tianquan.jianshen.starter.cache.SingleFlightSnapshotLoader.class);
+            var checking = new java.util.concurrent.atomic.AtomicBoolean();
+            var reads = new java.util.concurrent.atomic.AtomicInteger(); var clock = mock(Clock.class);
+            when(clock.instant()).thenAnswer(call -> checking.get() && reads.incrementAndGet() > 1 && "EXPIRED_HANDOFF".equals(outcome) ? principal.expiresAt() : now);
+            var business = new java.util.concurrent.atomic.AtomicInteger();
+            try (var validation = jakarta.validation.Validation.buildDefaultValidatorFactory(); var foreign = new McpRequestObservationComponent()) {
+                var provider = new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpIdentityAuthenticationProvider((context, token) -> {
+                    assertEquals("controlled-service-bearer", token);
+                    return new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpGatewayJwtVerifier.Verification(principal,
+                            top.egon.cola.component.yuheng.core.security.AuthenticationFailure.NONE, null, scopes, proof);
+                }, validation.getValidator());
+                var bindings = List.of(new McpGatewayEngineProperties.ServiceScopeBindingVO(resourceUri, "mcp:billing:tool:pay_invoice:call", Set.of("tool:pay")),
+                        new McpGatewayEngineProperties.ServiceScopeBindingVO(resourceUri, "invoice:pay", Set.of("invoice:pay")));
+                var adapter = top.egon.cola.component.yuheng.mcp.engine.mcp.adapter.security.Rbac3McpAuthorizationAdapter.createConfigured(loader, observer,
+                        top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder.NOOP, validation.getValidator(), bindings, clock);
+                top.egon.cola.component.yuheng.core.mcp.security.McpAuthorizationPort authorization = request -> {
+                    checking.set(true);
+                    var decision = Mono.from(adapter.authorize(request));
+                    return "FOREIGN_SCOPE".equals(outcome) ? decision.contextWrite(reactor -> reactor.put(
+                            top.egon.cola.component.yuheng.core.security.GatewayAuthContext.class, foreign.authorizationScope())) : decision;
+                };
+                var gate = new top.egon.cola.component.yuheng.mcp.common.security.McpSecurityGate(authorization,
+                        ignored -> Mono.just(top.egon.cola.component.yuheng.core.mcp.security.McpApprovalPort.Result.APPROVED), MAPPER);
+                var server = new McpRuntimeServer("server-1", "billing", "Billing", null, null, Set.of(McpProtocolDialect.STABLE_2025_11_25), resourceUri.toString(), 0, true);
+                var tool = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool("tool-1", "billing", "pay_invoice", "Pay invoice", "LOCAL_OPERATION", "operation-1", "HTTP",
+                        null, "{\"type\":\"object\"}", "{\"type\":\"object\"}", Map.of(), Set.of("invoice:pay"), "LOW", true, true);
+                var rules = new McpRuleCompiler().compile(new McpRuleContent(List.of(server), List.of(tool), List.of(), List.of(), List.of(),
+                        List.of(), List.of(), List.of(), List.of()), Set.of("operation-1"));
+                var catalog = new top.egon.cola.component.yuheng.mcp.tool.service.McpToolCatalog(() -> rules);
+                var tools = new top.egon.cola.component.yuheng.mcp.tool.service.McpToolsCallHandler(catalog,
+                        new top.egon.cola.component.yuheng.mcp.tool.service.McpResultBinder(MAPPER), invocation -> Mono.defer(() -> {
+                            business.incrementAndGet();
+                            assertEquals("Bearer controlled-service-bearer", invocation.originalBearerToken());
+                            assertEquals("finance-service", invocation.callerId());
+                            assertFalse(invocation.call().queryArguments().containsKey(McpGatewayIdentityAuthenticator.VERIFIED_CONTEXT_ATTRIBUTE));
+                            return Mono.just(new top.egon.cola.component.yuheng.core.operation.GatewayInvocationResult(200, Map.of(), "{\"paid\":true}".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                        }), gate);
+                var scopeRef = new java.util.concurrent.atomic.AtomicReference<McpRequestObservationComponent>();
+                McpEngineHttpHandler.IdentityAuthenticator authenticator = (http, selected) -> Mono.deferContextual(reactor -> {
+                    scopeRef.set(reactor.get(McpRequestObservationComponent.class));
+                    return Mono.from(provider.authenticate(anonymous, new top.egon.cola.component.yuheng.core.security.GatewayCredential("bearer", "controlled-service-bearer", Map.of())))
+                            .map(authenticated -> {
+                                assertEquals(top.egon.cola.component.yuheng.core.security.SecurityDecision.ALLOW, authenticated.decision());
+                                var context = anonymous.withPrincipal(authenticated.principal());
+                                var identity = new java.util.LinkedHashMap<String, Object>(context.principal().attributes());
+                                identity.put("callerId", principal.subject()); identity.put("tenantId", principal.tenantId());
+                                identity.put("identity.issuer", proof.issuer().toString()); identity.put("identity.resource-uri", resourceUri.toString());
+                                identity.put("originalBearerToken", "Bearer controlled-service-bearer");
+                                identity.put(McpGatewayIdentityAuthenticator.VERIFIED_CONTEXT_ATTRIBUTE, context);
+                                return Map.copyOf(identity);
+                            });
+                });
+                var store = new SharedMcpTransportStore();
+                var handler = new McpEngineHttpHandler(() -> rules, new McpMethodDispatcher(List.of(new McpInitializeHandler(), tools)),
+                        store, store, authenticator, MAPPER, clock, Duration.ofMinutes(30), Duration.ofMillis(20), 65536);
+                var initialized = inProcess(handler, "initialize", "{\"protocolVersion\":\"2025-11-25\"}", null);
+                assertEquals(200, initialized.status(), outcome);
+                assertFalse(scopeRef.get().authorizationScope().active());
+                var response = inProcess(handler, "tools/call", "{\"name\":\"pay_invoice\",\"arguments\":{}}", initialized.header("mcp-session-id"));
+                int expected = "ALLOW".equals(outcome) ? 200 : outcome.startsWith("MISSING") ? 403 : 503;
+                assertEquals(expected, response.status(), outcome);
+                if (expected != 200) { assertEquals("no-store", response.header("cache-control")); }
+                assertEquals(expected == 200 ? 1 : 0, business.get(), outcome);
+                var body = reactor.core.publisher.Flux.from(response.body()).map(bytes -> new String(bytes, java.nio.charset.StandardCharsets.UTF_8)).collectList().block();
+                assertFalse(body.toString().contains("controlled-service-bearer")); assertFalse(body.toString().contains("verified-context"));
+                assertFalse(scopeRef.get().authorizationScope().active());
+                if (expected == 403) { verify(observer, times(1)).authorizationDenied(same(proof), eq(anonymous.traceId())); }
+                else { verifyNoInteractions(observer); }
+                verifyNoInteractions(loader);
+            }
+        }
+    }
+
     private top.egon.cola.component.yuheng.mcp.common.transport.McpHttpResponse inProcess(McpEngineHttpHandler handler,
             String method, String params, String sessionId) {
         var headers = new java.util.LinkedHashMap<String, String>();

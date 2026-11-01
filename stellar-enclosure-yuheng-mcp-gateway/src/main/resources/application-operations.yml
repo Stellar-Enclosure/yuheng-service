@@ -186,6 +186,7 @@ egon:
           instance-id: ${YUHENG_MCP_ENGINE_TIANSHU_INSTANCE_ID:stellar-enclosure-yuheng-mcp-gateway}
           data-directory: ${YUHENG_MCP_ENGINE_DATA_DIRECTORY:./data/stellar-enclosure-yuheng-mcp-gateway}
           management-port: ${YUHENG_MCP_ENGINE_MANAGEMENT_PORT:18085}
+          service-scope-bindings: []
           listener:
             enabled: true
             host: ${YUHENG_MCP_ENGINE_HOST:0.0.0.0}

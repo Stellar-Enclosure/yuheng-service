@@ -11,6 +11,7 @@ import top.egon.cola.component.yuheng.core.security.GatewayAuthContext;
 import top.egon.cola.component.yuheng.core.security.AuthorizationDecision;
 import top.egon.cola.component.yuheng.core.security.SecurityDecision;
 import top.egon.cola.component.yuheng.runtime.security.domain.GatewaySecurityException;
+import top.egon.cola.component.yuheng.mcp.engine.config.McpGatewayEngineProperties.ServiceScopeBindingVO;
 import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpRequestObservationComponent;
 import top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder;
 import top.egon.cola.platform.tianquan.shoubing.core.observability.SecurityMetricObservationBO;
@@ -27,7 +28,14 @@ import top.egon.cola.platform.tianquan.jianshen.contract.authorization.SystemAut
 import top.egon.cola.platform.tianquan.jianshen.starter.cache.SingleFlightSnapshotLoader;
 import top.egon.cola.platform.tianquan.jianshen.starter.client.Rbac3AuthorizationClient;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 中文说明：{@code Rbac3McpAuthorizationAdapter} 是适配器，位于当前 Gateway 模块的相关包中，负责Rbac3MCP授权Adapter相关的职责与边界。
@@ -54,6 +62,9 @@ public final class Rbac3McpAuthorizationAdapter
     private final IdpSecurityMetricsRecorder metrics;
     @Qualifier("defaultValidator")
     private final Validator validator;
+    private final Map<List<String>, Set<String>> serviceScopeIndex;
+    @Qualifier("gatewayClock")
+    private final Clock clock;
 
     /**
      * 中文说明：创建 {@code Rbac3McpAuthorizationAdapter} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
@@ -64,14 +75,34 @@ public final class Rbac3McpAuthorizationAdapter
      */
     public Rbac3McpAuthorizationAdapter(
             SingleFlightSnapshotLoader snapshotLoader) {
-        this(Objects.requireNonNull(snapshotLoader, "snapshotLoader"), null, IdpSecurityMetricsRecorder.NOOP, null);
+        this(Objects.requireNonNull(snapshotLoader, "snapshotLoader"), null, IdpSecurityMetricsRecorder.NOOP, null, Map.of(), null);
     }
 
     /** Managed hosts require the original strict observer and the same verified request scope. */
     public static Rbac3McpAuthorizationAdapter createConfigured(SingleFlightSnapshotLoader snapshots,
             IdpObservedVerificationComponent observations, IdpSecurityMetricsRecorder metrics, Validator validator) {
         return new Rbac3McpAuthorizationAdapter(Objects.requireNonNull(snapshots, "snapshots"),
-                Objects.requireNonNull(observations, "observations"), Objects.requireNonNull(metrics, "metrics"), Objects.requireNonNull(validator, "validator"));
+                Objects.requireNonNull(observations, "observations"), Objects.requireNonNull(metrics, "metrics"), Objects.requireNonNull(validator, "validator"), Map.of(), null);
+    }
+
+    /** HOST mappings translate every tool permission to scopes from the same verified SERVICE token. */
+    public static Rbac3McpAuthorizationAdapter createConfigured(SingleFlightSnapshotLoader snapshots,
+            IdpObservedVerificationComponent observations, IdpSecurityMetricsRecorder metrics, Validator validator,
+            List<ServiceScopeBindingVO> bindings, Clock clock) {
+        Objects.requireNonNull(bindings, "bindings");
+        Objects.requireNonNull(validator, "validator");
+        if (bindings.size() > 256) { throw new IllegalArgumentException("MCP service scope bindings exceed maximum size"); }
+        Map<List<String>, Set<String>> index = new HashMap<>();
+        var validation = new ValidationUtils(validator);
+        for (var binding : bindings) {
+            validation.validate(Objects.requireNonNull(binding, "binding"));
+            if (index.putIfAbsent(List.of(binding.resourceUri().toASCIIString(), binding.permission()), Set.copyOf(binding.scopes())) != null) {
+                throw new IllegalArgumentException("MCP service scope binding must have a unique resource and permission");
+            }
+        }
+        return new Rbac3McpAuthorizationAdapter(Objects.requireNonNull(snapshots, "snapshots"),
+                Objects.requireNonNull(observations, "observations"), Objects.requireNonNull(metrics, "metrics"), validator,
+                Map.copyOf(index), Objects.requireNonNull(clock, "clock"));
     }
 
     /**
@@ -119,6 +150,9 @@ public final class Rbac3McpAuthorizationAdapter
                     || !observation.authorizationScope().active()) { return Mono.error(observation.unavailable(null)); }
             return Mono.fromCallable(() -> verifiedContext(request, observation))
                     .flatMap(context -> Mono.fromCallable(() -> {
+                        if ("SERVICE".equals(context.principal().principalType()) && !serviceScopeIndex.isEmpty()) {
+                            return decideService(request, context);
+                        }
                         if (!"USER".equals(context.principal().principalType())) {
                             return Decision.denied("TIANQUAN_JIANSHEN_USER_PRINCIPAL_REQUIRED", 0L, 0L, 0L);
                         }
@@ -130,7 +164,16 @@ public final class Rbac3McpAuthorizationAdapter
                     }).onErrorResume(Rbac3AuthorizationClient.AuthorizationDeniedException.class,
                             denied -> Mono.just(Decision.denied("TIANQUAN_JIANSHEN_PERMISSION_DENIED", 0L, 0L, 0L)))
                             .flatMap(decision -> {
-                                if (decision.allowed()) { record("ALLOW"); return Mono.just(decision); }
+                                if (decision.allowed()) {
+                                    if ("SERVICE".equals(context.principal().principalType())) {
+                                        var now = clock.instant();
+                                        observation.requireAvailable();
+                                        if (observation.verifiedContext() != context || !observation.authorizationScope().active()
+                                                || reactor.getOrDefault((Object) GatewayAuthContext.class, null) != observation.authorizationScope()
+                                                || !tokenCurrent(request, now)) { return Mono.error(observation.unavailable(null)); }
+                                    }
+                                    record("ALLOW"); return Mono.just(decision);
+                                }
                                 if ("TIANQUAN_JIANSHEN_SNAPSHOT_FENCED".equals(decision.reasonCode())) {
                                     return Mono.error(observation.unavailable(null));
                                 }
@@ -145,6 +188,30 @@ public final class Rbac3McpAuthorizationAdapter
                         record("INDETERMINATE"); return observation.unavailable(failure);
                     }).subscribeOn(Schedulers.boundedElastic());
         });
+    }
+
+    private Decision decideService(McpAuthorizationRequest request, GatewayAuthContext context) {
+        if (request.minimumAuthVersion() != 0 || request.minimumContextVersion() != 0 || request.minimumPolicyVersion() != 0) {
+            return Decision.denied("TIANQUAN_JIANSHEN_SNAPSHOT_FENCED", 0L, 0L, 0L);
+        }
+        if (!context.principal().principalId().equals(request.clientId()) || !tokenCurrent(request, clock.instant())
+                || request.requiredPermissions().size() > 256) {
+            return Decision.denied("TIANQUAN_JIANSHEN_PERMISSION_DENIED", 0L, 0L, 0L);
+        }
+        Set<String> requiredScopes = new HashSet<>();
+        for (String permission : request.requiredPermissions()) {
+            var scopes = serviceScopeIndex.get(List.of(request.resourceUri(), permission));
+            if (scopes == null || scopes.isEmpty()) { return Decision.denied("TIANQUAN_JIANSHEN_PERMISSION_DENIED", 0L, 0L, 0L); }
+            requiredScopes.addAll(scopes);
+            if (requiredScopes.size() > 64) { return Decision.denied("TIANQUAN_JIANSHEN_PERMISSION_DENIED", 0L, 0L, 0L); }
+        }
+        var evidence = (GatewayVerifiedIdentityBO) context.principal().trustedAuthenticationEvidence();
+        return evidence.verifiedScopes().containsAll(requiredScopes)
+                ? Decision.allowed(0L, 0L, 0L) : Decision.denied("TIANQUAN_JIANSHEN_PERMISSION_DENIED", 0L, 0L, 0L);
+    }
+
+    private boolean tokenCurrent(McpAuthorizationRequest request, Instant now) {
+        return !request.issuedAt().isAfter(now) && now.isBefore(request.expiresAt());
     }
 
     private GatewayAuthContext verifiedContext(McpAuthorizationRequest request, McpRequestObservationComponent observation) {

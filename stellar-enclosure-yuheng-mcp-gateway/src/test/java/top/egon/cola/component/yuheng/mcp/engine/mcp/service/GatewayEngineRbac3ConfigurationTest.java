@@ -2,11 +2,15 @@ package top.egon.cola.component.yuheng.mcp.engine.mcp.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.beans.factory.config.YamlMapFactoryBean;
 import org.springframework.core.io.ClassPathResource;
 
 import java.util.Properties;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class GatewayEngineRbac3ConfigurationTest {
 
@@ -34,6 +38,20 @@ class GatewayEngineRbac3ConfigurationTest {
                 properties,
                 "egon.cola.platform.tianquan.jianshen.authorization.endpoint"
         ));
+    }
+
+    @Test
+    void declaresDefaultEmptyServiceScopeBindingsInBothProfiles() {
+        for (String profile : List.of("application.yml", "application-operations.yml")) {
+            var loader = new YamlMapFactoryBean(); loader.setResources(new ClassPathResource(profile));
+            Object current = loader.getObject();
+            for (String key : List.of("egon", "cola", "component", "yuheng", "mcp-engine")) {
+                current = assertInstanceOf(Map.class, current, profile).get(key);
+            }
+            var bootstrap = assertInstanceOf(Map.class, current, profile);
+            assertEquals(List.of(), assertInstanceOf(List.class, bootstrap.get("service-scope-bindings"), profile));
+            assertEquals(Boolean.TRUE, assertInstanceOf(Map.class, bootstrap.get("listener"), profile).get("enabled"));
+        }
     }
 
     private String value(Properties properties, String key) {

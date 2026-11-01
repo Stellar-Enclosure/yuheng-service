@@ -33,6 +33,28 @@ HTTP/RPC, MCP and LLM gateways with a management control plane and browser Edge/
 
 The current MCP task protocol is an Egon extension, not evidence of standard MCP Tasks compatibility; see the [protocol boundary](README.zh-CN.md#mcp-扩展边界). Source/build checks do not establish live release propagation, provider routing or OAuth behavior. Use the [integration guide](docs/developer-integration.md), [deployment guide](deployment/README.md) and [performance scenarios](performance/README.md) for their separate validation steps.
 
+### MCP SERVICE tool authorization
+
+The managed MCP authorization adapter can translate each required permission into OAuth scopes for the same physical request's verified SERVICE identity. Configure `egon.cola.component.yuheng.mcp-engine.service-scope-bindings`; both application profiles default to an empty list, which preserves SERVICE denial. USER requests retain their existing Jianshen snapshot path. Existing managed security dependencies and the original verification/audit chain remain required; SERVICE decisions never load a USER snapshot.
+
+Every permission must have an exact `(resource-uri, permission)` mapping, including the gate's implicit `mcp:<server>:tool:<name>:call` permission and all additional permissions declared by the tool. For example, a `lookup` tool that also requires `orders:inspect` needs both entries:
+
+```yaml
+service-scope-bindings:
+  - resource-uri: https://mcp.example.test/orders
+    permission: mcp:orders:tool:lookup:call
+    scopes: [orders:read]
+  - resource-uri: https://mcp.example.test/orders
+    permission: orders:inspect
+    scopes: [orders:inspect]
+```
+
+The resource URI is the exact verified OAuth resource identifier. The adapter requires the complete scope union from trusted verification evidence; the optional scope-summary attribute supplies no authority. Bindings are immutable and limited to 256 unique keys, with 1–64 business scopes per entry. Unknown fields, duplicate keys, identity scopes and malformed values are rejected. Empty or unmatched mappings deny access. Configuration does not issue scopes, activate resources or grant roles.
+
+SERVICE authorization checks token time at decision and immediately before delivering ALLOW, along with the same available physical observation and context. Nonzero USER RBAC version minima remain unavailable for SERVICE; successful SERVICE decisions report zero versions. Denials retain the original-proof audit handoff, and audit failure stays unavailable. Current resource and revocation checks run at each physical request's identity-verification entry; this does not add continuous SQL revocation checks within a long request.
+
+Published tool JSON, schema hashes and provider/mount selection remain unchanged. The HOST mapping translates permission-level caller authority and does not grant a particular schema version. The [scope authorization evidence](docs/egon/evidence/2026-11-01-mcp-service-scope-authorization.md) separates source/in-process verification from deployed IAM, SQL, TLS/network and remote MCP acceptance.
+
 ## Build
 
 Requires Java 25 and the included Maven Wrapper. The shared parent manages Spring Boot 4.1.2. Once the 0.0.1 dependencies are published:
