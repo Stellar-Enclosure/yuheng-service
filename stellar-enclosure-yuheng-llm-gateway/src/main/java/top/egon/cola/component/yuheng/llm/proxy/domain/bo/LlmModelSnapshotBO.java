@@ -16,6 +16,7 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmCapabilityEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmDeploymentEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -92,6 +93,15 @@ public class LlmModelSnapshotBO {
     @Min(1)
     @Max(16_000)
     private Integer dimensions;
+
+    /** 中文说明：路由选择模式，默认 PRIORITY_WEIGHT。 English summary: route selection mode, defaults to PRIORITY_WEIGHT. */
+    @Builder.Default
+    private LlmRoutingModeEnum routingMode = LlmRoutingModeEnum.PRIORITY_WEIGHT;
+
+    /** 中文说明：网关缓存与前缀优化策略，默认禁用。 English summary: gateway cache and prompt optimization policy, disabled by default. */
+    @Valid
+    @Builder.Default
+    private LlmCachePolicyBO cachePolicy = LlmCachePolicyBO.disabledDefault();
 
     /** 中文说明：嵌入空间稳定身份，被资料引用后不可变更；CHAT 为 null。 English summary: the stable embedding-space identity, immutable once referenced by material; null for CHAT. */
     @Size(max = 128)

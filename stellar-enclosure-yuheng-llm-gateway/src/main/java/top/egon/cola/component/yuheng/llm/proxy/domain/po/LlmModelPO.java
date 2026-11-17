@@ -10,6 +10,7 @@ import lombok.experimental.Accessors;
 import lombok.experimental.SuperBuilder;
 import top.egon.cola.component.common.mybatis.model.EgonModel;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmModelKindEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 
 /**
  * 中文说明：{@code LlmModelPO} 是 LLM 引擎进程自有的 MyBatis-Plus 行模型，负责 {@code gateway_llm_model} 表业务列的
@@ -82,6 +83,14 @@ public class LlmModelPO extends EgonModel<LlmModelPO> {
     /** 中文说明：jsonb route 数组的原始文本，1–16 项有序，字段为 channelKey/upstreamModel/priority/weight/capabilities。 English summary: the raw text of the ordered 1–16 entry jsonb route array whose fields are channelKey/upstreamModel/priority/weight/capabilities. */
     @TableField("routes")
     private String routes;
+
+    /** 中文说明：路由选择模式，默认 PRIORITY_WEIGHT。 English summary: route selection mode, defaults to PRIORITY_WEIGHT. */
+    @TableField("routing_mode")
+    private LlmRoutingModeEnum routingMode;
+
+    /** 中文说明：jsonb cache_policy 列的原始文本。 English summary: raw text of the jsonb cache_policy column. */
+    @TableField("cache_policy")
+    private String cachePolicy;
 
     /** 中文说明：业务修订号，与管理面 CAS 同步；与 MP 技术 {@code version} 互不替代。 English summary: the business revision synchronised with the control-plane CAS, never interchangeable with the technical MP {@code version}. */
     @TableField("revision")

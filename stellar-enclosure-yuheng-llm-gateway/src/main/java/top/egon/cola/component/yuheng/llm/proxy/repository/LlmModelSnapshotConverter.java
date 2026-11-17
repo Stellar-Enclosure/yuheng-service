@@ -1,8 +1,10 @@
 package top.egon.cola.component.yuheng.llm.proxy.repository;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Builder;
 import org.mapstruct.Mapper;
@@ -11,10 +13,12 @@ import org.mapstruct.ReportingPolicy;
 import org.mapstruct.factory.Mappers;
 import org.springframework.stereotype.Component;
 import top.egon.cola.component.common.core.converter.BaseForwardConverter;
+import top.egon.cola.component.yuheng.llm.proxy.domain.bo.LlmCachePolicyBO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.bo.LlmModelSnapshotBO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.bo.LlmModelSnapshotProjectionBO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmCapabilityEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.po.LlmChannelPO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.po.LlmModelPO;
 
@@ -97,6 +101,8 @@ interface LlmModelSnapshotMapping
     @Mapping(target = "dimensions", source = "model.dimensions")
     @Mapping(target = "embeddingSpaceId", source = "model.embeddingSpaceId")
     @Mapping(target = "revision", source = "model.revision")
+    @Mapping(target = "routingMode", expression = "java( routingMode( model.getRoutingMode() ) )")
+    @Mapping(target = "cachePolicy", expression = "java( cachePolicy( model.getCachePolicy() ) )")
     @Mapping(target = "protocols", source = "protocols")
     @Mapping(target = "allowedSubjects", source = "allowedSubjects")
     @Mapping(target = "routes", source = "routes")
@@ -105,6 +111,24 @@ interface LlmModelSnapshotMapping
             List<LlmProtocolEnum> protocols,
             List<String> allowedSubjects,
             List<LlmModelSnapshotBO.RouteBO> routes);
+
+    ObjectMapper POLICY_MAPPER = new ObjectMapper();
+
+    default LlmRoutingModeEnum routingMode(LlmRoutingModeEnum value) {
+        return value == null ? LlmRoutingModeEnum.PRIORITY_WEIGHT : value;
+    }
+
+    default LlmCachePolicyBO cachePolicy(String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return LlmCachePolicyBO.disabledDefault();
+        }
+        try {
+            LlmCachePolicyBO decoded = POLICY_MAPPER.readValue(raw, LlmCachePolicyBO.class);
+            return decoded == null ? LlmCachePolicyBO.disabledDefault() : decoded;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Invalid gateway_llm_model cache_policy JSON", ex);
+        }
+    }
 
     @BeanMapping(builder = @Builder(disableBuilder = true))
     @Mapping(target = "channelKey", source = "channelKey")

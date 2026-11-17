@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.llm.proxy.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -12,8 +13,13 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.bo.LlmModelSnapshotBO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.dto.LlmInvocationCommandDTO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmDeploymentEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmModelKindEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -114,7 +120,8 @@ public class LlmRouteSelectionStrategy {
             throw new CommonException(503, "LLM_NO_ELIGIBLE_ROUTE",
                     "No enabled, authorized and allow-listed channel serves this alias and protocol");
         }
-        List<LlmModelSnapshotBO.RouteBO> ordered = orderByPriorityThenWeight(eligible);
+        List<LlmModelSnapshotBO.RouteBO> ordered = orderByPriority(
+                eligible, snapshot.getRoutingMode(), extractPrefixKey(command.getPayload()));
         if (log.isDebugEnabled()) {
             log.debug("llm routing alias={} protocol={} revision={} candidates={} channels={}", command.getModel(),
                     command.getProtocol(), snapshot.getRevision(), ordered.size(), ordered.stream()
@@ -278,10 +285,13 @@ public class LlmRouteSelectionStrategy {
      * weighted sampling without replacement and truncates to {@value #MAX_CANDIDATES}; weighting only ever happens among
      * candidates that already passed every admission test.
      */
-    private List<LlmModelSnapshotBO.RouteBO> orderByPriorityThenWeight(
-            List<LlmModelSnapshotBO.RouteBO> eligible) {
+    private List<LlmModelSnapshotBO.RouteBO> orderByPriority(
+            List<LlmModelSnapshotBO.RouteBO> eligible,
+            LlmRoutingModeEnum routingMode,
+            String prefixKey) {
         List<LlmModelSnapshotBO.RouteBO> remaining = new ArrayList<>(eligible);
         List<LlmModelSnapshotBO.RouteBO> ordered = new ArrayList<>(Math.min(MAX_CANDIDATES, remaining.size()));
+        boolean useAffinity = routingMode == LlmRoutingModeEnum.PREFIX_AFFINITY && StringUtils.isNotBlank(prefixKey);
         while (!remaining.isEmpty() && ordered.size() < MAX_CANDIDATES) {
             int topPriority = remaining.stream()
                     .map(LlmModelSnapshotBO.RouteBO::getPriority)
@@ -292,9 +302,62 @@ public class LlmRouteSelectionStrategy {
                     .filter(route -> Objects.equals(route.getPriority(), topPriority))
                     .toList();
             remaining.removeAll(group);
-            ordered.addAll(weightDraw(group));
+            ordered.addAll(useAffinity ? rendezvousOrder(group, prefixKey) : weightDraw(group));
         }
         return List.copyOf(ordered);
+    }
+
+    private List<LlmModelSnapshotBO.RouteBO> rendezvousOrder(
+            List<LlmModelSnapshotBO.RouteBO> group,
+            String prefixKey) {
+        if (group.size() <= 1) {
+            return group;
+        }
+        return group.stream()
+                .sorted(Comparator.<LlmModelSnapshotBO.RouteBO>comparingLong(
+                                route -> rendezvousScore(prefixKey, route.getChannelKey()))
+                        .reversed()
+                        .thenComparing(LlmModelSnapshotBO.RouteBO::getChannelKey))
+                .toList();
+    }
+
+    private static String extractPrefixKey(JsonNode payload) {
+        if (payload == null || !payload.isObject()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        JsonNode system = payload.get("system");
+        if (system != null && !system.isNull()) {
+            builder.append("sys:").append(system.toString()).append('|');
+        }
+        JsonNode messages = payload.get("messages");
+        if (messages != null && messages.isArray()) {
+            for (JsonNode msg : messages) {
+                String role = msg.path("role").asText("");
+                if ("system".equals(role) || "developer".equals(role)) {
+                    builder.append(role).append(':').append(msg.path("content").toString()).append('|');
+                } else {
+                    break;
+                }
+            }
+        }
+        JsonNode tools = payload.get("tools");
+        if (tools != null && !tools.isNull()) {
+            builder.append("tools:").append(tools.toString());
+        }
+        return builder.isEmpty() ? null : builder.toString();
+    }
+
+    private static long rendezvousScore(String prefixKey, String channelKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(prefixKey.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) ':');
+            byte[] hash = digest.digest(StringUtils.defaultString(channelKey).getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(hash, 0, Long.BYTES).getLong();
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
     }
 
     /**

@@ -38,9 +38,11 @@
         <result column="embedding_space_id" property="embeddingSpaceId"/>
         <result column="allowed_subjects" property="allowedSubjects"/>
         <result column="routes" property="routes"/>
+        <result column="routing_mode" property="routingMode"/>
+        <result column="cache_policy" property="cachePolicy"/>
         <result column="revision" property="revision"/>
     </resultMap>
-    <sql id="columns">id, tenant_id, create_user_id, create_time, update_user_id, update_time, deleted_at, version, model_key, name, kind, protocols, enabled, dimensions, embedding_space_id, allowed_subjects, routes, revision</sql>
+    <sql id="columns">id, tenant_id, create_user_id, create_time, update_user_id, update_time, deleted_at, version, model_key, name, kind, protocols, enabled, dimensions, embedding_space_id, allowed_subjects, routes, routing_mode, cache_policy, revision</sql>
     <select id="selectActiveById" resultMap="LlmModelResultMap">
         SELECT <include refid="columns"/> FROM gateway_llm_model WHERE id = #{id} AND deleted_at IS NULL
     </select>

@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 
 /**
  * 中文说明：{@code LlmModelSnapshotProjectionBO} 是 repository 完成 JSONB 校验/解码后交给 MapStruct 的内部投影来源，
@@ -44,6 +45,10 @@ public class LlmModelSnapshotProjectionBO {
     private List<String> allowedSubjects;
 
     private Long revision;
+
+    private LlmRoutingModeEnum routingMode;
+
+    private LlmCachePolicyBO cachePolicy;
 
     private List<LlmModelSnapshotBO.RouteBO> routes;
 

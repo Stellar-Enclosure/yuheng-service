@@ -20,6 +20,7 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmCapabilityEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmDeploymentEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.llm.proxy.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.llm.proxy.service.LlmRouteSelectionStrategy;
 
 /**
@@ -253,5 +254,38 @@ class LlmRoutingContractTest {
                 .setWeight(weight)
                 .setCapabilities(capabilities)
                 .setChannel(channel);
+    }
+
+    @Test
+    @DisplayName("PREFIX_AFFINITY 模式下相同 system+tools 前缀在同优先级多渠道下确定性命中同一节点且故障顺延")
+    void prefixAffinityRoutesIdenticalPrefixDeterministicallyAndFailsOver() {
+        LlmModelSnapshotBO snapshot = chatAlias(
+                route("vllm-node-1", LlmDeploymentEnum.LOCAL, "http://127.0.0.1:8001/v1", 1, 100, Set.of()),
+                route("vllm-node-2", LlmDeploymentEnum.LOCAL, "http://127.0.0.1:8002/v1", 1, 100, Set.of()),
+                route("vllm-node-3", LlmDeploymentEnum.LOCAL, "http://127.0.0.1:8003/v1", 1, 100, Set.of())
+        ).setRoutingMode(LlmRoutingModeEnum.PREFIX_AFFINITY);
+
+        var payload1 = JSON.createObjectNode();
+        var msgs1 = payload1.putArray("messages");
+        msgs1.addObject().put("role", "system").put("content", "You are a strict SQL assistant.");
+        msgs1.addObject().put("role", "user").put("content", "First question");
+
+        var payload2 = JSON.createObjectNode();
+        var msgs2 = payload2.putArray("messages");
+        msgs2.addObject().put("role", "system").put("content", "You are a strict SQL assistant.");
+        msgs2.addObject().put("role", "user").put("content", "Second completely different question");
+
+        LlmInvocationCommandDTO cmd1 = chatCommand(LlmProtocolEnum.OPENAI_CHAT, Set.of(LlmDeploymentEnum.LOCAL))
+                .setPayload(payload1);
+        LlmInvocationCommandDTO cmd2 = chatCommand(LlmProtocolEnum.OPENAI_CHAT, Set.of(LlmDeploymentEnum.LOCAL))
+                .setPayload(payload2);
+
+        LlmRouteSelectionStrategy selection = strategy(true, List.of("127.0.0.1"), List.of());
+        String expectedFirst = selection.select(cmd1, snapshot).get(0).getChannelKey();
+        for (int i = 0; i < 20; i++) {
+            List<LlmModelSnapshotBO.RouteBO> selected = selection.select(cmd2, snapshot);
+            assertThat(selected).hasSize(3);
+            assertThat(selected.get(0).getChannelKey()).isEqualTo(expectedFirst);
+        }
     }
 }
