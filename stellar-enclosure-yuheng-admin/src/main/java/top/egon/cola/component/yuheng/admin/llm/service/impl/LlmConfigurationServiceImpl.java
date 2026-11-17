@@ -102,6 +102,7 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
     @Qualifier("llmCachePolicyConverter")
     private final LlmCachePolicyConverter cachePolicyConverter;
 
+    @Qualifier("applicationCacheRedissonClient")
     private final ObjectProvider<RedissonClient> redissonClientProvider;
 
     /**

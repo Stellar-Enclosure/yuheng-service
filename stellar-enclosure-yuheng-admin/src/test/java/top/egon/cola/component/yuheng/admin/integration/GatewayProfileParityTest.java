@@ -184,19 +184,23 @@ class GatewayProfileParityTest {
         assertThat(manifest.path("family").asText()).isEqualTo("web");
         JsonNode scripts = manifest.path("scripts");
         assertThat(scripts.isArray()).isTrue();
-        assertThat(scripts).hasSize(1);
-        String version = scripts.get(0).path("version").asText();
-        String fingerprint = scripts.get(0).path("sha256").asText();
-        assertThat(version).matches("\\d{8}_\\d{3}");
-        assertThat(fingerprint).matches("[0-9a-f]{64}");
-        assertThat(Path.of("src/main/resources").resolve(scripts.get(0).path("path").asText()))
-                .exists();
+        assertThat(scripts).hasSize(2);
+        List<String> versions = new ArrayList<>();
+        for (JsonNode script : scripts) {
+            String version = script.path("version").asText();
+            String fingerprint = script.path("sha256").asText();
+            assertThat(version).matches("\\d{8}_\\d{3}");
+            assertThat(fingerprint).matches("[0-9a-f]{64}");
+            assertThat(Path.of("src/main/resources").resolve(script.path("path").asText()))
+                    .exists();
+            versions.add(version);
+        }
 
         List<String> hardCoded = new ArrayList<>();
         for (String module : IDENTITY_BINDINGS.keySet()) {
             for (Path path : mainSources(module)) {
                 String code = codeOnly(Files.readString(path, StandardCharsets.UTF_8));
-                if (SIXTY_FOUR_HEX.matcher(code).find() || code.contains(version)) {
+                if (SIXTY_FOUR_HEX.matcher(code).find() || versions.stream().anyMatch(code::contains)) {
                     hardCoded.add(path.toString());
                 }
             }

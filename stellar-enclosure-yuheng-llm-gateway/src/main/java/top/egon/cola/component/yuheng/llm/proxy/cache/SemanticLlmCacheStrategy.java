@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.redisson.api.RList;
@@ -30,6 +31,7 @@ import java.util.List;
  */
 @Slf4j
 @Component("semanticLlmCacheStrategy")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class SemanticLlmCacheStrategy implements LlmCacheStrategy {
 
     private static final String LIST_PREFIX = "yuheng:llm:cache:semantic:";
@@ -39,34 +41,61 @@ public class SemanticLlmCacheStrategy implements LlmCacheStrategy {
         double[] resolve(String embeddingModelKey, String queryText);
     }
 
+    @Qualifier(LlmGatewayProperties.BEAN_NAME)
     private final LlmGatewayProperties gatewayProperties;
-    private final ObjectMapper objectMapper;
-    private final RedissonClient redissonClient;
-    private final EmbeddingVectorResolver embeddingVectorResolver;
 
-    @Autowired
-    public SemanticLlmCacheStrategy(
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
-            ObjectProvider<RedissonClient> redissonClientProvider,
-            ObjectProvider<EmbeddingVectorResolver> embeddingVectorResolverProvider) {
-        this(
-                gatewayProperties,
-                objectMapper,
-                redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable(),
-                embeddingVectorResolverProvider == null ? null : embeddingVectorResolverProvider.getIfAvailable()
-        );
-    }
+    @Qualifier("jacksonObjectMapper")
+    private final ObjectMapper objectMapper;
+
+    @Qualifier("redissonClient")
+    private final ObjectProvider<RedissonClient> redissonClientProvider;
+
+    @Qualifier("semanticEmbeddingVectorResolver")
+    private final ObjectProvider<EmbeddingVectorResolver> embeddingVectorResolverProvider;
 
     public SemanticLlmCacheStrategy(
             LlmGatewayProperties gatewayProperties,
             ObjectMapper objectMapper,
             RedissonClient redissonClient,
             EmbeddingVectorResolver embeddingVectorResolver) {
-        this.gatewayProperties = gatewayProperties;
-        this.objectMapper = objectMapper;
-        this.redissonClient = redissonClient;
-        this.embeddingVectorResolver = embeddingVectorResolver;
+        this(
+                gatewayProperties,
+                objectMapper,
+                staticProvider(redissonClient),
+                staticProvider(embeddingVectorResolver)
+        );
+    }
+
+    private static <T> ObjectProvider<T> staticProvider(T instance) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject(Object... args) {
+                return instance;
+            }
+
+            @Override
+            public T getIfAvailable() {
+                return instance;
+            }
+
+            @Override
+            public T getIfUnique() {
+                return instance;
+            }
+
+            @Override
+            public T getObject() {
+                return instance;
+            }
+        };
+    }
+
+    private RedissonClient redissonClient() {
+        return redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable();
+    }
+
+    private EmbeddingVectorResolver embeddingVectorResolver() {
+        return embeddingVectorResolverProvider == null ? null : embeddingVectorResolverProvider.getIfAvailable();
     }
 
     @Override
@@ -76,6 +105,8 @@ public class SemanticLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public LlmCacheEntryBO lookup(LlmInvocationCommandDTO command, LlmModelSnapshotBO snapshot) {
+        RedissonClient redissonClient = redissonClient();
+        EmbeddingVectorResolver embeddingVectorResolver = embeddingVectorResolver();
         if (redissonClient == null || embeddingVectorResolver == null) {
             return null;
         }
@@ -116,6 +147,8 @@ public class SemanticLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public void store(LlmInvocationCommandDTO command, LlmModelSnapshotBO snapshot, ObjectNode response) {
+        RedissonClient redissonClient = redissonClient();
+        EmbeddingVectorResolver embeddingVectorResolver = embeddingVectorResolver();
         if (redissonClient == null || embeddingVectorResolver == null || response == null) {
             return;
         }
@@ -154,6 +187,7 @@ public class SemanticLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public void evictModel(String modelKey) {
+        RedissonClient redissonClient = redissonClient();
         if (redissonClient == null || StringUtils.isBlank(modelKey)) {
             return;
         }

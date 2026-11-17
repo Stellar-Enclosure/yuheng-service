@@ -1,6 +1,7 @@
 package top.egon.cola.component.yuheng.llm.proxy.cache;
 
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
@@ -14,23 +15,20 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component("llmCacheInvalidationListener")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class LlmCacheInvalidationListener {
 
     private static final String CACHE_INVALIDATION_TOPIC = "yuheng:llm:cache:invalidate";
 
+    @Qualifier("llmResponseCacheComponent")
     private final LlmResponseCacheComponent cacheComponent;
-    private final RedissonClient redissonClient;
 
-    @Autowired
-    public LlmCacheInvalidationListener(
-            @Qualifier("llmResponseCacheComponent") LlmResponseCacheComponent cacheComponent,
-            ObjectProvider<RedissonClient> redissonClientProvider) {
-        this.cacheComponent = cacheComponent;
-        this.redissonClient = redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable();
-    }
+    @Qualifier("redissonClient")
+    private final ObjectProvider<RedissonClient> redissonClientProvider;
 
     @PostConstruct
     public void subscribe() {
+        RedissonClient redissonClient = redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable();
         if (redissonClient == null) {
             return;
         }

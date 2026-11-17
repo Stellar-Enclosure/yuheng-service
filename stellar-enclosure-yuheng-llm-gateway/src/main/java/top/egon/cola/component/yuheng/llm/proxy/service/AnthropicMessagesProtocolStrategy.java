@@ -146,6 +146,7 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.vo.LlmInvocationResultVO;
 @Slf4j
 @Validated
 @Component("anthropicMessagesProtocolStrategy")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
 
     /** 中文说明：Messages 唯一被允许的上游路径，协议名不推断、不改写。 English summary: the only upstream path Messages may call; the protocol is never guessed nor rewritten. */
@@ -240,15 +241,8 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
     @Qualifier("jacksonObjectMapper")
     private final ObjectMapper objectMapper;
 
-    private final MeterRegistry meterRegistry;
-
-    @Autowired
-    public AnthropicMessagesProtocolStrategy(
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
-            ObjectProvider<MeterRegistry> meterRegistryProvider) {
-        this(gatewayProperties, objectMapper, meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable());
-    }
+    @Qualifier("meterRegistry")
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     public AnthropicMessagesProtocolStrategy(
             LlmGatewayProperties gatewayProperties,
@@ -260,9 +254,27 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
             LlmGatewayProperties gatewayProperties,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry) {
-        this.gatewayProperties = gatewayProperties;
-        this.objectMapper = objectMapper;
-        this.meterRegistry = meterRegistry;
+        this(gatewayProperties, objectMapper, new ObjectProvider<>() {
+            @Override
+            public MeterRegistry getObject(Object... args) {
+                return meterRegistry;
+            }
+
+            @Override
+            public MeterRegistry getIfAvailable() {
+                return meterRegistry;
+            }
+
+            @Override
+            public MeterRegistry getIfUnique() {
+                return meterRegistry;
+            }
+
+            @Override
+            public MeterRegistry getObject() {
+                return meterRegistry;
+            }
+        });
     }
 
     /**
@@ -440,6 +452,7 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
     }
 
     private void recordAnthropicUsageMetrics(String alias, JsonNode usage) {
+        MeterRegistry meterRegistry = meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable();
         if (meterRegistry == null || usage == null || !usage.isObject()) {
             return;
         }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,6 +29,7 @@ import java.util.function.Function;
  */
 @Slf4j
 @Component("llmResponseCacheComponent")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class LlmResponseCacheComponent {
 
     public enum CacheOutcome {
@@ -55,27 +57,22 @@ public class LlmResponseCacheComponent {
 
     private static final ObjectMapper PARSER = new ObjectMapper();
 
+    @Qualifier(LlmGatewayProperties.BEAN_NAME)
     private final LlmGatewayProperties gatewayProperties;
-    private final List<LlmCacheStrategy> strategies;
-    private final MeterRegistry meterRegistry;
-    private final Function<String, LlmCacheEntryBO> inMemoryReader;
-    private final CacheWriter inMemoryWriter;
-    private final Consumer<String> inMemoryEvictor;
 
-    @Autowired
-    public LlmResponseCacheComponent(
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            List<LlmCacheStrategy> strategies,
-            ObjectProvider<MeterRegistry> meterRegistryProvider) {
-        this(
-                gatewayProperties,
-                strategies,
-                meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable(),
-                null,
-                null,
-                null
-        );
-    }
+    @Qualifier("exactLlmCacheStrategy")
+    private final LlmCacheStrategy exactStrategy;
+
+    @Qualifier("semanticLlmCacheStrategy")
+    private final LlmCacheStrategy semanticStrategy;
+
+    @Qualifier("meterRegistry")
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    private List<LlmCacheStrategy> strategiesOverride;
+    private Function<String, LlmCacheEntryBO> inMemoryReader;
+    private CacheWriter inMemoryWriter;
+    private Consumer<String> inMemoryEvictor;
 
     public LlmResponseCacheComponent(
             LlmGatewayProperties gatewayProperties,
@@ -85,11 +82,44 @@ public class LlmResponseCacheComponent {
             CacheWriter inMemoryWriter,
             Consumer<String> inMemoryEvictor) {
         this.gatewayProperties = gatewayProperties;
-        this.strategies = strategies == null ? List.of() : List.copyOf(strategies);
-        this.meterRegistry = meterRegistry;
+        this.exactStrategy = null;
+        this.semanticStrategy = null;
+        this.meterRegistryProvider = staticProvider(meterRegistry);
+        this.strategiesOverride = strategies == null ? List.of() : List.copyOf(strategies);
         this.inMemoryReader = inMemoryReader;
         this.inMemoryWriter = inMemoryWriter;
         this.inMemoryEvictor = inMemoryEvictor;
+    }
+
+    private static <T> ObjectProvider<T> staticProvider(T instance) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject(Object... args) {
+                return instance;
+            }
+
+            @Override
+            public T getIfAvailable() {
+                return instance;
+            }
+
+            @Override
+            public T getIfUnique() {
+                return instance;
+            }
+
+            @Override
+            public T getObject() {
+                return instance;
+            }
+        };
+    }
+
+    private List<LlmCacheStrategy> activeStrategies() {
+        if (strategiesOverride != null) {
+            return strategiesOverride;
+        }
+        return List.of(exactStrategy, semanticStrategy);
     }
 
     public CacheLookupResult lookup(LlmInvocationCommandDTO command, LlmModelSnapshotBO snapshot) {
@@ -170,7 +200,7 @@ public class LlmResponseCacheComponent {
         if (inMemoryEvictor != null) {
             inMemoryEvictor.accept(modelKey);
         }
-        for (LlmCacheStrategy strategy : strategies) {
+        for (LlmCacheStrategy strategy : activeStrategies()) {
             try {
                 strategy.evictModel(modelKey);
             } catch (Exception ex) {
@@ -210,11 +240,11 @@ public class LlmResponseCacheComponent {
     }
 
     private LlmCacheStrategy strategyFor(LlmCacheModeEnum mode) {
-        return strategies.stream().filter(s -> s.supports(mode)).findFirst().orElse(null);
+        return activeStrategies().stream().filter(s -> s != null && s.supports(mode)).findFirst().orElse(null);
     }
 
     private ExactLlmCacheStrategy findExactStrategy() {
-        return strategies.stream()
+        return activeStrategies().stream()
                 .filter(ExactLlmCacheStrategy.class::isInstance)
                 .map(ExactLlmCacheStrategy.class::cast)
                 .findFirst()
@@ -229,6 +259,7 @@ public class LlmResponseCacheComponent {
     }
 
     private void recordMetric(String alias, String mode, String outcome) {
+        MeterRegistry meterRegistry = meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable();
         if (meterRegistry == null || StringUtils.isBlank(alias)) {
             return;
         }

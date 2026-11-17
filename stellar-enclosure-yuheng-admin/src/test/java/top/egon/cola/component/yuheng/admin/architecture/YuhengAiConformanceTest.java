@@ -89,10 +89,10 @@ class YuhengAiConformanceTest {
             Pattern.compile("^\\s+private final [\\w<>,\\.\\[\\] ]+? (\\w+);$");
 
     /** 中文说明：Rule 5 允许的工具与框架导入根 / the approved tooling and framework import roots (Rule 5). */
-    private static final List<String> APPROVED_IMPORT_ROOTS = List.of("com.baomidou", "com.fasterxml", "io.swagger",
-            "jakarta.annotation", "jakarta.servlet", "jakarta.validation", "java.", "javax.sql", "lombok.",
-            "org.apache", "org.mapstruct", "org.mybatis", "org.reactivestreams", "org.slf4j", "org.springframework",
-            "reactor.core", "top.egon");
+    private static final List<String> APPROVED_IMPORT_ROOTS = List.of("com.baomidou", "com.fasterxml", "io.micrometer.core",
+            "io.swagger", "jakarta.annotation", "jakarta.servlet", "jakarta.validation", "java.", "javax.sql", "lombok.",
+            "org.apache", "org.mapstruct", "org.mybatis", "org.reactivestreams", "org.redisson.api", "org.slf4j",
+            "org.springframework", "reactor.core", "top.egon");
 
     /**
      * 中文说明：合法的“无 {@code @Qualifier} 注入”白名单，每一项都在源码里有对应的双语理由注释：
@@ -108,24 +108,29 @@ class YuhengAiConformanceTest {
             "LlmPersistenceConfiguration#beanFactory", "container-resolvable BeanFactory introspection handle");
 
     @Test
-    @DisplayName("受管 DDL 是唯一新增 SQL，且清单摘要就是最终字节的 SHA-256")
+    @DisplayName("受管 DDL 仅包含预期脚本，且清单摘要就是最终字节的 SHA-256")
     void managedScriptIsTheOnlyNewSqlAndItsChecksumIsTheRealDigest() throws IOException {
-        Map<String, String> manifest = readManifest();
+        List<Map<String, String>> scripts = readManifestScripts();
 
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/egon-mp")))
-                .as("the managed family ships exactly one script").containsExactly(MANAGED_SCRIPT_NAME);
-        assertThat(manifest).containsOnly(entry("version", SCHEMA_VERSION), entry("path", MANAGED_SCRIPT),
-                entry("sha256", manifest.get("sha256")));
-        assertThat(DigestUtils.sha256Hex(Files.readAllBytes(ADMIN_RESOURCES.resolve(MANAGED_SCRIPT))))
-                .as("the manifest checksum is computed from the final SQL bytes, never guessed")
-                .isEqualTo(manifest.get("sha256"));
+                .as("the managed family ships the baseline and LLM cache incremental scripts")
+                .containsExactlyInAnyOrder(MANAGED_SCRIPT_NAME, "20261116_002_yuheng_llm_cache.sql");
+        assertThat(scripts).hasSize(2);
+        assertThat(scripts.get(0)).containsOnly(entry("version", SCHEMA_VERSION), entry("path", MANAGED_SCRIPT),
+                entry("sha256", scripts.get(0).get("sha256")));
+        for (Map<String, String> entryMap : scripts) {
+            assertThat(DigestUtils.sha256Hex(Files.readAllBytes(ADMIN_RESOURCES.resolve(entryMap.get("path")))))
+                    .as("the manifest checksum is computed from the final SQL bytes, never guessed")
+                    .isEqualTo(entryMap.get("sha256"));
+        }
 
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/migration")))
                 .as("the pre-managed V1-V13 history is retained untouched, with nothing appended")
                 .hasSize(13)
                 .allMatch(name -> name.matches("V(?:1|[2-9]|1[0-2])__.*\\.sql|V13__.*\\.sql"));
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/migration")))
-                .as("no legacy script was pulled back under management").doesNotContain(MANAGED_SCRIPT_NAME);
+                .as("no legacy script was pulled back under management")
+                .doesNotContain(MANAGED_SCRIPT_NAME, "20261116_002_yuheng_llm_cache.sql");
     }
 
     @Test
@@ -403,18 +408,24 @@ class YuhengAiConformanceTest {
     }
 
     /** 中文说明：清单里只关心版本/路径/摘要三项 / the manifest fields this gate pins. */
-    private Map<String, String> readManifest() throws IOException {
+    private List<Map<String, String>> readManifestScripts() throws IOException {
         String json = Files.readString(ADMIN_RESOURCES.resolve(MANIFEST), StandardCharsets.UTF_8);
         assertThat(json).as("the managed family stays the web family").contains("\"family\"");
-        assertThat(countOccurrences(json, "\"path\"")).as("exactly one managed script").isEqualTo(1);
-        Map<String, String> manifest = new LinkedHashMap<>();
-        for (String key : List.of("version", "path", "sha256")) {
-            Matcher matcher = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
-            assertThat(matcher.find()).as("the manifest declares %s", key).isTrue();
-            manifest.put(key, matcher.group(1));
+        assertThat(countOccurrences(json, "\"path\"")).as("managed script count").isEqualTo(2);
+        List<Map<String, String>> entries = new ArrayList<>();
+        Matcher versionMatcher = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        Matcher pathMatcher = Pattern.compile("\"path\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        Matcher shaMatcher = Pattern.compile("\"sha256\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+        while (versionMatcher.find() && pathMatcher.find() && shaMatcher.find()) {
+            Map<String, String> entry = new LinkedHashMap<>();
+            entry.put("version", versionMatcher.group(1));
+            entry.put("path", pathMatcher.group(1));
+            entry.put("sha256", shaMatcher.group(1));
+            entries.add(entry);
         }
+        assertThat(entries).hasSize(2);
         assertThat(json.substring(json.indexOf("\"family\""))).as("family is web").contains("web");
-        return manifest;
+        return entries;
     }
 
     /**

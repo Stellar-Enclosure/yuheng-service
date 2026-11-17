@@ -157,15 +157,17 @@ class GatewayManagedDdlConfigurationTest {
         EgonColaDdlManifestBO manifest =
                 new ObjectMapper().readValue(readResource(MANIFEST_RESOURCE), EgonColaDdlManifestBO.class);
         assertThat(manifest.family()).isEqualTo("web");
-        assertThat(manifest.scripts()).hasSize(1);
+        assertThat(manifest.scripts()).hasSize(2);
         EgonColaDdlManifestBO.ScriptBO script = manifest.scripts().get(0);
         assertThat(script.version()).isEqualTo(EXPECTED_VERSION);
         assertThat(script.path()).isEqualTo(SQL_RESOURCE);
 
-        Resource[] matches = new PathMatchingResourcePatternResolver().getResources("classpath*:" + SQL_RESOURCE);
-        assertThat(matches).as("the SQL must resolve to exactly one classpath resource").hasSize(1);
-        assertThat(HexFormat.of().formatHex(sha256(readResource(SQL_RESOURCE).getBytes(StandardCharsets.UTF_8))))
-                .isEqualTo(script.sha256());
+        for (EgonColaDdlManifestBO.ScriptBO entry : manifest.scripts()) {
+            Resource[] matches = new PathMatchingResourcePatternResolver().getResources("classpath*:" + entry.path());
+            assertThat(matches).as("the SQL must resolve to exactly one classpath resource").hasSize(1);
+            assertThat(HexFormat.of().formatHex(sha256(readResource(entry.path()).getBytes(StandardCharsets.UTF_8))))
+                    .isEqualTo(entry.sha256());
+        }
     }
 
     @Test

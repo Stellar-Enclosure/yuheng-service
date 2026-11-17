@@ -145,6 +145,7 @@ import top.egon.cola.component.yuheng.llm.proxy.service.LlmServletStreamComponen
 @Slf4j
 @Validated
 @RestController("llmApiController")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class LlmApiController {
 
     /** 中文说明：API-001 精确入口路径（Spec §9.1/§9.2.1，operationId={@code createLlmChatCompletion}）。 English summary: the exact API-001 entry path. */
@@ -290,27 +291,8 @@ public class LlmApiController {
     @Qualifier("mpLlmConfigurationRepository")
     private final LlmConfigurationRepository configurationRepository;
 
+    @Qualifier("llmResponseCacheComponent")
     private final ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider;
-
-    @Autowired
-    public LlmApiController(
-            @Qualifier("llmInvocationServiceImpl") LlmInvocationService llmInvocationService,
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
-            @Qualifier("llmProtocolStrategyRegistry") Map<LlmProtocolEnum, String> llmProtocolStrategyRegistry,
-            Map<String, LlmProtocolStrategy> llmProtocolStrategies,
-            @Qualifier("llmServletStreamComponent") LlmServletStreamComponent llmServletStreamComponent,
-            @Qualifier("mpLlmConfigurationRepository") LlmConfigurationRepository configurationRepository,
-            ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider) {
-        this.llmInvocationService = llmInvocationService;
-        this.gatewayProperties = gatewayProperties;
-        this.objectMapper = objectMapper;
-        this.llmProtocolStrategyRegistry = llmProtocolStrategyRegistry;
-        this.llmProtocolStrategies = llmProtocolStrategies;
-        this.llmServletStreamComponent = llmServletStreamComponent;
-        this.configurationRepository = configurationRepository;
-        this.responseCacheComponentProvider = responseCacheComponentProvider;
-    }
 
     public LlmApiController(
             LlmInvocationService llmInvocationService,

@@ -70,8 +70,8 @@ class AiCarrierContractTest {
      */
     private static final Set<String> SHARED_CROSS_PROCESS = Set.of(
             "LlmProtocolEnum", "LlmCapabilityEnum", "LlmModelKindEnum",
-            "LlmDeploymentEnum", "McpPersistentTaskStateEnum",
-            "McpPersistentApprovalStatusEnum");
+            "LlmDeploymentEnum", "LlmRoutingModeEnum", "LlmCacheModeEnum",
+            "McpPersistentTaskStateEnum", "McpPersistentApprovalStatusEnum");
 
     private static ValidatorFactory validatorFactory;
 
@@ -130,7 +130,7 @@ class AiCarrierContractTest {
 
     @Test
     void enumCodesAndWireValuesMatchTheFrozenSnapshot() throws Exception {
-        assertEquals(14, FROZEN_WIRE.size(), "frozen enum set is complete");
+        assertEquals(16, FROZEN_WIRE.size(), "frozen enum set is complete");
         for (Map.Entry<String, List<String>> entry : FROZEN_WIRE.entrySet()) {
             Class<?> enumType = Class.forName(entry.getKey());
             assertTrue(EgonEnum.class.isAssignableFrom(enumType),
@@ -533,6 +533,13 @@ class AiCarrierContractTest {
         frozen.put("top.egon.cola.component.yuheng.admin.llm.domain.enums"
                 + ".LlmDeploymentEnum", List.of(
                 "LOCAL/10/LOCAL", "CLOUD/20/CLOUD"));
+        frozen.put("top.egon.cola.component.yuheng.admin.llm.domain.enums"
+                + ".LlmRoutingModeEnum", List.of(
+                "PRIORITY_WEIGHT/10/PRIORITY_WEIGHT",
+                "PREFIX_AFFINITY/20/PREFIX_AFFINITY"));
+        frozen.put("top.egon.cola.component.yuheng.admin.llm.domain.enums"
+                + ".LlmCacheModeEnum", List.of(
+                "NONE/10/NONE", "EXACT/20/EXACT", "SEMANTIC/30/SEMANTIC"));
         frozen.put("top.egon.cola.component.yuheng.admin.mcp.domain.enums"
                 + ".McpPersistentTaskStateEnum", List.of(
                 "WORKING/10/WORKING", "INPUT_REQUIRED/20/INPUT_REQUIRED",

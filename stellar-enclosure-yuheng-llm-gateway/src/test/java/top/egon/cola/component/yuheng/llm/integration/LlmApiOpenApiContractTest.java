@@ -248,6 +248,19 @@ class LlmApiOpenApiContractTest {
                 assertThat(operation.path("responses").has("503")).isTrue();
                 assertThat(operation.path("description").asText()).contains("USER or SERVICE", "audit failure");
             }
+            for (String cachedPath : List.of("/v1/chat/completions", "/v1/messages")) {
+                var operation = document.path("paths").path(cachedPath).path("post");
+                boolean hasCacheControlHeader = false;
+                for (JsonNode param : operation.path("parameters")) {
+                    if ("Cache-Control".equals(param.path("name").asText())
+                            && "header".equals(param.path("in").asText())) {
+                        hasCacheControlHeader = true;
+                        break;
+                    }
+                }
+                assertThat(hasCacheControlHeader).isTrue();
+                assertThat(operation.path("responses").path("200").path("headers").has("X-Yuheng-Cache")).isTrue();
+            }
             assertThat(document.path("paths").path("/v1/models").path("get").path("x-required-oauth-scopes").get(0).asText())
                     .isEqualTo("yuheng:llm:read");
         } finally { context.close(); }

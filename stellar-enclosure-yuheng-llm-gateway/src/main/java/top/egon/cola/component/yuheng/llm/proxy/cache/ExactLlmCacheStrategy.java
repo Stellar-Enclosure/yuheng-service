@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.redisson.api.RMapCache;
@@ -33,29 +34,49 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("exactLlmCacheStrategy")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class ExactLlmCacheStrategy implements LlmCacheStrategy {
 
     private static final String MAP_PREFIX = "yuheng:llm:cache:exact:";
 
+    @Qualifier(LlmGatewayProperties.BEAN_NAME)
     private final LlmGatewayProperties gatewayProperties;
-    private final ObjectMapper objectMapper;
-    private final RedissonClient redissonClient;
 
-    @Autowired
-    public ExactLlmCacheStrategy(
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
-            ObjectProvider<RedissonClient> redissonClientProvider) {
-        this(gatewayProperties, objectMapper, redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable());
-    }
+    @Qualifier("jacksonObjectMapper")
+    private final ObjectMapper objectMapper;
+
+    @Qualifier("redissonClient")
+    private final ObjectProvider<RedissonClient> redissonClientProvider;
 
     public ExactLlmCacheStrategy(
             LlmGatewayProperties gatewayProperties,
             ObjectMapper objectMapper,
             RedissonClient redissonClient) {
-        this.gatewayProperties = gatewayProperties;
-        this.objectMapper = objectMapper;
-        this.redissonClient = redissonClient;
+        this(gatewayProperties, objectMapper, new ObjectProvider<>() {
+            @Override
+            public RedissonClient getObject(Object... args) {
+                return redissonClient;
+            }
+
+            @Override
+            public RedissonClient getIfAvailable() {
+                return redissonClient;
+            }
+
+            @Override
+            public RedissonClient getIfUnique() {
+                return redissonClient;
+            }
+
+            @Override
+            public RedissonClient getObject() {
+                return redissonClient;
+            }
+        });
+    }
+
+    private RedissonClient redissonClient() {
+        return redissonClientProvider == null ? null : redissonClientProvider.getIfAvailable();
     }
 
     @Override
@@ -65,6 +86,7 @@ public class ExactLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public LlmCacheEntryBO lookup(LlmInvocationCommandDTO command, LlmModelSnapshotBO snapshot) {
+        RedissonClient redissonClient = redissonClient();
         if (redissonClient == null) {
             return null;
         }
@@ -84,6 +106,7 @@ public class ExactLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public void store(LlmInvocationCommandDTO command, LlmModelSnapshotBO snapshot, ObjectNode response) {
+        RedissonClient redissonClient = redissonClient();
         if (redissonClient == null || response == null) {
             return;
         }
@@ -105,6 +128,7 @@ public class ExactLlmCacheStrategy implements LlmCacheStrategy {
 
     @Override
     public void evictModel(String modelKey) {
+        RedissonClient redissonClient = redissonClient();
         if (redissonClient == null || StringUtils.isBlank(modelKey)) {
             return;
         }
