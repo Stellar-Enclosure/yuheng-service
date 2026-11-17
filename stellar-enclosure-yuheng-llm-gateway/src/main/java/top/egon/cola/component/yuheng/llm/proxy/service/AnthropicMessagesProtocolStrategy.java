@@ -3,7 +3,11 @@ package top.egon.cola.component.yuheng.llm.proxy.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -141,7 +145,6 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.vo.LlmInvocationResultVO;
  */
 @Slf4j
 @Validated
-@RequiredArgsConstructor
 @Component("anthropicMessagesProtocolStrategy")
 public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
 
@@ -237,6 +240,31 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
     @Qualifier("jacksonObjectMapper")
     private final ObjectMapper objectMapper;
 
+    private final MeterRegistry meterRegistry;
+
+    @Autowired
+    public AnthropicMessagesProtocolStrategy(
+            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
+            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
+            ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(gatewayProperties, objectMapper, meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable());
+    }
+
+    public AnthropicMessagesProtocolStrategy(
+            LlmGatewayProperties gatewayProperties,
+            ObjectMapper objectMapper) {
+        this(gatewayProperties, objectMapper, (MeterRegistry) null);
+    }
+
+    public AnthropicMessagesProtocolStrategy(
+            LlmGatewayProperties gatewayProperties,
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry) {
+        this.gatewayProperties = gatewayProperties;
+        this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+    }
+
     /**
      * 中文说明：本实现的身份，恒为 {@link LlmProtocolEnum#ANTHROPIC_MESSAGES}：注册表用它建只读 EnumMap，与本 bean 名
      * 不符即启动失败，绝不回落 Chat。
@@ -314,6 +342,9 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
         ObjectNode encoded = payload.deepCopy();
         encoded.put("model", route.getUpstreamModel());
         encoded.put("stream", Boolean.TRUE.equals(command.getStream()));
+        if (Boolean.TRUE.equals(command.getPromptCacheOptimizationEnabled())) {
+            injectSystemCacheControl(encoded);
+        }
         enforceRequestCeiling(encoded, command.getModel());
         log.debug("llm messages request encoded alias={} protocol={} channel={} messages={}", command.getModel(),
                 protocol(), route.getChannelKey(), encoded.path("messages").size());
@@ -375,9 +406,53 @@ public class AnthropicMessagesProtocolStrategy implements LlmProtocolStrategy {
         }
         ObjectNode decoded = upstreamBody.deepCopy();
         decoded.put("model", command.getModel());
+        recordAnthropicUsageMetrics(command.getModel(), upstreamBody.get("usage"));
         log.debug("llm messages unary decoded alias={} protocol={} blocks={} stopReason={}", command.getModel(),
                 protocol(), content.size(), StringUtils.defaultString(textField(upstreamBody, "stop_reason")));
         return decoded;
+    }
+
+    private void injectSystemCacheControl(ObjectNode encoded) {
+        JsonNode system = encoded.get("system");
+        if (system == null || system.isNull()) {
+            return;
+        }
+        if (system.isTextual()) {
+            ArrayNode blocks = objectMapper.createArrayNode();
+            ObjectNode block = blocks.addObject();
+            block.put("type", "text");
+            block.put("text", system.asText());
+            block.putObject("cache_control").put("type", "ephemeral");
+            encoded.set("system", blocks);
+            return;
+        }
+        if (system.isArray() && !system.isEmpty()) {
+            for (JsonNode block : system) {
+                if (block.has("cache_control")) {
+                    return;
+                }
+            }
+            JsonNode last = system.get(system.size() - 1);
+            if (last instanceof ObjectNode lastObj) {
+                lastObj.putObject("cache_control").put("type", "ephemeral");
+            }
+        }
+    }
+
+    private void recordAnthropicUsageMetrics(String alias, JsonNode usage) {
+        if (meterRegistry == null || usage == null || !usage.isObject()) {
+            return;
+        }
+        long inputTokens = usage.path("input_tokens").asLong(0L);
+        if (inputTokens > 0L) {
+            meterRegistry.counter("yuheng.llm.tokens.prompt",
+                    "alias", alias, "protocol", protocol().wireValue()).increment(inputTokens);
+        }
+        long cacheReadTokens = usage.path("cache_read_input_tokens").asLong(0L);
+        if (cacheReadTokens > 0L) {
+            meterRegistry.counter("yuheng.llm.tokens.cached",
+                    "alias", alias, "protocol", protocol().wireValue()).increment(cacheReadTokens);
+        }
     }
 
     /**

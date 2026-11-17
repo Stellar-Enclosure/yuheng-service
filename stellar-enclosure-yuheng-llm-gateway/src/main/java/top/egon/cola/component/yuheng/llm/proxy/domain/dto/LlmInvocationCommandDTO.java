@@ -59,6 +59,13 @@ public class LlmInvocationCommandDTO {
     @NotNull
     private ObjectNode payload;
 
+    /** 中文说明：HTTP Cache-Control 请求头，控制网关响应缓存绕过。 English summary: optional HTTP Cache-Control header controlling gateway response cache bypass. */
+    private String cacheControlHeader;
+
+    /** 中文说明：是否启用前缀缓存优化（tools 字典序、Anthropic 断点注入）。 English summary: whether prompt cache optimization (deterministic tools ordering, Anthropic breakpoints) is enabled. */
+    @Builder.Default
+    private Boolean promptCacheOptimizationEnabled = Boolean.FALSE;
+
     /** 中文说明：已验证的 SERVICE subject，仅取自 Tianquan 结论；普通调用者不能声明更宽出域权限。 English summary: the verified SERVICE subject taken only from Tianquan; ordinary callers cannot widen egress. */
     @NotBlank
     @Size(max = 128)

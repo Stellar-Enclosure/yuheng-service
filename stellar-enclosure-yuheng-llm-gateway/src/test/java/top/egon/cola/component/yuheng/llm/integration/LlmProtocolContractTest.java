@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -1084,6 +1085,83 @@ class LlmProtocolContractTest {
                             .doesNotContain("\"traceId\"", "\"timestamp\"", "\"success\"");
                 }
             }
+        }
+    }
+
+    @Nested
+    class PromptCachingAndMetrics {
+
+        @Test
+        @DisplayName("开启前缀优化时对 tools 确定性排序，且从 usage 上报 cached_tokens 指标")
+        void sortsToolsDeterministicallyAndRecordsCachedTokensMetric() throws Exception {
+            SimpleMeterRegistry registry = new SimpleMeterRegistry();
+            OpenAiChatProtocolStrategy metered = new OpenAiChatProtocolStrategy(
+                    gatewayProperties(), JSON, registry);
+
+            ObjectNode body = minimalChatPayload();
+            var tools = body.putArray("tools");
+            var zTool = tools.addObject().put("type", "function").putObject("function");
+            zTool.put("name", "z_tool");
+            zTool.putObject("parameters").put("type", "object");
+            var aTool = tools.addObject().put("type", "function").putObject("function");
+            aTool.put("name", "a_tool");
+            aTool.putObject("parameters").put("type", "object");
+
+            LlmInvocationCommandDTO cmd = command(LlmProtocolEnum.OPENAI_CHAT, CHAT_ALIAS, false, body,
+                    LlmCapabilityEnum.FUNCTION_TOOLS)
+                    .setPromptCacheOptimizationEnabled(Boolean.TRUE);
+            LlmModelSnapshotBO.RouteBO r = route(LlmProtocolEnum.OPENAI_CHAT, LlmCapabilityEnum.FUNCTION_TOOLS);
+            ObjectNode out = metered.encodeRequest(cmd, r);
+            assertThat(out.path("tools").get(0).path("function").path("name").asText()).isEqualTo("a_tool");
+            assertThat(out.path("tools").get(1).path("function").path("name").asText()).isEqualTo("z_tool");
+
+            ObjectNode upstream = JSON.createObjectNode();
+            upstream.put("id", "chatcmpl-1").put("model", UPSTREAM_MODEL);
+            upstream.putArray("choices").addObject().putObject("message").put("role", "assistant").put("content", "ok");
+            var usage = upstream.putObject("usage");
+            usage.put("prompt_tokens", 200);
+            usage.put("completion_tokens", 10);
+            usage.putObject("prompt_tokens_details").put("cached_tokens", 128);
+
+            metered.decodeUnaryResponse(cmd, upstream);
+            assertThat(registry.counter("yuheng.llm.tokens.prompt",
+                    "alias", CHAT_ALIAS, "protocol", "OPENAI_CHAT").count())
+                    .isEqualTo(200.0);
+            assertThat(registry.counter("yuheng.llm.tokens.cached",
+                    "alias", CHAT_ALIAS, "protocol", "OPENAI_CHAT").count())
+                    .isEqualTo(128.0);
+        }
+
+        @Test
+        @DisplayName("开启前缀优化时 Anthropic system 块自动注入 ephemeral 断点并上报 cache_read_input_tokens")
+        void injectsCacheControlBreakpointAndRecordsCacheReadTokens() throws Exception {
+            SimpleMeterRegistry registry = new SimpleMeterRegistry();
+            AnthropicMessagesProtocolStrategy metered = new AnthropicMessagesProtocolStrategy(
+                    gatewayProperties(), JSON, registry);
+
+            ObjectNode body = minimalMessagesPayload();
+            body.put("system", "Long static instructions.");
+
+            LlmInvocationCommandDTO cmd = command(LlmProtocolEnum.ANTHROPIC_MESSAGES, MESSAGES_ALIAS, false, body)
+                    .setPromptCacheOptimizationEnabled(Boolean.TRUE);
+            LlmModelSnapshotBO.RouteBO r = route(LlmProtocolEnum.ANTHROPIC_MESSAGES);
+            ObjectNode out = metered.encodeRequest(cmd, r);
+            assertThat(out.path("system").isArray()).isTrue();
+            assertThat(out.path("system").get(0).path("cache_control").path("type").asText()).isEqualTo("ephemeral");
+
+            ObjectNode upstream = JSON.createObjectNode();
+            upstream.put("id", "msg_1").put("type", "message").put("role", "assistant")
+                    .put("model", UPSTREAM_MODEL).put("stop_reason", "end_turn");
+            upstream.putArray("content").addObject().put("type", "text").put("text", "hi");
+            var usage = upstream.putObject("usage");
+            usage.put("input_tokens", 50);
+            usage.put("output_tokens", 10);
+            usage.put("cache_read_input_tokens", 1024);
+
+            metered.decodeUnaryResponse(cmd, upstream);
+            assertThat(registry.counter("yuheng.llm.tokens.cached",
+                    "alias", MESSAGES_ALIAS, "protocol", "ANTHROPIC_MESSAGES").count())
+                    .isEqualTo(1024.0);
         }
     }
 

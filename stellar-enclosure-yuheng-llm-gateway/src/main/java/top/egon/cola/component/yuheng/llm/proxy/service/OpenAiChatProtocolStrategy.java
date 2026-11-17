@@ -3,7 +3,9 @@ package top.egon.cola.component.yuheng.llm.proxy.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -19,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -26,9 +29,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferFactory;
@@ -155,7 +159,6 @@ import top.egon.cola.component.yuheng.llm.proxy.domain.vo.LlmInvocationResultVO;
  */
 @Slf4j
 @Validated
-@RequiredArgsConstructor
 @Component("openAiChatProtocolStrategy")
 public class OpenAiChatProtocolStrategy implements LlmProtocolStrategy {
 
@@ -263,6 +266,31 @@ public class OpenAiChatProtocolStrategy implements LlmProtocolStrategy {
     @Qualifier("jacksonObjectMapper")
     private final ObjectMapper objectMapper;
 
+    private final MeterRegistry meterRegistry;
+
+    @Autowired
+    public OpenAiChatProtocolStrategy(
+            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
+            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
+            ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(gatewayProperties, objectMapper, meterRegistryProvider == null ? null : meterRegistryProvider.getIfAvailable());
+    }
+
+    public OpenAiChatProtocolStrategy(
+            LlmGatewayProperties gatewayProperties,
+            ObjectMapper objectMapper) {
+        this(gatewayProperties, objectMapper, (MeterRegistry) null);
+    }
+
+    public OpenAiChatProtocolStrategy(
+            LlmGatewayProperties gatewayProperties,
+            ObjectMapper objectMapper,
+            MeterRegistry meterRegistry) {
+        this.gatewayProperties = gatewayProperties;
+        this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+    }
+
     /**
      * 中文说明：本实现唯一负责的协议是 Chat 面常量，注册表据此把本 bean 归入该键，不符即启动失败。
      * English summary: This implementation owns only the Chat protocol constant, which is how the registry files this bean
@@ -328,6 +356,9 @@ public class OpenAiChatProtocolStrategy implements LlmProtocolStrategy {
         }
         ObjectNode request = payload.deepCopy();
         request.put(MODEL_FIELD, upstreamModel);
+        if (Boolean.TRUE.equals(command.getPromptCacheOptimizationEnabled())) {
+            sortToolsDeterministically(request);
+        }
         byte[] requestBytes = toBytes(request);
         requireWithinRequestCeiling(requestBytes);
         log.info("llm chat request encoded alias={} protocol={} channel={} priority={} stream={} messages={} bytes={}",
@@ -379,9 +410,39 @@ public class OpenAiChatProtocolStrategy implements LlmProtocolStrategy {
         }
         ObjectNode decoded = upstreamBody.deepCopy();
         decoded.put(MODEL_FIELD, command.getModel());
+        recordOpenAiUsageMetrics(command.getModel(), usage);
         log.info("llm chat decoded alias={} protocol={} choices={} usagePresent={}", command.getModel(), protocol(),
                 choices.size(), usage != null && !usage.isNull());
         return decoded;
+    }
+
+    private void sortToolsDeterministically(ObjectNode request) {
+        JsonNode tools = request.get(TOOLS_FIELD);
+        if (tools == null || !tools.isArray() || tools.size() <= 1) {
+            return;
+        }
+        List<JsonNode> sorted = new ArrayList<>(tools.size());
+        tools.forEach(sorted::add);
+        sorted.sort(Comparator.comparing(node -> node.path("function").path("name").asText("")));
+        ArrayNode array = objectMapper.createArrayNode();
+        sorted.forEach(array::add);
+        request.set(TOOLS_FIELD, array);
+    }
+
+    private void recordOpenAiUsageMetrics(String alias, JsonNode usage) {
+        if (meterRegistry == null || usage == null || !usage.isObject()) {
+            return;
+        }
+        long promptTokens = usage.path("prompt_tokens").asLong(0L);
+        if (promptTokens > 0L) {
+            meterRegistry.counter("yuheng.llm.tokens.prompt",
+                    "alias", alias, "protocol", protocol().wireValue()).increment(promptTokens);
+        }
+        long cachedTokens = usage.path("prompt_tokens_details").path("cached_tokens").asLong(0L);
+        if (cachedTokens > 0L) {
+            meterRegistry.counter("yuheng.llm.tokens.cached",
+                    "alias", alias, "protocol", protocol().wireValue()).increment(cachedTokens);
+        }
     }
 
     /**
@@ -816,6 +877,9 @@ public class OpenAiChatProtocolStrategy implements LlmProtocolStrategy {
         JsonNode usage = chunk.get(USAGE_FIELD);
         if (usage != null && !usage.isNull() && !usage.isObject()) {
             throw streamFrameInvalid(command, USAGE_FIELD);
+        }
+        if (usage != null && usage.isObject()) {
+            recordOpenAiUsageMetrics(alias, usage);
         }
         if (StringUtils.isNotBlank(alias)) {
             chunk.put(MODEL_FIELD, alias);
