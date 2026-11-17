@@ -14,20 +14,28 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
+import top.egon.cola.component.yuheng.admin.llm.converter.LlmCachePolicyConverter;
+import top.egon.cola.component.yuheng.admin.llm.domain.bo.LlmCachePolicyBO;
 import top.egon.cola.component.yuheng.admin.llm.domain.vo.LlmPageVO;
 import top.egon.cola.component.yuheng.admin.llm.domain.bo.LlmChannelBO;
 import top.egon.cola.component.yuheng.admin.llm.domain.bo.LlmModelBO;
+import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmCachePolicyDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmChannelCommandDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmModelCommandDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmRouteBindingDTO;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmCacheModeEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmDeploymentEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.vo.LlmChannelVO;
 import top.egon.cola.component.yuheng.admin.llm.domain.vo.LlmModelVO;
 import top.egon.cola.component.yuheng.admin.llm.repository.LlmConfigurationRepository;
@@ -64,8 +72,11 @@ import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdmin
 @Slf4j
 @Validated
 @Service("llmConfigurationServiceImpl")
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class LlmConfigurationServiceImpl implements LlmConfigurationService {
+
+    /** 缓存失效 Pub/Sub 主题 / Redis Pub/Sub topic for LLM cache invalidation. */
+    private static final String CACHE_INVALIDATION_TOPIC = "yuheng:llm:cache:invalidate";
 
     /** 渠道审计资源类型 / audit resource type of one LLM channel. */
     private static final String CHANNEL_RESOURCE = "YUHENG_LLM_CHANNEL";
@@ -87,6 +98,11 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
 
     @Qualifier("gatewayProjectionClock")
     private final Clock clock;
+
+    @Qualifier("llmCachePolicyConverter")
+    private final LlmCachePolicyConverter cachePolicyConverter;
+
+    private final ObjectProvider<RedissonClient> redissonClientProvider;
 
     /**
      * 中文说明：执行 listChannels 操作；只读短事务内先取匹配总数再取当页，投影为纯业务 VO，
@@ -220,6 +236,7 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
         assertRevision(stored, command.getExpectedRevision(), modelKey, "model");
         assertRoutes(command);
         assertEmbeddingSpaceImmutable(current, command);
+        assertCachePolicy(command);
         LlmModelBO saved = configuration.saveModel(modelCarrier(modelKey, command));
         audit(
                 actor,
@@ -230,6 +247,7 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
                 current == null ? null : modelSummary(current),
                 modelSummary(saved)
         );
+        publishCacheInvalidation(modelKey);
         log.info(
                 "YUHENG_LLM_MODEL_SAVED modelKey={} kind={} routes={} revision={}",
                 modelKey,
@@ -512,9 +530,12 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
      * @param command 参数 模型命令；parameter the model command.
      * @return 返回 模型业务载体；returns the model business carrier.
      */
-    private static LlmModelBO modelCarrier(
+    private LlmModelBO modelCarrier(
             String modelKey,
             LlmModelCommandDTO command) {
+        LlmCachePolicyBO policy = cachePolicyConverter.toTarget(command.getCachePolicy());
+        LlmRoutingModeEnum routingMode = command.getRoutingMode() == null
+                ? LlmRoutingModeEnum.PRIORITY_WEIGHT : command.getRoutingMode();
         return LlmModelBO.builder()
                 .modelKey(modelKey)
                 .name(StringUtils.trim(command.getName()))
@@ -525,8 +546,51 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
                 .embeddingSpaceId(StringUtils.trimToNull(command.getEmbeddingSpaceId()))
                 .allowedSubjects(copy(command.getAllowedSubjects()))
                 .routes(copy(command.getRoutes()))
+                .routingMode(routingMode)
+                .cachePolicy(policy)
                 .revision(command.getExpectedRevision())
                 .build();
+    }
+
+    private void assertCachePolicy(LlmModelCommandDTO command) {
+        LlmCachePolicyDTO policy = command.getCachePolicy();
+        if (policy == null || policy.getMode() != LlmCacheModeEnum.SEMANTIC) {
+            return;
+        }
+        String embeddingKey = StringUtils.trimToNull(policy.getEmbeddingModelKey());
+        if (embeddingKey == null) {
+            throw new IllegalArgumentException("embeddingModelKey is required when cachePolicy.mode is SEMANTIC");
+        }
+        LlmModelBO embeddingModel = configuration.findModel(embeddingKey)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Referenced embeddingModelKey " + embeddingKey + " does not exist"));
+        if (!Boolean.TRUE.equals(embeddingModel.getEnabled())
+                || embeddingModel.getKind() != LlmModelKindEnum.EMBEDDING) {
+            throw new IllegalArgumentException(
+                    "Referenced embeddingModelKey " + embeddingKey + " must be an enabled EMBEDDING model");
+        }
+        if (embeddingModel.getRoutes() == null || embeddingModel.getRoutes().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Referenced embeddingModelKey " + embeddingKey + " has no routes");
+        }
+        for (LlmRouteBindingDTO route : embeddingModel.getRoutes()) {
+            LlmChannelBO channel = configuration.findChannel(route.getChannelKey()).orElse(null);
+            if (channel == null || channel.getDeployment() != LlmDeploymentEnum.LOCAL) {
+                throw new IllegalArgumentException(
+                        "Referenced embeddingModelKey " + embeddingKey + " must use LOCAL deployment channels only");
+            }
+        }
+    }
+
+    private void publishCacheInvalidation(String modelKey) {
+        redissonClientProvider.ifAvailable(client -> {
+            try {
+                client.getTopic(CACHE_INVALIDATION_TOPIC).publish(modelKey);
+            } catch (RuntimeException failure) {
+                log.warn("YUHENG_LLM_CACHE_INVALIDATION_FAILED modelKey={} errorType={}",
+                        modelKey, failure.getClass().getSimpleName());
+            }
+        });
     }
 
     /**
@@ -582,6 +646,9 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
                 .embeddingSpaceId(carrier.getEmbeddingSpaceId())
                 .allowedSubjects(carrier.getAllowedSubjects())
                 .routes(carrier.getRoutes())
+                .routingMode(carrier.getRoutingMode() == null
+                        ? LlmRoutingModeEnum.PRIORITY_WEIGHT : carrier.getRoutingMode())
+                .cachePolicy(cachePolicyConverter.toView(carrier.getCachePolicy()))
                 .revision(carrier.getRevision())
                 .build();
     }

@@ -16,6 +16,7 @@ import lombok.experimental.Accessors;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmRouteBindingDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -81,6 +82,13 @@ public class LlmModelVO {
     @Size(min = 1, max = 16)
     @Valid
     private List<LlmRouteBindingDTO> routes;
+
+    /** 路由选择模式 / routing mode. */
+    private LlmRoutingModeEnum routingMode;
+
+    /** 网关缓存与前缀优化策略 / gateway cache policy. */
+    @Valid
+    private LlmCachePolicyVO cachePolicy;
 
     /** 已提交乐观版本，正整数 / committed optimistic revision, positive. */
     @NotNull

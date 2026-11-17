@@ -12,6 +12,7 @@ import lombok.experimental.Accessors;
 import lombok.experimental.SuperBuilder;
 import top.egon.cola.component.common.mybatis.model.EgonModel;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmModelKindEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.admin.shared.dao.typehandler.GatewayJsonbTypeHandler;
 
 /**
@@ -55,6 +56,12 @@ public class LlmModelPO extends EgonModel<LlmModelPO> {
 
     @TableField(value = "routes", typeHandler = GatewayJsonbTypeHandler.class)
     private JsonNode routes;
+
+    @TableField("routing_mode")
+    private LlmRoutingModeEnum routingMode;
+
+    @TableField(value = "cache_policy", typeHandler = GatewayJsonbTypeHandler.class)
+    private JsonNode cachePolicy;
 
     @TableField("revision")
     private Long revision;

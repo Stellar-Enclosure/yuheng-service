@@ -115,6 +115,8 @@ interface LlmModelProjection {
     @Mapping(target = "embeddingSpaceId", source = "embeddingSpaceId")
     @Mapping(target = "allowedSubjects", source = "allowedSubjects")
     @Mapping(target = "routes", source = "routes")
+    @Mapping(target = "routingMode", expression = "java( source.getRoutingMode() == null ? top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum.PRIORITY_WEIGHT : source.getRoutingMode() )")
+    @Mapping(target = "cachePolicy", expression = "java( new LlmCachePolicyConverter().toView( source.getCachePolicy() ) )")
     @Mapping(target = "revision", source = "revision")
     LlmModelVO toView(LlmModelBO source);
 }

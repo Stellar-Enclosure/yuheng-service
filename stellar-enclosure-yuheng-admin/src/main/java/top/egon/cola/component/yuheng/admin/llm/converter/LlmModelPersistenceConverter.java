@@ -14,9 +14,11 @@ import org.mapstruct.ReportingPolicy;
 import org.mapstruct.factory.Mappers;
 import org.springframework.stereotype.Component;
 import top.egon.cola.component.common.core.converter.BaseConverter;
+import top.egon.cola.component.yuheng.admin.llm.domain.bo.LlmCachePolicyBO;
 import top.egon.cola.component.yuheng.admin.llm.domain.bo.LlmModelBO;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmRouteBindingDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.po.LlmModelPO;
 
 /**
@@ -247,6 +249,8 @@ interface LlmModelMapping {
     @Mapping(target = "embeddingSpaceId", source = "embeddingSpaceId")
     @Mapping(target = "allowedSubjects", expression = "java( subjects( source.getAllowedSubjects() ) )")
     @Mapping(target = "routes", expression = "java( routes( source.getRoutes() ) )")
+    @Mapping(target = "routingMode", expression = "java( routingMode( source.getRoutingMode() ) )")
+    @Mapping(target = "cachePolicy", expression = "java( cachePolicy( source.getCachePolicy() ) )")
     @Mapping(target = "revision", expression = "java( value( source.getRevision() ) )")
     @Mapping(target = "createdAt", source = "createTime")
     @Mapping(target = "updatedAt", source = "updateTime")
@@ -274,6 +278,8 @@ interface LlmModelMapping {
     @Mapping(target = "embeddingSpaceId", source = "embeddingSpaceId")
     @Mapping(target = "allowedSubjects", expression = "java( subjectNode( source.getAllowedSubjects() ) )")
     @Mapping(target = "routes", expression = "java( routeNode( source.getRoutes() ) )")
+    @Mapping(target = "routingMode", expression = "java( routingMode( source.getRoutingMode() ) )")
+    @Mapping(target = "cachePolicy", expression = "java( cachePolicyNode( source.getCachePolicy() ) )")
     @Mapping(target = "revision", source = "revision")
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createUserId", ignore = true)
@@ -303,6 +309,8 @@ interface LlmModelMapping {
     @Mapping(target = "embeddingSpaceId", source = "embeddingSpaceId")
     @Mapping(target = "allowedSubjects", expression = "java( subjectNode( source.getAllowedSubjects() ) )")
     @Mapping(target = "routes", expression = "java( routeNode( source.getRoutes() ) )")
+    @Mapping(target = "routingMode", expression = "java( routingMode( source.getRoutingMode() ) )")
+    @Mapping(target = "cachePolicy", expression = "java( cachePolicyNode( source.getCachePolicy() ) )")
     @Mapping(target = "revision", source = "revision")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
@@ -441,6 +449,26 @@ interface LlmModelMapping {
      */
     default JsonNode routeNode(List<LlmRouteBindingDTO> value) {
         return value == null ? OBJECT_MAPPER.nullNode() : OBJECT_MAPPER.valueToTree(value);
+    }
+
+    default LlmRoutingModeEnum routingMode(LlmRoutingModeEnum value) {
+        return value == null ? LlmRoutingModeEnum.PRIORITY_WEIGHT : value;
+    }
+
+    default LlmCachePolicyBO cachePolicy(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return LlmCachePolicyBO.disabledDefault();
+        }
+        try {
+            LlmCachePolicyBO decoded = OBJECT_MAPPER.convertValue(value, LlmCachePolicyBO.class);
+            return decoded == null ? LlmCachePolicyBO.disabledDefault() : decoded;
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalStateException("stored gateway_llm_model cache_policy is invalid", failure);
+        }
+    }
+
+    default JsonNode cachePolicyNode(LlmCachePolicyBO value) {
+        return OBJECT_MAPPER.valueToTree(value == null ? LlmCachePolicyBO.disabledDefault() : value);
     }
 
     /**

@@ -15,6 +15,7 @@ import lombok.experimental.Accessors;
 import top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmRouteBindingDTO;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,6 +94,15 @@ public class LlmModelBO {
     @Size(min = 1, max = 16)
     @Valid
     private List<LlmRouteBindingDTO> routes;
+
+    /** 路由选择模式，默认 PRIORITY_WEIGHT / routing mode, defaults to PRIORITY_WEIGHT. */
+    @Builder.Default
+    private LlmRoutingModeEnum routingMode = LlmRoutingModeEnum.PRIORITY_WEIGHT;
+
+    /** 网关缓存与前缀优化策略 / gateway response cache and prompt optimization policy. */
+    @Valid
+    @Builder.Default
+    private LlmCachePolicyBO cachePolicy = LlmCachePolicyBO.disabledDefault();
 
     /** 调用方期望的乐观版本：创建意图为 0 哨兵值，替换为库中现值，落库后由仓储回写权威值 / caller expectation, 0 on create intent and the stored revision on replace, overwritten by the authoritative value after a save. */
     @Min(0)

@@ -22,6 +22,7 @@ import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmModelKindEnum;
 import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmProtocolEnum;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 import top.egon.cola.component.yuheng.admin.llm.validation.ValidLlmModel;
 
 import java.util.ArrayList;
@@ -143,6 +144,15 @@ public class LlmModelCommandDTO {
     @Size(min = 1, max = 16)
     @Valid
     private List<LlmRouteBindingDTO> routes;
+
+    /** 路由选择模式，可选，缺省为 PRIORITY_WEIGHT / optional routing mode, defaults to PRIORITY_WEIGHT. */
+    @Schema(nullable = true)
+    private LlmRoutingModeEnum routingMode;
+
+    /** 网关缓存与前缀优化策略，可选 / optional gateway cache and prompt optimization policy. */
+    @Schema(nullable = true)
+    @Valid
+    private LlmCachePolicyDTO cachePolicy;
 
     /** 创建为 0，替换须等于当前 revision / 0 on create, current revision on replace. */
     @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.expectedRevision", type = ResourceType.FIELD,
