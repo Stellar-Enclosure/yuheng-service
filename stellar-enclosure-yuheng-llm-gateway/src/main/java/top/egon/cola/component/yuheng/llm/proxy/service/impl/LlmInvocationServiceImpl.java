@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.llm.proxy.service.impl;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +54,7 @@ import java.util.Objects;
 @Slf4j
 @Validated
 @Service("llmInvocationServiceImpl")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class LlmInvocationServiceImpl implements LlmInvocationService {
 
     /** 中文说明：alias 的只读一致快照端口，唯一被允许的持久化入口，本类看不到任何 PO 或 DAO。 English summary: the read-only coherent alias snapshot port, the only persistence entry allowed here, exposing no PO and no DAO. */
@@ -67,17 +69,8 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
     @Qualifier(LlmGatewayProperties.BEAN_NAME)
     private final LlmGatewayProperties gatewayProperties;
 
-    private final LlmResponseCacheComponent responseCacheComponent;
-
-    @Autowired
-    public LlmInvocationServiceImpl(
-            @Qualifier("mpLlmConfigurationRepository") LlmConfigurationRepository configurationRepository,
-            @Qualifier("llmRouteSelectionStrategy") LlmRouteSelectionStrategy routeSelectionStrategy,
-            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
-            ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider) {
-        this(configurationRepository, routeSelectionStrategy, gatewayProperties,
-                responseCacheComponentProvider == null ? null : responseCacheComponentProvider.getIfAvailable());
-    }
+    @Qualifier("llmResponseCacheComponent")
+    private final ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider;
 
     public LlmInvocationServiceImpl(
             LlmConfigurationRepository configurationRepository,
@@ -91,10 +84,27 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
             LlmRouteSelectionStrategy routeSelectionStrategy,
             LlmGatewayProperties gatewayProperties,
             LlmResponseCacheComponent responseCacheComponent) {
-        this.configurationRepository = configurationRepository;
-        this.routeSelectionStrategy = routeSelectionStrategy;
-        this.gatewayProperties = gatewayProperties;
-        this.responseCacheComponent = responseCacheComponent;
+        this(configurationRepository, routeSelectionStrategy, gatewayProperties, new ObjectProvider<>() {
+            @Override
+            public LlmResponseCacheComponent getObject(Object... args) {
+                return responseCacheComponent;
+            }
+
+            @Override
+            public LlmResponseCacheComponent getIfAvailable() {
+                return responseCacheComponent;
+            }
+
+            @Override
+            public LlmResponseCacheComponent getIfUnique() {
+                return responseCacheComponent;
+            }
+
+            @Override
+            public LlmResponseCacheComponent getObject() {
+                return responseCacheComponent;
+            }
+        });
     }
 
     /**
@@ -123,6 +133,8 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
             throw new CommonException(503, "LLM_NO_ELIGIBLE_ROUTE",
                     "No eligible route was selected for the requested model alias");
         }
+        LlmResponseCacheComponent responseCacheComponent = responseCacheComponentProvider == null
+                ? null : responseCacheComponentProvider.getIfAvailable();
         LlmResponseCacheComponent.CacheLookupResult cacheResult = responseCacheComponent == null
                 ? LlmResponseCacheComponent.CacheLookupResult.bypass()
                 : responseCacheComponent.lookup(command, snapshot);
