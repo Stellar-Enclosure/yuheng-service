@@ -94,6 +94,10 @@ public class LlmGatewayProperties {
     @Valid
     private Identity identity;
 
+    /** 中文说明：网关层响应缓存运行边界（总开关、超时与语义缓存有界容量）。 English summary: gateway response cache runtime boundary (master switch, timeout, semantic entry cap). */
+    @Valid
+    private Cache cache = new Cache();
+
     /**
      * 中文说明：返回 allowedLocalCidrs 的不可变快照副本，避免路由阶段并发改写白名单。
      * English summary: Returns an immutable snapshot of the LOCAL allow-list so routing can never observe a concurrent
@@ -166,5 +170,34 @@ public class LlmGatewayProperties {
         @NotBlank
         @Size(max = 128)
         private String serviceTokenAudience;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Accessors(chain = true)
+    public static class Cache {
+
+        private boolean enabled;
+
+        @Min(10)
+        @Max(5_000)
+        private int timeoutMs = 200;
+
+        @Min(10)
+        @Max(50_000)
+        private int semanticMaxEntries = 2_000;
+
+        private Redis redis = new Redis();
+
+        @Data
+        @NoArgsConstructor
+        @AllArgsConstructor
+        @Accessors(chain = true)
+        public static class Redis {
+            private String address;
+            private int database;
+            private String passwordFile;
+        }
     }
 }

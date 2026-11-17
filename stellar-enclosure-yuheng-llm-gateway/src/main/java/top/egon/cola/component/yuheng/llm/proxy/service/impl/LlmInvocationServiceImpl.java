@@ -1,12 +1,16 @@
 package top.egon.cola.component.yuheng.llm.proxy.service.impl;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
+import reactor.core.publisher.Flux;
 import top.egon.cola.component.common.core.exception.CommonException;
 import top.egon.cola.component.yuheng.llm.config.LlmGatewayProperties;
+import top.egon.cola.component.yuheng.llm.proxy.cache.LlmResponseCacheComponent;
 import top.egon.cola.component.yuheng.llm.proxy.domain.bo.LlmModelSnapshotBO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.dto.LlmInvocationCommandDTO;
 import top.egon.cola.component.yuheng.llm.proxy.domain.vo.LlmInvocationResultVO;
@@ -14,6 +18,7 @@ import top.egon.cola.component.yuheng.llm.proxy.repository.LlmConfigurationRepos
 import top.egon.cola.component.yuheng.llm.proxy.service.LlmInvocationService;
 import top.egon.cola.component.yuheng.llm.proxy.service.LlmRouteSelectionStrategy;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +52,6 @@ import java.util.Objects;
  */
 @Slf4j
 @Validated
-@RequiredArgsConstructor
 @Service("llmInvocationServiceImpl")
 public class LlmInvocationServiceImpl implements LlmInvocationService {
 
@@ -62,6 +66,36 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
     /** 中文说明：本进程的出网边界（尝试上限与字节/帧上限），不提供任何宽松默认值。 English summary: this process's egress boundary (attempt ceiling plus byte/frame caps) with no permissive defaults. */
     @Qualifier(LlmGatewayProperties.BEAN_NAME)
     private final LlmGatewayProperties gatewayProperties;
+
+    private final LlmResponseCacheComponent responseCacheComponent;
+
+    @Autowired
+    public LlmInvocationServiceImpl(
+            @Qualifier("mpLlmConfigurationRepository") LlmConfigurationRepository configurationRepository,
+            @Qualifier("llmRouteSelectionStrategy") LlmRouteSelectionStrategy routeSelectionStrategy,
+            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
+            ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider) {
+        this(configurationRepository, routeSelectionStrategy, gatewayProperties,
+                responseCacheComponentProvider == null ? null : responseCacheComponentProvider.getIfAvailable());
+    }
+
+    public LlmInvocationServiceImpl(
+            LlmConfigurationRepository configurationRepository,
+            LlmRouteSelectionStrategy routeSelectionStrategy,
+            LlmGatewayProperties gatewayProperties) {
+        this(configurationRepository, routeSelectionStrategy, gatewayProperties, (LlmResponseCacheComponent) null);
+    }
+
+    public LlmInvocationServiceImpl(
+            LlmConfigurationRepository configurationRepository,
+            LlmRouteSelectionStrategy routeSelectionStrategy,
+            LlmGatewayProperties gatewayProperties,
+            LlmResponseCacheComponent responseCacheComponent) {
+        this.configurationRepository = configurationRepository;
+        this.routeSelectionStrategy = routeSelectionStrategy;
+        this.gatewayProperties = gatewayProperties;
+        this.responseCacheComponent = responseCacheComponent;
+    }
 
     /**
      * 中文说明：读快照（缺失即 404）→ 选择候选 route → 取首元素作为唯一尝试 → 产出原生状态与安全响应头；候选为空时由
@@ -81,10 +115,25 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
         LlmModelSnapshotBO snapshot = configurationRepository.findSnapshot(command.getModel())
                 .orElseThrow(() -> new CommonException(404, "LLM_MODEL_NOT_FOUND",
                         "No configured model alias is bound to the requested alias"));
+        if (snapshot.getCachePolicy() != null && Boolean.TRUE.equals(snapshot.getCachePolicy().getPromptCacheOptimizationEnabled())) {
+            command.setPromptCacheOptimizationEnabled(Boolean.TRUE);
+        }
         List<LlmModelSnapshotBO.RouteBO> candidates = routeSelectionStrategy.select(command, snapshot);
         if (candidates.isEmpty()) {
             throw new CommonException(503, "LLM_NO_ELIGIBLE_ROUTE",
                     "No eligible route was selected for the requested model alias");
+        }
+        LlmResponseCacheComponent.CacheLookupResult cacheResult = responseCacheComponent == null
+                ? LlmResponseCacheComponent.CacheLookupResult.bypass()
+                : responseCacheComponent.lookup(command, snapshot);
+        if (cacheResult.outcome() == LlmResponseCacheComponent.CacheOutcome.HIT && cacheResult.cachedBody() != null) {
+            byte[] bytes = cacheResult.cachedBody().toString().getBytes(StandardCharsets.UTF_8);
+            log.info("llm invocation cache hit alias={} protocol={}", command.getModel(), command.getProtocol());
+            return new LlmInvocationResultVO()
+                    .setStatus(200)
+                    .setCandidates(candidates)
+                    .setBody(Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes)))
+                    .setHeaders(safeHeaders(command, cacheResult));
         }
         LlmModelSnapshotBO.RouteBO attempt = candidates.get(0);
         int safeAttempts = Math.min(gatewayProperties.getMaximumAttempts(), candidates.size());
@@ -94,20 +143,23 @@ public class LlmInvocationServiceImpl implements LlmInvocationService {
         return new LlmInvocationResultVO()
                 .setStatus(200)
                 .setCandidates(candidates)
-                .setHeaders(safeHeaders(command));
+                .setHeaders(safeHeaders(command, cacheResult));
     }
 
-    /**
-     * 中文说明：只生成与内容无关的安全响应头：stream 决定 SSE 或 JSON 媒体类型；上游身份、baseUrl、secretRef 与任何
-     * 客户端凭据都不进入这里。
-     * English summary: Produces only content-independent safe headers, where the stream flag chooses SSE or JSON media
-     * type; upstream identity, base URL, secretRef and any client credential never enter here.
-     */
-    private Map<String, String> safeHeaders(LlmInvocationCommandDTO command) {
+    private Map<String, String> safeHeaders(
+            LlmInvocationCommandDTO command,
+            LlmResponseCacheComponent.CacheLookupResult cacheResult) {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", Boolean.TRUE.equals(command.getStream())
                 ? "text/event-stream;charset=UTF-8" : "application/json");
-        headers.put("Cache-Control", "no-store");
+        LlmResponseCacheComponent.CacheOutcome outcome = cacheResult == null
+                ? LlmResponseCacheComponent.CacheOutcome.BYPASS : cacheResult.outcome();
+        headers.put("X-Yuheng-Cache", outcome.name());
+        if (outcome == LlmResponseCacheComponent.CacheOutcome.HIT && cacheResult.ttlSeconds() > 0) {
+            headers.put("Cache-Control", "private, max-age=" + cacheResult.ttlSeconds());
+        } else {
+            headers.put("Cache-Control", "no-store");
+        }
         return headers;
     }
 }

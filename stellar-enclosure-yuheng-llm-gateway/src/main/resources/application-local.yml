@@ -92,6 +92,9 @@ management:
 yuheng:
   llm:
     cache:
+      enabled: ${YUHENG_LLM_CACHE_ENABLED:false}
+      timeout-ms: ${YUHENG_LLM_CACHE_TIMEOUT_MS:200}
+      semantic-max-entries: ${YUHENG_LLM_CACHE_SEMANTIC_MAX_ENTRIES:2000}
       redis:
         address: ${YUHENG_LLM_CACHE_REDIS_ADDRESS}
         database: ${YUHENG_LLM_CACHE_REDIS_DATABASE:0}

@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,7 +34,10 @@ import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import top.egon.cola.component.yuheng.llm.proxy.cache.LlmResponseCacheComponent;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -139,7 +145,6 @@ import top.egon.cola.component.yuheng.llm.proxy.service.LlmServletStreamComponen
 @Slf4j
 @Validated
 @RestController("llmApiController")
-@RequiredArgsConstructor
 public class LlmApiController {
 
     /** 中文说明：API-001 精确入口路径（Spec §9.1/§9.2.1，operationId={@code createLlmChatCompletion}）。 English summary: the exact API-001 entry path. */
@@ -285,6 +290,40 @@ public class LlmApiController {
     @Qualifier("mpLlmConfigurationRepository")
     private final LlmConfigurationRepository configurationRepository;
 
+    private final ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider;
+
+    @Autowired
+    public LlmApiController(
+            @Qualifier("llmInvocationServiceImpl") LlmInvocationService llmInvocationService,
+            @Qualifier(LlmGatewayProperties.BEAN_NAME) LlmGatewayProperties gatewayProperties,
+            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
+            @Qualifier("llmProtocolStrategyRegistry") Map<LlmProtocolEnum, String> llmProtocolStrategyRegistry,
+            Map<String, LlmProtocolStrategy> llmProtocolStrategies,
+            @Qualifier("llmServletStreamComponent") LlmServletStreamComponent llmServletStreamComponent,
+            @Qualifier("mpLlmConfigurationRepository") LlmConfigurationRepository configurationRepository,
+            ObjectProvider<LlmResponseCacheComponent> responseCacheComponentProvider) {
+        this.llmInvocationService = llmInvocationService;
+        this.gatewayProperties = gatewayProperties;
+        this.objectMapper = objectMapper;
+        this.llmProtocolStrategyRegistry = llmProtocolStrategyRegistry;
+        this.llmProtocolStrategies = llmProtocolStrategies;
+        this.llmServletStreamComponent = llmServletStreamComponent;
+        this.configurationRepository = configurationRepository;
+        this.responseCacheComponentProvider = responseCacheComponentProvider;
+    }
+
+    public LlmApiController(
+            LlmInvocationService llmInvocationService,
+            LlmGatewayProperties gatewayProperties,
+            ObjectMapper objectMapper,
+            Map<LlmProtocolEnum, String> llmProtocolStrategyRegistry,
+            Map<String, LlmProtocolStrategy> llmProtocolStrategies,
+            LlmServletStreamComponent llmServletStreamComponent,
+            LlmConfigurationRepository configurationRepository) {
+        this(llmInvocationService, gatewayProperties, objectMapper, llmProtocolStrategyRegistry,
+                llmProtocolStrategies, llmServletStreamComponent, configurationRepository, null);
+    }
+
     /**
      * 中文说明：启动期自检后的只读 {@code 协议 → Strategy} 视图；在 {@link #checkRegistry()} 之前为空，且永不改变。
      * English summary: the read-only {@code protocol → Strategy} view produced by the startup self-check; null before
@@ -361,12 +400,17 @@ public class LlmApiController {
      */
     @Operation(operationId = "createLlmChatCompletion", summary = "Create an OpenAI Chat Completions response",
             description = "Forwards the native Chat Completions document to a same-protocol route.",
+            parameters = @Parameter(in = ParameterIn.HEADER, name = "Cache-Control",
+                    description = "Optional cache directive (e.g. no-cache to bypass gateway cache)",
+                    schema = @Schema(type = "string")),
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = JsonNode.class))))
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Native Chat Completions response or SSE stream",
+                    headers = @Header(name = "X-Yuheng-Cache", description = "Gateway response cache outcome: HIT, MISS, or BYPASS",
+                            schema = @Schema(type = "string")),
                     content = {@Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = JsonNode.class)),
                             @Content(mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
@@ -524,12 +568,17 @@ public class LlmApiController {
      */
     @Operation(operationId = "createLlmMessage", summary = "Create an Anthropic Messages response",
             description = "Forwards the native Anthropic Messages document and typed stream to a same-protocol route.",
+            parameters = @Parameter(in = ParameterIn.HEADER, name = "Cache-Control",
+                    description = "Optional cache directive (e.g. no-cache to bypass gateway cache)",
+                    schema = @Schema(type = "string")),
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = JsonNode.class))))
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Native Anthropic Messages result or typed SSE stream",
+                    headers = @Header(name = "X-Yuheng-Cache", description = "Gateway response cache outcome: HIT, MISS, or BYPASS",
+                            schema = @Schema(type = "string")),
                     content = {@Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = JsonNode.class)),
                             @Content(mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
@@ -715,14 +764,21 @@ public class LlmApiController {
                 .model(requiredAlias(payload))
                 .stream(requiredStreamFlag(payload))
                 .payload(payload)
+                .cacheControlHeader(request.getHeader("Cache-Control"))
                 .callerSubject(authenticatedSubject(request))
                 .allowedDeployments(allowedDeployments(request))
                 .requiredCapabilities(requiredCapabilities(payload))
                 .build();
         LlmInvocationResultVO routed = llmInvocationService.invoke(command);
+        LlmProtocolStrategy strategy = strategyFor(protocol);
+        if (routed.getBody() != null) {
+            int status = writeOut(command, strategy, routed, response);
+            log.info("llm entry cache hit alias={} protocol={} status={} latency={}",
+                    command.getModel(), protocol, status, latencyBucket(started));
+            return;
+        }
         List<LlmModelSnapshotBO.RouteBO> candidates = routed.getCandidates();
         int safeAttempts = Math.min(gatewayProperties.getMaximumAttempts(), candidates.size());
-        LlmProtocolStrategy strategy = strategyFor(protocol);
         int attempted = 0;
         LlmInvocationResultVO completed;
         while (true) {
@@ -773,7 +829,16 @@ public class LlmApiController {
         if (Boolean.TRUE.equals(command.getStream())) {
             llmServletStreamComponent.writeStream(command, completed, body, strategy::encodeError, response);
         } else {
-            llmServletStreamComponent.writeUnary(command, completed, unaryDocument(command, body), response);
+            ObjectNode responseDoc = unaryDocument(command, body);
+            if (completed.getStatus() == 200
+                    && completed.getHeaders() != null
+                    && "MISS".equals(completed.getHeaders().get("X-Yuheng-Cache"))
+                    && responseCacheComponentProvider != null) {
+                responseCacheComponentProvider.ifAvailable(cache ->
+                        configurationRepository.findSnapshot(command.getModel())
+                                .ifPresent(snapshot -> cache.storeIfEligible(command, snapshot, responseDoc)));
+            }
+            llmServletStreamComponent.writeUnary(command, completed, responseDoc, response);
         }
         return completed.getStatus();
     }
