@@ -1,1189 +1,385 @@
 package top.egon.cola.component.yuheng.admin.release.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
+import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
+import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
+import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
+import top.egon.cola.component.yuheng.admin.exposure.domain.exception.GatewayUrlExposureException;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.*;
 import top.egon.cola.component.yuheng.admin.group.domain.bo.GatewayGroupBO;
 import top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository;
 import top.egon.cola.component.yuheng.admin.mcp.service.McpReleaseContentFactory;
 import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO;
 import top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO;
 import top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseRollbackCommandDTO;
 import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseVO;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
-import top.egon.cola.component.yuheng.admin.reporting.service.GatewayOperationSchemaValidator;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
 import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository;
 import top.egon.cola.component.yuheng.admin.routing.service.GatewayDraftService;
 import top.egon.cola.component.yuheng.admin.routing.service.GatewayRouteDraftMapper;
-import top.egon.cola.component.yuheng.admin.routing.service.GatewayRouteTransportPolicyValidator;
-import top.egon.cola.component.yuheng.admin.rule.domain.vo.CompiledGatewayRelease;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCanonicalizer;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCompiler;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
 import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
 import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdminNotFoundException;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
-import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
-import top.egon.cola.component.yuheng.contract.rule.GatewayProviderServiceRef;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRpcDescriptor;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleContent;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeOperation;
+import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeRoute;
-import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
-import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
-import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
-import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO;
-import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO;
-import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseTargetBO;
-import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
 
-/**
- * 中文说明：{@code GatewayReleaseService} 是服务组件，位于当前 Gateway 模块的相关包中，负责网关发布服务相关的职责与边界。
- * English summary: {@code GatewayReleaseService} is a gateway release service service in the current Gateway module; it owns the gateway release service-related responsibility and boundary.
- *
- * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
- */
-@Service
+/** Accepts immutable native releases and current control CAS in one LOCAL transaction, with no network writes. */
+@Validated
+@Service("gatewayReleaseService")
 public class GatewayReleaseService {
-
-    /**
-     * 中文说明：保存 groups 对应的状态、依赖或配置值；字段类型为 {@code GatewayGroupRepository}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by groups; its type is {@code GatewayGroupRepository}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayGroupRepository groups;
-
-    /**
-     * 中文说明：保存 drafts 对应的状态、依赖或配置值；字段类型为 {@code GatewayDraftRepository}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by drafts; its type is {@code GatewayDraftRepository}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayDraftJpaRepository drafts;
-
-    /**
-     * 中文说明：保存 草稿服务 对应的状态、依赖或配置值；字段类型为 {@code GatewayDraftService}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by draft service; its type is {@code GatewayDraftService}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayDraftService draftService;
-
-    /**
-     * 中文说明：保存 目录 对应的状态、依赖或配置值；字段类型为 {@code GatewayCatalogRepository}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by catalog; its type is {@code GatewayCatalogRepository}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayCatalogRepository catalog;
-
-    /**
-     * 中文说明：保存 releases 对应的状态、依赖或配置值；字段类型为 {@code GatewayReleaseRepository}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by releases; its type is {@code GatewayReleaseRepository}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayReleaseRepository releases;
-
-    /**
-     * 中文说明：保存 audits 对应的状态、依赖或配置值；字段类型为 {@code GatewayAuditLogRepository}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by audits; its type is {@code GatewayAuditLogRepository}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final GatewayAuditLogRepository audits;
-
-    /**
-     * 中文说明：保存 transactions 对应的状态、依赖或配置值；字段类型为 {@code TransactionTemplate}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by transactions; its type is {@code TransactionTemplate}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
     private final TransactionTemplate transactions;
-
-    /**
-     * 中文说明：保存 publications 对应的状态、依赖或配置值；字段类型为 {@code GatewayReleasePublicationCoordinator}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by publications; its type is {@code GatewayReleasePublicationCoordinator}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
+    private final GatewayUrlExposureRepository exposures;
     private final GatewayReleasePublicationCoordinator publications;
-
-    /**
-     * 中文说明：保存 MCPContent工厂 对应的状态、依赖或配置值；字段类型为 {@code McpReleaseContentFactory}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by mcp content factory; its type is {@code McpReleaseContentFactory}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final McpReleaseContentFactory mcpContentFactory;
-
-    /**
-     * 中文说明：保存 canonicalizer 对应的状态、依赖或配置值；字段类型为 {@code GatewayRuleCanonicalizer}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by canonicalizer; its type is {@code GatewayRuleCanonicalizer}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final GatewayRuleCanonicalizer canonicalizer =
-            new GatewayRuleCanonicalizer();
-
-    /**
-     * 中文说明：保存 compiler 对应的状态、依赖或配置值；字段类型为 {@code GatewayRuleCompiler}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by compiler; its type is {@code GatewayRuleCompiler}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final GatewayRuleCompiler compiler =
-            new GatewayRuleCompiler(canonicalizer);
-
-    /**
-     * 中文说明：保存 路由映射器 对应的状态、依赖或配置值；字段类型为 {@code GatewayRouteDraftMapper}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by route mapper; its type is {@code GatewayRouteDraftMapper}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final GatewayRouteDraftMapper routeMapper =
-            new GatewayRouteDraftMapper();
-
-    /**
-     * 中文说明：保存 传输校验器 对应的状态、依赖或配置值；字段类型为 {@code GatewayRouteTransportPolicyValidator}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by transport validator; its type is {@code GatewayRouteTransportPolicyValidator}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final GatewayRouteTransportPolicyValidator transportValidator =
-            new GatewayRouteTransportPolicyValidator();
-
-    /**
-     * 中文说明：保存 模式校验器 对应的状态、依赖或配置值；字段类型为 {@code GatewayOperationSchemaValidator}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by schema validator; its type is {@code GatewayOperationSchemaValidator}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
-    private final GatewayOperationSchemaValidator schemaValidator =
-            new GatewayOperationSchemaValidator(new ObjectMapper());
-
-    /**
-     * 中文说明：保存 clock 对应的状态、依赖或配置值；字段类型为 {@code Clock}，由 {@code GatewayReleaseService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by clock; its type is {@code Clock}, and {@code GatewayReleaseService} reads or updates it during its lifecycle.
-     *
-     * 用法 / Usage: 该字段通过 {@code GatewayReleaseService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayReleaseService}; do not couple callers to its representation when the owning type exposes an API.
-     */
+    private final GatewayHttpRouteCompiler compiler;
+    private final ObjectProvider<BindingResolver> bindings;
+    private final ObjectMapper json;
     private final Clock clock;
-
-    /**
-     * 中文说明：创建 {@code GatewayReleaseService} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
-     * English summary: Creates an instance of {@code GatewayReleaseService} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
-     *
-     * 用法 / Usage: 由 Spring 容器、工厂或上层组件调用；/ Call it from the Spring container, a factory, or an enclosing component after validating the supplied dependencies.
-     * @param groups 参数 groups；parameter groups。
-     * @param drafts 参数 drafts；parameter drafts。
-     * @param draftService 参数 草稿服务；parameter draft service。
-     * @param catalog 参数 目录；parameter catalog。
-     * @param releases 参数 releases；parameter releases。
-     * @param audits 参数 audits；parameter audits。
-     * @param transactions 参数 transactions；parameter transactions。
-     * @param publications 参数 publications；parameter publications。
-     * @param mcpContentFactory 参数 MCPContent工厂；parameter mcp content factory。
-     */
+    private final GatewayRouteDraftMapper routeMapper = new GatewayRouteDraftMapper();
 
     @Autowired
-    public GatewayReleaseService(GatewayGroupRepository groups,
-            GatewayDraftJpaRepository drafts,
-            GatewayDraftService draftService,
-            GatewayCatalogRepository catalog,
-            GatewayReleaseRepository releases,
-            GatewayAuditLogRepository audits,
-            TransactionTemplate transactions,
-            ObjectProvider<GatewayReleasePublicationCoordinator>
-                    publications,
-            ObjectProvider<McpReleaseContentFactory> mcpContentFactory) {
-        this(groups,
-                drafts,
-                draftService,
-                catalog,
-                releases,
-                audits,
-                transactions,
-                publications.getIfAvailable(),
-                mcpContentFactory.getIfAvailable(),
-                Clock.systemUTC());
-    }
-
-    /**
-     * 中文说明：创建 {@code GatewayReleaseService} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
-     * English summary: Creates an instance of {@code GatewayReleaseService} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
-     *
-     * 用法 / Usage: 由 Spring 容器、工厂或上层组件调用；/ Call it from the Spring container, a factory, or an enclosing component after validating the supplied dependencies.
-     * @param groups 参数 groups；parameter groups。
-     * @param drafts 参数 drafts；parameter drafts。
-     * @param draftService 参数 草稿服务；parameter draft service。
-     * @param catalog 参数 目录；parameter catalog。
-     * @param releases 参数 releases；parameter releases。
-     * @param audits 参数 audits；parameter audits。
-     * @param transactions 参数 transactions；parameter transactions。
-     * @param publications 参数 publications；parameter publications。
-     * @param clock 参数 clock；parameter clock。
-     */
-    GatewayReleaseService(GatewayGroupRepository groups,
-            GatewayDraftJpaRepository drafts,
-            GatewayDraftService draftService,
-            GatewayCatalogRepository catalog,
-            GatewayReleaseRepository releases,
-            GatewayAuditLogRepository audits,
-            TransactionTemplate transactions,
+    public GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts,
+            GatewayDraftService draftService, GatewayCatalogRepository catalog,
+            @Qualifier("mpGatewayReleaseRepository") GatewayReleaseRepository releases,
+            GatewayAuditLogRepository audits, @Qualifier("gatewayExposureTransactionTemplate") TransactionTemplate transactions,
+            @Qualifier("mpGatewayUrlExposureRepository") GatewayUrlExposureRepository exposures,
             GatewayReleasePublicationCoordinator publications,
-            Clock clock) {
-        this(groups,
-                drafts,
-                draftService,
-                catalog,
-                releases,
-                audits,
-                transactions,
-                publications,
-                null,
-                clock);
+            @Qualifier("gatewayHttpRouteCompiler") GatewayHttpRouteCompiler compiler,
+            @Qualifier("gatewayHttpRouteBindingResolver") ObjectProvider<BindingResolver> bindings,
+            @Qualifier("jacksonObjectMapper") ObjectMapper json, @Qualifier("gatewayProjectionClock") Clock clock) {
+        this.groups = groups; this.drafts = drafts; this.draftService = draftService; this.catalog = catalog;
+        this.releases = releases; this.audits = audits; this.transactions = transactions; this.exposures = exposures;
+        this.publications = publications; this.compiler = compiler; this.bindings = bindings; this.json = json; this.clock = clock;
     }
 
-    /**
-     * 中文说明：创建 {@code GatewayReleaseService} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
-     * English summary: Creates an instance of {@code GatewayReleaseService} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
-     *
-     * 用法 / Usage: 由 Spring 容器、工厂或上层组件调用；/ Call it from the Spring container, a factory, or an enclosing component after validating the supplied dependencies.
-     * @param groups 参数 groups；parameter groups。
-     * @param drafts 参数 drafts；parameter drafts。
-     * @param draftService 参数 草稿服务；parameter draft service。
-     * @param catalog 参数 目录；parameter catalog。
-     * @param releases 参数 releases；parameter releases。
-     * @param audits 参数 audits；parameter audits。
-     * @param transactions 参数 transactions；parameter transactions。
-     * @param publications 参数 publications；parameter publications。
-     * @param mcpContentFactory 参数 MCPContent工厂；parameter mcp content factory。
-     * @param clock 参数 clock；parameter clock。
-     */
-    GatewayReleaseService(GatewayGroupRepository groups,
-            GatewayDraftJpaRepository drafts,
-            GatewayDraftService draftService,
-            GatewayCatalogRepository catalog,
-            GatewayReleaseRepository releases,
-            GatewayAuditLogRepository audits,
-            TransactionTemplate transactions,
-            GatewayReleasePublicationCoordinator publications,
-            McpReleaseContentFactory mcpContentFactory,
-            Clock clock) {
-        this.groups = groups;
-        this.drafts = drafts;
-        this.draftService = draftService;
-        this.catalog = catalog;
-        this.releases = releases;
-        this.audits = audits;
-        this.transactions = transactions;
-        this.publications = publications;
-        this.mcpContentFactory = mcpContentFactory;
-        this.clock = clock;
+    /** Historical source-compatible assembly: archive reads remain available; native writes cannot use old publishers. */
+    public GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts,
+            GatewayDraftService draftService, GatewayCatalogRepository catalog, GatewayReleaseRepository releases,
+            GatewayAuditLogRepository audits, TransactionTemplate transactions,
+            ObjectProvider<GatewayReleasePublicationCoordinator> publications, ObjectProvider<McpReleaseContentFactory> mcp) {
+        this(groups, drafts, draftService, catalog, releases, audits, transactions, publications.getIfAvailable(), Clock.systemUTC());
     }
 
-    /**
-     * 中文说明：执行 create 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the create operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.create(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
-     * @param command 参数 command；parameter command。
-     * @param actor 参数 actor；parameter actor。
-     * @param request 参数 请求；parameter request。
-     * @return 返回 create 的处理结果；returns the result of the operation.
-     */
-    public GatewayReleaseVO create(
-            String gatewayGroupId,
-            GatewayReleaseCreateCommandDTO command,
-            AdminActor actor,
-            RequestAuditContext request) {
-        PreparedGatewayRelease prepared = transactions.execute(status -> prepare(
-                gatewayGroupId,
-                command.expectedDraftRevision(),
-                command.changeReason(),
-                null,
-                null,
-                actor,
-                request
-        ));
-        return publish(prepared, actor);
+    GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts, GatewayDraftService draftService,
+            GatewayCatalogRepository catalog, GatewayReleaseRepository releases, GatewayAuditLogRepository audits,
+            TransactionTemplate transactions, GatewayReleasePublicationCoordinator publications, Clock clock) {
+        this(groups, drafts, draftService, catalog, releases, audits, transactions, null, publications, null, null, null, clock);
     }
 
-    /**
-     * 中文说明：执行 重试 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the retry operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.retry(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param releaseId 参数 发布Id；parameter release id。
-     * @param actor 参数 actor；parameter actor。
-     * @param request 参数 请求；parameter request。
-     * @return 返回 重试 的处理结果；returns the result of the operation.
-     */
-    public GatewayReleaseVO retry(
-            String releaseId,
-            AdminActor actor,
-            RequestAuditContext request) {
-        PreparedGatewayRelease prepared = transactions.execute(status -> {
-            top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release = required(releaseId);
-            if (!Set.of(
-                    GatewayReleaseStatus.FAILED,
-                    GatewayReleaseStatus.TIMEOUT,
-                    GatewayReleaseStatus.UNKNOWN
-            ).contains(release.getStatus())) {
-                throw new IllegalStateException(
-                        "YUHENG_ADMIN_RELEASE_NOT_RETRYABLE"
-                );
-            }
-            int attempt = releases.nextAttempt(
-                    releaseId,
-                    clock.instant()
-            );
-            audit(
-                    actor,
-                    request,
-                    release.getGatewayGroupId(),
-                    releaseId,
-                    "RETRY",
-                    release.getDraftRevision()
-            );
-            return new PreparedGatewayRelease(
-                    release,
-                    releases.loadCompiled(releaseId),
-                    attempt
-            );
+    GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts, GatewayDraftService draftService,
+            GatewayCatalogRepository catalog, GatewayReleaseRepository releases, GatewayAuditLogRepository audits,
+            TransactionTemplate transactions, GatewayReleasePublicationCoordinator publications, McpReleaseContentFactory mcp, Clock clock) {
+        this(groups, drafts, draftService, catalog, releases, audits, transactions, publications, clock);
+    }
+
+    public GatewayReleaseVO create(String gatewayGroupId, @Valid GatewayReleaseCreateCommandDTO command,
+                                   AdminActor actor, RequestAuditContext request) {
+        authorize(actor);
+        long owner = owner();
+        String id = transactions.execute(status -> accept(owner, gatewayGroupId, command.expectedDraftRevision(),
+                command.changeReason(), null, null, actor, request));
+        return get(id);
+    }
+
+    public GatewayReleaseVO retry(String releaseId, AdminActor actor, RequestAuditContext request) {
+        authorize(actor);
+        long owner = owner();
+        transactions.executeWithoutResult(status -> {
+            GatewayReleaseBO release = required(releaseId);
+            GatewayCiliumReleaseArtifact artifact = nativeArtifact(releaseId);
+            requireNativeAssembly();
+            if (!Set.of(GatewayReleaseStatus.FAILED, GatewayReleaseStatus.TIMEOUT, GatewayReleaseStatus.UNKNOWN)
+                    .contains(release.getStatus())) throw new IllegalStateException("YUHENG_ADMIN_RELEASE_NOT_RETRYABLE");
+            int attempt = releases.nextAttempt(releaseId, clock.instant());
+            releases.beginAttempt(releaseId, attempt, clock.instant());
+            publications.enqueueCurrent(owner, releaseId, attempt, artifact);
+            publications.completeNative(owner, releaseId, attempt);
+            audit(actor, request, release.getGatewayGroupId(), releaseId, "RETRY", release.getDraftRevision());
         });
-        return publish(prepared, actor);
+        return get(releaseId);
     }
 
-    /**
-     * 中文说明：执行 rollback 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the rollback operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.rollback(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
-     * @param command 参数 command；parameter command。
-     * @param actor 参数 actor；parameter actor。
-     * @param request 参数 请求；parameter request。
-     * @return 返回 rollback 的处理结果；returns the result of the operation.
-     */
-    public GatewayReleaseVO rollback(
-            String gatewayGroupId,
-            GatewayReleaseRollbackCommandDTO command,
-            AdminActor actor,
-            RequestAuditContext request) {
-        top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO source =
-                required(command.sourceReleaseId());
-        if (!source.getGatewayGroupId().equals(gatewayGroupId)
-                || source.getStatus() != GatewayReleaseStatus.SUCCESS) {
-            throw new IllegalArgumentException(
-                    "rollback source must be a successful release "
-                            + "from the same gateway group"
-            );
-        }
-        GatewayRuleContent content = releases.loadCompiled(source.getId())
-                .snapshot()
-                .content();
-        PreparedGatewayRelease prepared = transactions.execute(status -> prepare(
-                gatewayGroupId,
-                command.expectedDraftRevision(),
-                command.changeReason(),
-                source.getId(),
-                content,
-                actor,
-                request
-        ));
-        return publish(prepared, actor);
+    public GatewayReleaseVO rollback(String gatewayGroupId, @Valid GatewayReleaseRollbackCommandDTO command,
+                                     AdminActor actor, RequestAuditContext request) {
+        authorize(actor);
+        long owner = owner();
+        String id = transactions.execute(status -> {
+            GatewayReleaseBO source = required(command.sourceReleaseId());
+            if (!source.getGatewayGroupId().equals(gatewayGroupId) || source.getStatus() != GatewayReleaseStatus.SUCCESS) {
+                throw new IllegalArgumentException("YUHENG_RELEASE_ROLLBACK_SOURCE_INVALID");
+            }
+            GatewayCiliumReleaseArtifact artifact = nativeArtifact(source.getId());
+            GatewayDraftVO frozen = json.convertValue(artifact.canonicalSnapshot().path("sourceContent"), GatewayDraftVO.class);
+            if (frozen == null || !gatewayGroupId.equals(frozen.gatewayGroupId())) throw invalid();
+            return accept(owner, gatewayGroupId, command.expectedDraftRevision(), command.changeReason(),
+                    source.getId(), new RollbackSource(frozen, artifact), actor, request);
+        });
+        return get(id);
     }
 
-    /**
-     * 中文说明：执行 get 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the get operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.get(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param releaseId 参数 发布Id；parameter release id。
-     * @return 返回 get 的处理结果；returns the result of the operation.
-     */
-    /**
-     * 中文说明：读取已持久化的制品摘要，运行时投影无需重复反序列化完整快照。
-     * English summary: Reads the persisted artifact digest without loading the full rule snapshot.
-     */
-    public java.util.Optional<String> artifactSha256(String releaseId) {
-        return releases.findArtifactSha256(releaseId);
-    }
+    public Optional<String> artifactSha256(String releaseId) { return releases.findArtifactSha256(releaseId); }
 
     public GatewayReleaseVO get(String releaseId) {
-        return view(required(releaseId));
+        return transactions.execute(status -> view(required(releaseId)));
     }
 
-    /**
-     * 中文说明：执行 history 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the history operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.history(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
-     * @return 返回 history 的处理结果；returns the result of the operation.
-     */
     public List<GatewayReleaseVO> history(String gatewayGroupId) {
-        return releases.history(gatewayGroupId)
-                .stream()
-                .map(this::view)
-                .toList();
+        return transactions.execute(status -> releases.history(gatewayGroupId).stream().map(this::view).toList());
     }
 
-    /**
-     * 中文说明：执行 diff 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the diff operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.diff(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param releaseId 参数 发布Id；parameter release id。
-     * @return 返回 diff 的处理结果；returns the result of the operation.
-     */
-    public Map<String, Object> diff(String releaseId) {
-        return required(releaseId).getStructuredDiff();
-    }
+    public Map<String, Object> diff(String releaseId) { return required(releaseId).getStructuredDiff(); }
 
-    /**
-     * 中文说明：执行 prepare 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the prepare operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.prepare(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
-     * @param expectedRevision 参数 expectedRevision；parameter expected revision。
-     * @param changeReason 参数 changeReason；parameter change reason。
-     * @param rollbackOfReleaseId 参数 rollbackOf发布Id；parameter rollback of release id。
-     * @param rollbackContent 参数 rollbackContent；parameter rollback content。
-     * @param actor 参数 actor；parameter actor。
-     * @param request 参数 请求；parameter request。
-     * @return 返回 prepare 的处理结果；returns the result of the operation.
-     */
-    private PreparedGatewayRelease prepare(
-            String gatewayGroupId,
-            long expectedRevision,
-            String changeReason,
-            String rollbackOfReleaseId,
-            GatewayRuleContent rollbackContent,
-            AdminActor actor,
-            RequestAuditContext request) {
-        GatewayGroupBO group = groups.findByIdAndDeletedFalse(
-                gatewayGroupId
-        ).orElseThrow(() -> new GatewayAdminNotFoundException(
-                "gateway group " + gatewayGroupId + " was not found"
-        ));
-        if (!group.isEnabled()) {
-            throw new IllegalStateException(
-                    "YUHENG_ADMIN_YUHENG_GROUP_DISABLED"
-            );
-        }
-        if (releases.hasReleaseInProgress(gatewayGroupId)) {
-            throw new IllegalStateException(
-                    "YUHENG_ADMIN_RELEASE_IN_PROGRESS"
-            );
-        }
-        GatewayDraftBO draft = drafts.findById(gatewayGroupId)
-                .orElseThrow(() -> new GatewayAdminNotFoundException(
-                        "gateway draft " + gatewayGroupId + " was not found"
-                ));
-        draft.assertEditable(expectedRevision);
-        top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO validation =
-                draftService.validate(gatewayGroupId);
-        if (!validation.valid()) {
-            throw new IllegalArgumentException(
-                    "draft validation failed: " + validation.errors()
-            );
-        }
+    private String accept(long owner, String groupId, long expectedRevision, String reason, String rollbackOf,
+                          RollbackSource source, AdminActor actor, RequestAuditContext request) {
+        requireNativeAssembly();
+        GatewayGroupBO group = groups.findByIdAndDeletedFalse(groupId)
+                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway group is unavailable"));
+        if (!group.isEnabled()) throw new IllegalStateException("YUHENG_ADMIN_YUHENG_GROUP_DISABLED");
+        if (releases.hasReleaseInProgress(groupId)) throw new IllegalStateException("YUHENG_ADMIN_RELEASE_IN_PROGRESS");
+        GatewayDraftBO currentDraft = drafts.findById(groupId)
+                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway draft is unavailable"));
+        currentDraft.assertEditable(expectedRevision);
+        GatewayDraftVO sourceDraft = source == null ? draftService.get(groupId) : source.draft();
+        if (!sourceDraft.gatewayGroupId().equals(groupId) || (source == null && sourceDraft.revision() != expectedRevision)) throw invalid();
+        String normalizedReason = requiredReason(reason);
         String releaseId = SnowflakeIdGenerator.nextId();
-        GatewayRuleContent content = rollbackContent == null
-                ? content(group, draftService.get(gatewayGroupId))
-                : rollbackContent;
-        CompiledGatewayRelease compiled = compiler.compile(
-                releaseId,
-                clock.instant(),
-                content
-        );
+        List<PreparedGatewayRelease.ExposurePlan> plans = compile(owner, group, releaseId, sourceDraft, source);
+        GatewayCiliumReleaseArtifact artifact = artifact(owner, groupId, releaseId, sourceDraft, plans);
         Instant now = clock.instant();
-        Map<String, Object> structuredDiff = Map.of(
-                "basedOnReleaseId",
-                value(draft.getBasedOnReleaseId()),
-                "rollbackOfReleaseId",
-                value(rollbackOfReleaseId),
-                "routeCount", content.routes().size(),
-                "operationCount", content.operations().size(),
-                "policyCount", policyCount(content),
-                "mcpServerCount", content.mcp().servers().size(),
-                "mcpToolCount", content.mcp().tools().size(),
-                "ruleContentSha256",
-                compiled.snapshot().ruleContentSha256()
-        );
-        top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release =
-                new top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO(
-                        releaseId,
-                        gatewayGroupId,
-                        draft.getRevision(),
-                        draft.getBasedOnReleaseId(),
-                        rollbackOfReleaseId,
-                        GatewayReleaseStatus.READY,
-                        false,
-                        null,
-                        Map.of(
-                                "valid", true,
-                                "warnings", validation.warnings(),
-                                "draftSha256", validation.draftSha256()
-                        ),
-                        structuredDiff,
-                        required(changeReason, "changeReason"),
-                        now,
-                        actor.actorId(),
-                        now
-                );
-        releases.insert(release, compiled, 1);
-        audit(
-                actor,
-                request,
-                gatewayGroupId,
-                releaseId,
-                rollbackOfReleaseId == null ? "CREATE_RELEASE" : "ROLLBACK",
-                draft.getRevision()
-        );
-        return new PreparedGatewayRelease(release, compiled, 1);
+        GatewayReleaseBO release = new GatewayReleaseBO(releaseId, groupId, currentDraft.getRevision(),
+                currentDraft.getBasedOnReleaseId(), rollbackOf, GatewayReleaseStatus.READY, false, null,
+                Map.of("valid", true, "capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID,
+                        "currentStateOverrides", overrides(plans), "warnings", deprecatedWarnings(sourceDraft)),
+                Map.of("basedOnReleaseId", currentDraft.getBasedOnReleaseId() == null ? "" : currentDraft.getBasedOnReleaseId(),
+                        "rollbackOfReleaseId", rollbackOf == null ? "" : rollbackOf, "exposureCount", plans.size(),
+                        "currentStateOverrides", overrides(plans)),
+                normalizedReason, now, actor.actorId(), now);
+        releases.insertNative(release, artifact, 1); // Parent content exists before the exposure FK is inserted.
+        apply(owner, releaseId, normalizedReason, plans, now);
+        releases.beginAttempt(releaseId, 1, now);
+        audit(actor, request, groupId, releaseId, rollbackOf == null ? "CREATE_RELEASE" : "ROLLBACK", currentDraft.getRevision());
+        publications.enqueueCurrent(owner, releaseId, 1, artifact);
+        publications.completeNative(owner, releaseId, 1);
+        return releaseId;
     }
 
-    /**
-     * 中文说明：执行 publish 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the publish operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.publish(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param prepared 参数 prepared；parameter prepared。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 publish 的处理结果；returns the result of the operation.
-     */
-    private GatewayReleaseVO publish(
-            PreparedGatewayRelease prepared,
-            AdminActor actor) {
-        transactions.executeWithoutResult(status -> releases.beginAttempt(
-                prepared.release().getId(),
-                prepared.attemptNo(),
-                clock.instant()
-        ));
-        if (publications == null) {
-            transactions.executeWithoutResult(status -> releases
-                    .completeAttempt(
-                            prepared.release().getId(),
-                            prepared.attemptNo(),
-                            GatewayReleaseStatus.FAILED,
-                            false,
-                            null,
-                            "YUHENG_ADMIN_TIANSHU_UNAVAILABLE",
-                            "Tianshu management client is not configured",
-                            List.of(),
-                            clock.instant()
-                    ));
-            return get(prepared.release().getId());
-        }
-        try {
-            top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayPublicationOutcomeVO outcome =
-                    publications.execute(
-                            prepared.release().getId(),
-                            prepared.attemptNo(),
-                            prepared.compiled(),
-                            actor.actorId()
-                    );
-            List<top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseTargetBO> targets = outcome.targets();
-            transactions.executeWithoutResult(status -> {
-                releases.completeAttempt(
-                        prepared.release().getId(),
-                        prepared.attemptNo(),
-                        releaseStatus(outcome.status()),
-                        outcome.partialApplied(),
-                        outcome.changeId(),
-                        outcome.successful()
-                                ? null
-                                : "TIANSHU_PUBLISH_" + outcome.status(),
-                        outcome.result().errorMessage(),
-                        targets,
-                        clock.instant()
-                );
-                if (outcome.successful()) {
-                    GatewayDraftBO draft = drafts.findById(
-                            prepared.release().getGatewayGroupId()
-                    ).orElseThrow();
-                    draft.baseOn(
-                            prepared.release().getId(),
-                            actor.actorId(),
-                            clock.instant()
-                    );
-                    drafts.save(draft);
-                }
-            });
-        } catch (RuntimeException failure) {
-            transactions.executeWithoutResult(status -> releases
-                    .completeAttempt(
-                            prepared.release().getId(),
-                            prepared.attemptNo(),
-                            GatewayReleaseStatus.UNKNOWN,
-                            false,
-                            null,
-                            "YUHENG_ADMIN_TIANSHU_UNAVAILABLE",
-                            bounded(failure.getMessage()),
-                            List.of(),
-                            clock.instant()
-                    ));
-        }
-        return get(prepared.release().getId());
-    }
-
-    /**
-     * 中文说明：执行 发布Status 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the release status operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.releaseStatus(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param status 参数 status；parameter status。
-     * @return 返回 发布Status 的处理结果；returns the result of the operation.
-     */
-    private GatewayReleaseStatus releaseStatus(
-            top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayPublicationStatusEnum status) {
-        return switch (status) {
-            case SUCCESS -> GatewayReleaseStatus.SUCCESS;
-            case FAILED, PARTIAL_SUCCESS -> GatewayReleaseStatus.FAILED;
-            case TIMEOUT -> GatewayReleaseStatus.TIMEOUT;
-            case PLANNED, RESOLVED, SUBMITTED, UNKNOWN ->
-                    GatewayReleaseStatus.UNKNOWN;
-        };
-    }
-
-    /**
-     * 中文说明：执行 content 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the content operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.content(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param group 参数 group；parameter group。
-     * @param draft 参数 草稿；parameter draft。
-     * @return 返回 content 的处理结果；returns the result of the operation.
-     */
-    private GatewayRuleContent content(
-            GatewayGroupBO group,
-            top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO draft) {
-        McpRuleContent mcp = mcpContentFactory == null
-                ? McpRuleContent.empty()
-                : mcpContentFactory.compileForRelease(
-                        group.getId(),
-                        draft.revision()
-                );
-        Set<String> referencedOperationIds = new LinkedHashSet<>();
-        draft.routes().stream()
-                .filter(top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO::isEnabled)
-                .map(top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO::getOperationId)
-                .forEach(referencedOperationIds::add);
-        mcp.tools().stream()
-                .filter(tool -> tool.enabled()
-                        && "LOCAL_OPERATION".equals(tool.sourceType()))
-                .map(tool -> tool.operationId())
-                .forEach(referencedOperationIds::add);
-        mcp.resources().stream()
-                .filter(resource -> resource.enabled()
-                        && "LOCAL_OPERATION".equals(resource.driverType()))
-                .map(resource -> resource.operationId())
-                .forEach(referencedOperationIds::add);
-        mcp.resourceTemplates().stream()
-                .filter(template -> template.enabled()
-                        && "LOCAL_OPERATION".equals(template.driverType()))
-                .map(template -> template.operationId())
-                .forEach(referencedOperationIds::add);
-        mcp.prompts().stream()
-                .filter(prompt -> prompt.enabled()
-                        && "LOCAL_OPERATION".equals(prompt.sourceType()))
-                .map(prompt -> prompt.operationId())
-                .forEach(referencedOperationIds::add);
-        Map<String, top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO> operations =
-                new LinkedHashMap<>();
-        referencedOperationIds.forEach(operationId -> operations.put(
-                operationId,
-                catalog.findOperation(operationId)
-                        .orElseThrow(() -> new GatewayAdminNotFoundException(
-                                "gateway operation "
-                                        + operationId
-                                        + " was not found"
-                        ))
-        ));
-        List<GatewayRuntimePolicy> policies = draft.policies()
-                .stream()
-                .filter(top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO::isEnabled)
-                .map(policy -> new GatewayRuntimePolicy(
-                        policy.getPolicyId(),
-                        policy.getPolicyType(),
-                        policy.getPolicyScope(),
-                        policy.getContent()
-                ))
-                .toList();
-        List<GatewayRuntimeOperation> runtimeOperations = operations.values()
-                .stream()
-                .map(operation -> operation(
-                        operation,
-                        policyRefs(operation.getId(), policies)
-                ))
-                .toList();
-        Map<String, GatewayRuntimeOperation> runtimeOperationsById =
-                runtimeOperations.stream().collect(
-                        java.util.stream.Collectors.toUnmodifiableMap(
-                                GatewayRuntimeOperation::operationId,
-                                java.util.function.Function.identity()
-                        )
-                );
-        List<GatewayRuntimeRoute> runtimeRoutes = draft.routes()
-                .stream()
-                .filter(top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO::isEnabled)
-                .map(route -> route(
-                        route,
-                        runtimeOperationsById.get(route.getOperationId())
-                ))
-                .toList();
-        List<GatewayRuntimePolicy> provider = policies.stream()
-                .filter(policy -> Set.of(
-                        "LOAD_BALANCE",
-                        "PROVIDER_OVERRIDE"
-                ).contains(policy.type()))
-                .toList();
-        List<GatewayRuntimePolicy> security = policies.stream()
-                .filter(policy -> "SECURITY".equals(policy.type()))
-                .toList();
-        List<GatewayRuntimePolicy> cors = policies.stream()
-                .filter(policy -> "CORS".equals(policy.type()))
-                .toList();
-        Set<String> separated = new LinkedHashSet<>();
-        provider.forEach(policy -> separated.add(policy.policyId()));
-        security.forEach(policy -> separated.add(policy.policyId()));
-        cors.forEach(policy -> separated.add(policy.policyId()));
-        List<GatewayRuntimePolicy> traffic = policies.stream()
-                .filter(policy -> !separated.contains(policy.policyId()))
-                .toList();
-        List<GatewayRpcDescriptor> descriptors = runtimeOperations.stream()
-                .filter(operation -> operation.protocol()
-                        == GatewayProtocol.RPC)
-                .map(operation -> descriptor(operations.get(
-                        operation.operationId()
-                )))
-                .distinct()
-                .toList();
-        return new GatewayRuleContent(
-                group.getId(),
-                group.getGatewayGroupCode(),
-                group.getEnv(),
-                group.getNamespace(),
-                runtimeOperations,
-                runtimeRoutes,
-                provider,
-                traffic,
-                security,
-                cors,
-                descriptors,
-                mcp
-        );
-    }
-
-    /**
-     * 中文说明：执行 操作 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the operation operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.operation(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param operation 参数 操作；parameter operation。
-     * @param policyRefs 参数 策略Refs；parameter policy refs。
-     * @return 返回 操作 的处理结果；returns the result of the operation.
-     */
-    private GatewayRuntimeOperation operation(
-            top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO operation,
-            Set<String> policyRefs) {
-        top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO definition =
-                catalog.loadDefinitions(operation.getId())
-                        .stream()
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException(
-                                "operation has no definition: "
-                                        + operation.getId()
-                        ));
-        Map<String, Object> reported = definition.getAttributes();
-        schemaValidator.validate(
-                operation.getOperationKey(),
-                operation.getProtocol(),
-                definition.getRequestSchema(),
-                definition.getResponseSchema(),
-                reported
-        );
-        Map<String, String> attributes = new LinkedHashMap<>();
-        reported.forEach((key, value) -> {
-            if (value != null) {
-                attributes.put(key, value.toString());
+    private List<PreparedGatewayRelease.ExposurePlan> compile(long owner, GatewayGroupBO group, String releaseId,
+                                                             GatewayDraftVO source, RollbackSource rollback) {
+        BindingResolver resolver = bindings.getIfAvailable();
+        if (resolver == null) throw invalid();
+        long groupId = positive(group.getId());
+        List<GatewayRuntimePolicy> policies = source.policies().stream().filter(policy -> policy.isEnabled())
+                .map(policy -> new GatewayRuntimePolicy(policy.getPolicyId(), policy.getPolicyType(), policy.getPolicyScope(), policy.getContent())).toList();
+        List<PreparedGatewayRelease.ExposurePlan> plans = new ArrayList<>();
+        for (GatewayRouteDraftBO route : source.routes().stream().filter(GatewayRouteDraftBO::isEnabled)
+                .sorted(Comparator.comparing(GatewayRouteDraftBO::getRouteId)).toList()) {
+            var canonical = routeMapper.canonicalize(route.getContent());
+            var runtime = routeMapper.toRuntimeRoute(route, canonical);
+            if (!runtime.accessZones().contains(AccessZone.PUBLIC)) continue;
+            GatewayOperationBO operation = catalog.findOperation(route.getOperationId())
+                    .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway operation is unavailable"));
+            if (!operation.isExternalAccessible() || !Set.of("ACTIVE", "DEPRECATED").contains(operation.getLifecycleStatus())) throw invalid();
+            GatewayOperationDefinitionBO definition = definition(operation, route.getRouteId(), rollback);
+            PublicationBinding binding = resolver.resolve(owner, groupId, route.getRouteId(), operation.getId()).orElseThrow(GatewayReleaseService::invalid);
+            if (!Objects.equals(binding.environment(), group.getEnv()) || !Objects.equals(binding.logicalNamespace(), group.getNamespace())) throw invalid();
+            GatewayUrlExposureBO current = exposures.findOwnedRoute(owner, groupId, route.getRouteId()).orElse(null);
+            long id = current == null ? SnowflakeIdGenerator.nextLongId() : current.getId();
+            long generation = current == null ? 1L : current.getDesiredGeneration();
+            List<ResourceReference> refs = List.of(new ResourceReference("BUSINESS_API", operation.getId(),
+                    Long.toString(definition.getDefinitionVersion()), definition.getDefinitionSha256()));
+            var input = new ExposureInput(owner, groupId, releaseId, id, generation, runtime,
+                    GatewayProtocol.valueOf(operation.getProtocol()), definition.isExternalAccessible(), canonical, policies, refs);
+            CompiledExposure compiled = compiler.compile(input, binding);
+            boolean changed = current != null && (!Objects.equals(current.getContentSha256(), compiled.contentSha256())
+                    || !GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID.equals(current.getCompilerProfileId()));
+            if (current != null) {
+                assertFixedBinding(current, compiled);
+                if (changed && !current.getDesiredState().isTerminal()) compiled = compiler.compile(new ExposureInput(owner, groupId,
+                        releaseId, id, Math.addExact(generation, 1L), runtime, input.operationProtocol(), input.externalAccessible(),
+                        canonical, policies, refs), binding);
             }
-        });
-        if (operation.getProtocol().equals("RPC")
-                && definition.getDescriptorSnapshot() != null) {
-            attributes.put(
-                    "descriptorSha256",
-                    definition.getDescriptorSnapshot()
-                            .get("sha256")
-                            .toString()
-            );
+            plans.add(new PreparedGatewayRelease.ExposurePlan(id, route.getRouteId(), current == null,
+                    current == null ? 0L : current.getVersion(), current == null ? 0L : current.getDesiredGeneration(),
+                    current == null ? GatewayUrlExposureStateEnum.OPEN : current.getDesiredState(), changed, compiled));
         }
-        Map<String, Object> provider = operation.getProviderServiceIdentity();
-        GatewayProtocol protocol = GatewayProtocol.valueOf(
-                operation.getProtocol()
-        );
-        String requestSchema = protocol == GatewayProtocol.RPC
-                ? text(definition.getRequestSchema(), "messageType")
-                : canonicalizer.json(definition.getRequestSchema());
-        String responseSchema = protocol == GatewayProtocol.RPC
-                ? text(definition.getResponseSchema(), "messageType")
-                : canonicalizer.json(definition.getResponseSchema());
-        return new GatewayRuntimeOperation(
-                operation.getId(),
-                operation.getOperationKey(),
-                protocol,
-                operation.getMethodIdentity(),
-                requestSchema,
-                responseSchema,
-                operation.isExternalAccessible(),
-                new GatewayProviderServiceRef(
-                        text(provider, "bizCode"),
-                        text(provider, "appCode"),
-                        text(provider, "env"),
-                        text(provider, "namespace"),
-                        protocol,
-                        text(provider, "serviceName"),
-                        text(provider, "group"),
-                        text(provider, "version"),
-                        text(provider, "transport")
-                ),
-                attributes.getOrDefault(
-                        "responseMode",
-                        "TRANSPARENT"
-                ),
-                policyRefs,
-                attributes,
-                "DEPRECATED".equals(operation.getLifecycleStatus())
-        );
+        if (plans.isEmpty()) throw new IllegalArgumentException("YUHENG_RELEASE_NO_PUBLIC_EXPOSURES");
+        return List.copyOf(plans);
     }
 
-    /**
-     * 中文说明：执行 路由 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the route operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.route(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param route 参数 路由；parameter route。
-     * @param operation 参数 操作；parameter operation。
-     * @return 返回 路由 的处理结果；returns the result of the operation.
-     */
-    private GatewayRuntimeRoute route(
-            top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO route,
-            GatewayRuntimeOperation operation) {
-        Map<String, Object> content = routeMapper.canonicalize(
-                route.getContent()
-        );
-        List<top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue> issues =
-                transportValidator.validate(
-                        content,
-                        operation.protocol(),
-                        GatewayResponseMode.valueOf(operation.responseMode())
-                );
-        if (!issues.isEmpty()) {
-            top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue issue =
-                    issues.getFirst();
-            throw new IllegalArgumentException(
-                    "YUHENG_RELEASE_VALIDATION_FAILED: "
-                            + issue.code()
-                            + " at "
-                            + issue.path()
-                            + ": "
-                            + issue.message()
-            );
+    private static List<Map<String, String>> overrides(List<PreparedGatewayRelease.ExposurePlan> plans) {
+        return plans.stream().filter(plan -> plan.effectiveState() != GatewayUrlExposureStateEnum.OPEN)
+                .map(plan -> Map.of("exposureId", Long.toString(plan.exposureId()), "state", plan.effectiveState().wireValue())).toList();
+    }
+
+    private List<Map<String, String>> deprecatedWarnings(GatewayDraftVO draft) {
+        return draft.routes().stream().filter(GatewayRouteDraftBO::isEnabled)
+                .filter(route -> catalog.findOperation(route.getOperationId())
+                        .map(operation -> "DEPRECATED".equals(operation.getLifecycleStatus())).orElse(false))
+                .map(route -> Map.of("path", "routes." + route.getRouteId() + ".operationId", "code", "OPERATION_DEPRECATED",
+                        "message", "Deprecated externally approved operation remains publishable")).toList();
+    }
+
+    private GatewayOperationDefinitionBO definition(GatewayOperationBO operation, String routeId, RollbackSource source) {
+        List<GatewayOperationDefinitionBO> definitions = catalog.loadDefinitions(operation.getId());
+        if (source == null) return definitions.stream().filter(definition -> Objects.equals(definition.getId(), operation.getCurrentDefinitionId()))
+                .findFirst().filter(GatewayOperationDefinitionBO::isExternalAccessible).orElseThrow(GatewayReleaseService::invalid);
+        JsonNode reference = null;
+        for (JsonNode entry : source.artifact().canonicalSnapshot().path("exposurePublication").path("exposures")) {
+            if (routeId.equals(entry.path("routeId").asText())) for (JsonNode candidate : entry.path("resourceRefs")) {
+                if ("BUSINESS_API".equals(candidate.path("kind").asText()) && operation.getId().equals(candidate.path("resourceId").asText())) reference = candidate;
+            }
         }
-        return new GatewayRuntimeRoute(
-                route.getRouteId(),
-                route.getOperationId(),
-                text(content, "host"),
-                text(content, "httpMethod"),
-                text(content, "pathPattern"),
-                values(content.get("accessZones")).stream()
-                        .map(value -> AccessZone.valueOf(
-                                value.toUpperCase()
-                        ))
-                        .collect(java.util.stream.Collectors.toUnmodifiableSet()),
-                number(content.get("priority"), 0),
-                route.isEnabled(),
-                routeMapper.transportPolicy(content)
-        );
+        if (reference == null) throw invalid();
+        String version = reference.path("version").asText();
+        String digest = reference.path("contentSha256").asText();
+        return definitions.stream().filter(definition -> Long.toString(definition.getDefinitionVersion()).equals(version)
+                && Objects.equals(definition.getDefinitionSha256(), digest)).findFirst()
+                .filter(GatewayOperationDefinitionBO::isExternalAccessible).orElseThrow(GatewayReleaseService::invalid);
     }
 
-    /**
-     * 中文说明：执行 descriptor 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the descriptor operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.descriptor(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param operation 参数 操作；parameter operation。
-     * @return 返回 descriptor 的处理结果；returns the result of the operation.
-     */
-    private GatewayRpcDescriptor descriptor(
-            top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO operation) {
-        Map<String, Object> descriptor = catalog.loadDefinitions(
-                operation.getId()
-        ).getFirst().getDescriptorSnapshot();
-        if (descriptor == null) {
-            throw new IllegalArgumentException(
-                    "RPC operation has no descriptor snapshot"
-            );
+    private GatewayCiliumReleaseArtifact artifact(long owner, String group, String releaseId, GatewayDraftVO source,
+                                                 List<PreparedGatewayRelease.ExposurePlan> plans) {
+        ObjectNode canonical = json.createObjectNode().put("releaseId", releaseId).put("ownerTenantId", Long.toString(owner))
+                .put("gatewayGroupId", group).put("generatedAt", clock.instant().toString());
+        canonical.set("sourceContent", json.valueToTree(source));
+        ObjectNode publication = canonical.putObject("exposurePublication").put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION)
+                .put("target", "CILIUM_GATEWAY_API").put("gatewayClassName", "cilium")
+                .put("routeControllerName", GatewayHttpRouteCompiler.CONTROLLER_NAME).put("compilerVersion", GatewayHttpRouteCompiler.COMPILER_VERSION)
+                .put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID)
+                .put("publicationDomainId", plans.getFirst().compiled().binding().publicationDomain().publicationDomainId())
+                .put("backendAuthorizationProfile", GatewayHttpRouteCompiler.AUTHORIZATION_PROFILE);
+        ObjectNode activation = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION).put("releaseId", releaseId);
+        ObjectNode manifest = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION)
+                .put("compilerVersion", GatewayHttpRouteCompiler.COMPILER_VERSION).put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID);
+        ArrayNode entries = publication.putArray("exposures");
+        ArrayNode targets = activation.putArray("exposures");
+        ArrayNode resources = manifest.putArray("resources");
+        ArrayNode dependencies = manifest.putArray("dependencies");
+        for (var plan : plans.stream().sorted(Comparator.comparingLong(PreparedGatewayRelease.ExposurePlan::exposureId)).toList()) {
+            if (!publication.path("publicationDomainId").asText().equals(plan.compiled().binding().publicationDomain().publicationDomainId())) throw invalid();
+            entries.add(plan.compiled().snapshotEntry());
+            ObjectNode target = targets.addObject().put("exposureId", Long.toString(plan.exposureId()))
+                    .put("desiredGeneration", plan.compiled().snapshotEntry().path("expectedDesiredGeneration").asText())
+                    .put("effectiveState", plan.effectiveState().wireValue()).put("contentSha256", plan.compiled().contentSha256());
+            if (plan.newRegistration()) target.putNull("precondition");
+            else target.putObject("precondition").put("version", Long.toString(plan.expectedVersion()))
+                    .put("desiredGeneration", Long.toString(plan.expectedGeneration())).put("desiredState", plan.effectiveState().wireValue());
+            ObjectNode resource = resources.addObject().put("exposureId", Long.toString(plan.exposureId())).put("contentSha256", plan.compiled().contentSha256());
+            resource.set("object", plan.compiled().routeObject());
+            resource.set("approvedParent", plan.compiled().approvedParent());
+            plan.compiled().dependencies().forEach(dependencies::add);
         }
-        return new GatewayRpcDescriptor(
-                text(descriptor, "descriptorId"),
-                text(descriptor, "sha256"),
-                text(descriptor, "base64DescriptorSet")
-        );
+        return new GatewayCiliumReleaseArtifact(canonical, activation, manifest);
     }
 
-    /**
-     * 中文说明：执行 策略Refs 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the policy refs operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.policyRefs(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param operationId 参数 操作Id；parameter operation id。
-     * @param policies 参数 policies；parameter policies。
-     * @return 返回 策略Refs 的处理结果；returns the result of the operation.
-     */
-    private Set<String> policyRefs(
-            String operationId,
-            List<GatewayRuntimePolicy> policies) {
-        return policies.stream()
-                .filter(policy -> applies(policy, operationId))
-                .map(GatewayRuntimePolicy::policyId)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
-
-    /**
-     * 中文说明：执行 applies 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the applies operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.applies(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param policy 参数 策略；parameter policy。
-     * @param operationId 参数 操作Id；parameter operation id。
-     * @return 返回 applies 的处理结果；returns the result of the operation.
-     */
-    private boolean applies(
-            GatewayRuntimePolicy policy,
-            String operationId) {
-        if ("GLOBAL".equals(policy.scope())) {
-            return true;
+    private void apply(long owner, String releaseId, String reason, List<PreparedGatewayRelease.ExposurePlan> plans, Instant now) {
+        List<GatewayUrlExposureBO> registrations = plans.stream().filter(PreparedGatewayRelease.ExposurePlan::newRegistration)
+                .map(plan -> registration(owner, releaseId, reason, plan, now)).toList();
+        if (!registrations.isEmpty()) exposures.reserveAll(owner, registrations);
+        for (var plan : plans) {
+            if (plan.newRegistration()) continue;
+            GatewayUrlExposureBO row = exposures.findOwned(owner, plan.exposureId()).orElseThrow(GatewayReleaseService::invalid);
+            if (row.getVersion() != plan.expectedVersion() || row.getDesiredGeneration() != plan.expectedGeneration()
+                    || row.getDesiredState() != plan.effectiveState()) throw GatewayUrlExposureException.preconditionFailed(row.getVersion());
+            if (plan.contentChanged() && !plan.effectiveState().isTerminal()
+                    && !exposures.compareAndSetContent(owner, plan.exposureId(), plan.expectedVersion(), plan.expectedGeneration(),
+                    plan.effectiveState(), positive(releaseId), plan.compiled().contentSha256(), GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID, reason, now)) {
+                throw GatewayUrlExposureException.preconditionFailed(exposures.findOwned(owner, plan.exposureId()).orElseThrow(GatewayReleaseService::invalid).getVersion());
+            }
         }
-        Object operationIds = policy.configuration().get("operationIds");
-        return values(operationIds).contains(operationId);
     }
 
-    /**
-     * 中文说明：执行 required 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the required operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.required(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param releaseId 参数 发布Id；parameter release id。
-     * @return 返回 required 的处理结果；returns the result of the operation.
-     */
-    private top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO required(String releaseId) {
-        return releases.find(releaseId)
-                .orElseThrow(() -> new GatewayAdminNotFoundException(
-                        "gateway release " + releaseId + " was not found"
-                ));
+    private GatewayUrlExposureBO registration(long owner, String releaseId, String reason, PreparedGatewayRelease.ExposurePlan plan, Instant now) {
+        var compiled = plan.compiled(); var binding = compiled.binding(); var gateway = binding.gateway();
+        return GatewayUrlExposureBO.builder().id(plan.exposureId()).ownerTenantId(owner).gatewayGroupId(binding.gatewayGroupId())
+                .routeId(plan.routeId()).clusterId(binding.publicationDomain().clusterId()).gatewayNamespace(gateway.namespace())
+                .gatewayName(gateway.name()).gatewayUid(gateway.uid()).listenerName(gateway.listenerName()).hostname(compiled.hostname())
+                .httpMethod(compiled.httpMethod()).pathMatchType(compiled.pathMatchType().name()).pathValue(compiled.pathValue())
+                .routeKind("HTTPRoute").routeNamespace(binding.routeNamespace()).routeName("yuheng-exposure-" + plan.exposureId())
+                .desiredState(GatewayUrlExposureStateEnum.OPEN).desiredGeneration(1L).observedState("UNKNOWN").observedGeneration(0L)
+                .reconcileStatus("PENDING").releaseId(positive(releaseId)).contentSha256(compiled.contentSha256())
+                .compilerProfileId(GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID).changeReason(reason).updateTime(now).build();
     }
 
-    /**
-     * 中文说明：执行 审计 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the audit operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.audit(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param actor 参数 actor；parameter actor。
-     * @param request 参数 请求；parameter request。
-     * @param gatewayGroupId 参数 网关GroupId；parameter gateway group id。
-     * @param releaseId 参数 发布Id；parameter release id。
-     * @param action 参数 action；parameter action。
-     * @param revision 参数 revision；parameter revision。
-     */
-    private void audit(
-            AdminActor actor,
-            RequestAuditContext request,
-            String gatewayGroupId,
-            String releaseId,
-            String action,
-            long revision) {
-        audits.save(new GatewayAuditLogBO(
-                SnowflakeIdGenerator.nextId(),
-                actor.actorId(),
-                actor.actorType().name(),
-                "MANAGEMENT_API",
-                request.requestId(),
-                request.traceId(),
-                "YUHENG_RELEASE",
-                releaseId,
-                action,
-                GatewayAuditLogBO.sanitized(null),
-                GatewayAuditLogBO.sanitized(Map.of("gatewayGroupId", gatewayGroupId)),
-                revision,
-                releaseId,
-                true,
-                null,
-                clock.instant()
-        ));
+    private static void assertFixedBinding(GatewayUrlExposureBO row, CompiledExposure compiled) {
+        var binding = compiled.binding(); var gateway = binding.gateway();
+        if (!Objects.equals(row.getClusterId(), binding.publicationDomain().clusterId())
+                || !Objects.equals(row.getGatewayNamespace(), gateway.namespace()) || !Objects.equals(row.getGatewayName(), gateway.name())
+                || !Objects.equals(row.getGatewayUid(), gateway.uid()) || !Objects.equals(row.getListenerName(), gateway.listenerName())
+                || !Objects.equals(row.getHostname(), compiled.hostname()) || !Objects.equals(row.getHttpMethod(), compiled.httpMethod())
+                || !Objects.equals(row.getPathMatchType(), compiled.pathMatchType().name()) || !Objects.equals(row.getPathValue(), compiled.pathValue())
+                || !"HTTPRoute".equals(row.getRouteKind()) || !Objects.equals(row.getRouteNamespace(), binding.routeNamespace())
+                || !Objects.equals(row.getRouteName(), "yuheng-exposure-" + row.getId())) throw GatewayUrlExposureException.bindingConflict();
     }
 
-    /**
-     * 中文说明：执行 view 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the view operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.view(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param release 参数 发布；parameter release。
-     * @return 返回 view 的处理结果；returns the result of the operation.
-     */
-    private GatewayReleaseVO view(top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release) {
-        return new GatewayReleaseVO(
-                release.getId(),
-                release.getGatewayGroupId(),
-                release.getDraftRevision(),
-                release.getBasedOnReleaseId(),
-                release.getRollbackOfReleaseId(),
-                release.getStatus(),
-                release.isPartialApplied(),
-                release.getChangeId(),
-                release.getValidationReport(),
-                release.getStructuredDiff(),
-                release.getChangeReason(),
-                release.getCreatedAt(),
-                release.getUpdatedAt(),
-                releases.attempts(release.getId())
-        );
+    private GatewayReleaseVO view(GatewayReleaseBO release) {
+        var nativeArtifact = releases.loadNative(release.getId());
+        if (nativeArtifact.isEmpty()) return new GatewayReleaseVO(release.getId(), release.getGatewayGroupId(), release.getDraftRevision(),
+                release.getBasedOnReleaseId(), release.getRollbackOfReleaseId(), release.getStatus(), release.isPartialApplied(), release.getChangeId(),
+                release.getValidationReport(), release.getStructuredDiff(), release.getChangeReason(), release.getCreatedAt(), release.getUpdatedAt(), releases.attempts(release.getId()));
+        requireNativeAssembly();
+        var outcome = publications.observeNative(owner(), nativeArtifact.orElseThrow());
+        return new GatewayReleaseVO(release.getId(), release.getGatewayGroupId(), release.getDraftRevision(), release.getBasedOnReleaseId(),
+                release.getRollbackOfReleaseId(), outcome.status(), outcome.partialApplied(), null, release.getValidationReport(), release.getStructuredDiff(),
+                release.getChangeReason(), release.getCreatedAt(), release.getUpdatedAt(), releases.attempts(release.getId()), outcome.exposureOutcomes(), outcome.clusterTargets());
     }
 
-    /**
-     * 中文说明：执行 策略Count 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the policy count operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.policyCount(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param content 参数 content；parameter content。
-     * @return 返回 策略Count 的处理结果；returns the result of the operation.
-     */
-    private int policyCount(GatewayRuleContent content) {
-        return content.providerPolicies().size()
-                + content.trafficPolicies().size()
-                + content.securityPolicies().size()
-                + content.corsPolicies().size();
+    private GatewayReleaseBO required(String id) { return releases.find(id).orElseThrow(() -> new GatewayAdminNotFoundException("Gateway release is unavailable")); }
+    private GatewayCiliumReleaseArtifact nativeArtifact(String id) { return releases.loadNative(id).orElseThrow(() -> new IllegalStateException(GatewayReleasePublicationCoordinator.LEGACY_READ_ONLY)); }
+    private void requireNativeAssembly() { if (exposures == null || compiler == null || bindings == null || publications == null || json == null) throw invalid(); }
+    private static long owner() { Long owner = EgonColaTenantIdProvider.currentTenantId(); if (owner == null || owner <= 0L) throw invalid(); return owner; }
+    private static long positive(String value) { try { long result = Long.parseLong(value); if (result > 0L && value.equals(Long.toString(result))) return result; } catch (RuntimeException ignored) { } throw invalid(); }
+    private static void authorize(AdminActor actor) { if (actor == null || !actor.oauthScopes().contains(GatewayPermissionCodes.RELEASES_WRITE)
+            || (!actor.scopes().contains(GatewayPermissionCodes.RELEASES_WRITE) && !actor.scopes().contains("*"))) throw GatewayUrlExposureException.accessDenied(); }
+    private static String requiredReason(String reason) { if (reason == null || reason.trim().isEmpty() || reason.trim().length() > 1024) throw new IllegalArgumentException("YUHENG_RELEASE_CHANGE_REASON_INVALID"); return reason.trim(); }
+    private static IllegalStateException invalid() { return new IllegalStateException("YUHENG_RELEASE_NATIVE_BINDING_INVALID"); }
+
+    private void audit(AdminActor actor, RequestAuditContext request, String groupId, String releaseId, String action, long revision) {
+        audits.save(GatewayAuditLogBO.builder().actorId(actor.actorId()).actorType(actor.actorType().wireValue()).source("MANAGEMENT_API")
+                .requestId(request.requestId()).traceId(request.traceId()).resourceType("YUHENG_RELEASE").resourceId(releaseId).action(action)
+                .beforeSummary(Map.of()).afterSummary(Map.of("gatewayGroupId", groupId)).draftRevision(revision).releaseId(releaseId)
+                .successful(true).occurredAt(clock.instant()).build());
     }
 
-    /**
-     * 中文说明：执行 values 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the values operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.values(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param value 参数 值；parameter value。
-     * @return 返回 values 的处理结果；returns the result of the operation.
-     */
-    private List<String> values(Object value) {
-        if (value == null) {
-            return List.of();
-        }
-        if (value instanceof Collection<?> collection) {
-            return collection.stream().map(Object::toString).toList();
-        }
-        return List.of(value.toString());
-    }
-
-    /**
-     * 中文说明：执行 number 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the number operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.number(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param value 参数 值；parameter value。
-     * @param fallback 参数 fallback；parameter fallback。
-     * @return 返回 number 的处理结果；returns the result of the operation.
-     */
-    private int number(Object value, int fallback) {
-        if (value == null) {
-            return fallback;
-        }
-        return value instanceof Number number
-                ? number.intValue()
-                : Integer.parseInt(value.toString());
-    }
-
-    /**
-     * 中文说明：执行 text 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the text operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.text(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param values 参数 values；parameter values。
-     * @param key 参数 键；parameter key。
-     * @return 返回 text 的处理结果；returns the result of the operation.
-     */
-    private String text(Map<String, ?> values, String key) {
-        Object value = values.get(key);
-        if (value == null || value.toString().isBlank()) {
-            throw new IllegalArgumentException(key + " is required");
-        }
-        return value.toString().trim();
-    }
-
-    /**
-     * 中文说明：执行 值 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the value operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.value(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param value 参数 值；parameter value。
-     * @return 返回 值 的处理结果；returns the result of the operation.
-     */
-    private String value(String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
-     * 中文说明：执行 required 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the required operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.required(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param value 参数 值；parameter value。
-     * @param field 参数 field；parameter field。
-     * @return 返回 required 的处理结果；returns the result of the operation.
-     */
-    private String required(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(field + " is required");
-        }
-        return value.trim();
-    }
-
-    /**
-     * 中文说明：执行 bounded 操作；该方法是 {@code GatewayReleaseService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the bounded operation; this method is the invocation entry point on {@code GatewayReleaseService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayReleaseService.bounded(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param value 参数 值；parameter value。
-     * @return 返回 bounded 的处理结果；returns the result of the operation.
-     */
-    private String bounded(String value) {
-        if (value == null) {
-            return "Tianshu publish failed";
-        }
-        return value.length() <= 1024 ? value : value.substring(0, 1024);
-    }
-
+    private record RollbackSource(GatewayDraftVO draft, GatewayCiliumReleaseArtifact artifact) { }
 }

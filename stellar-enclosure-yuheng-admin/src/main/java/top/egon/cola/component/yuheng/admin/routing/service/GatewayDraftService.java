@@ -1,10 +1,18 @@
 package top.egon.cola.component.yuheng.admin.routing.service;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
+import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
+import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.ExposureInput;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.ResourceReference;
 import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
 import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftMutationControlDTO;
@@ -25,6 +33,7 @@ import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdmin
 import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdminNotFoundException;
 import top.egon.cola.component.yuheng.admin.shared.repository.IdempotencyRepository;
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
+import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy;
 import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
 
 import java.time.Clock;
@@ -35,6 +44,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO;
@@ -137,6 +147,9 @@ public class GatewayDraftService {
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
     private final Clock clock;
+    private final GatewayHttpRouteCompiler exposureCompiler;
+    private final ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> exposureBindings;
+    private final GatewayUrlExposureRepository exposures;
 
     /**
      * 中文说明：创建 {@code GatewayDraftService} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
@@ -150,7 +163,6 @@ public class GatewayDraftService {
      * @param audits 参数 audits；parameter audits。
      */
 
-    @Autowired
     public GatewayDraftService(GatewayDraftJpaRepository drafts,
             GatewayDraftRepository store,
             GatewayCatalogRepository catalog,
@@ -182,12 +194,28 @@ public class GatewayDraftService {
             IdempotencyRepository idempotency,
             GatewayAuditLogRepository audits,
             Clock clock) {
+        this(drafts, store, catalog, idempotency, audits, clock, null, null, null);
+    }
+
+    @Autowired
+    GatewayDraftService(GatewayDraftJpaRepository drafts,
+            GatewayDraftRepository store,
+            GatewayCatalogRepository catalog,
+            IdempotencyRepository idempotency,
+            GatewayAuditLogRepository audits,
+            @Qualifier("gatewayProjectionClock") Clock clock,
+            @Qualifier("gatewayHttpRouteCompiler") GatewayHttpRouteCompiler exposureCompiler,
+            @Qualifier("gatewayHttpRouteBindingResolver") ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> exposureBindings,
+            @Qualifier("mpGatewayUrlExposureRepository") GatewayUrlExposureRepository exposures) {
         this.drafts = drafts;
         this.store = store;
         this.catalog = catalog;
         this.idempotency = idempotency;
         this.audits = audits;
         this.clock = clock;
+        this.exposureCompiler = exposureCompiler;
+        this.exposureBindings = exposureBindings;
+        this.exposures = exposures;
     }
 
     /**
@@ -637,9 +665,15 @@ public class GatewayDraftService {
      */
     @Transactional(readOnly = true)
     public GatewayDraftValidationReportVO validate(String gatewayGroupId) {
-        GatewayDraftVO draft = get(gatewayGroupId);
+        return validateDraft(get(gatewayGroupId), gatewayGroupId);
+    }
+
+    private GatewayDraftValidationReportVO validateDraft(GatewayDraftVO draft, String gatewayGroupId) {
         List<GatewayDraftValidationIssueVO> errors = new ArrayList<>();
         List<GatewayDraftValidationIssueVO> warnings = new ArrayList<>();
+        List<GatewayRuntimePolicy> policies = draft.policies().stream().filter(GatewayPolicyDraftBO::isEnabled)
+                .map(policy -> new GatewayRuntimePolicy(policy.getPolicyId(), policy.getPolicyType(),
+                        policy.getPolicyScope(), policy.getContent())).toList();
         for (top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO route : draft.routes()) {
             Map<String, Object> canonicalContent = routeMapper.canonicalize(
                     route.getContent()
@@ -697,6 +731,9 @@ public class GatewayDraftService {
                         "operation is not externally accessible"
                 ));
             }
+            if (route.isEnabled() && isPublic(canonicalContent) && operation.isExternalAccessible()) {
+                previewExposure(gatewayGroupId, route, canonicalContent, operation, protocol, policies, errors, warnings);
+            }
         }
         return new GatewayDraftValidationReportVO(
                 errors.isEmpty(),
@@ -721,16 +758,78 @@ public class GatewayDraftService {
     @Transactional(readOnly = true)
     public GatewayDraftDiffVO diff(String gatewayGroupId) {
         GatewayDraftVO draft = get(gatewayGroupId);
+        GatewayDraftValidationReportVO validation = validateDraft(draft, gatewayGroupId);
+        List<GatewayDraftValidationIssueVO> issues = new ArrayList<>(validation.errors());
+        issues.addAll(validation.warnings());
         return new GatewayDraftDiffVO(
                 draft.basedOnReleaseId(),
                 draft.revision(),
                 draft.routes().size(),
                 draft.policies().size(),
-                digest(Map.of(
-                        "routes", draft.routes(),
-                        "policies", draft.policies()
-                ))
+                validation.draftSha256(), GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID, issues
         );
+    }
+
+    private void previewExposure(String groupId, GatewayRouteDraftBO route, Map<String, Object> canonical,
+            GatewayOperationBO operation, GatewayProtocol protocol, List<GatewayRuntimePolicy> policies,
+            List<GatewayDraftValidationIssueVO> errors, List<GatewayDraftValidationIssueVO> warnings) {
+        String path = "routes." + route.getRouteId();
+        var resolver = exposureBindings == null ? null : exposureBindings.getIfAvailable();
+        if (resolver == null) {
+            errors.add(missingBinding(path));
+            return;
+        }
+        Long owner = EgonColaTenantIdProvider.currentTenantId();
+        if (owner == null || owner <= 0) {
+            errors.add(missingBinding(path));
+            return;
+        }
+        long group = Long.parseLong(groupId);
+        var current = exposures.findOwnedRoute(owner, group, route.getRouteId()).orElse(null);
+        if (current != null && current.getDesiredState().isTerminal()) {
+            warnings.add(new GatewayDraftValidationIssueVO(path, "WITHDRAWN_OVERRIDE",
+                    "Current withdrawal remains permanent"));
+        } else if (current != null && current.getDesiredState().name().equals("CLOSED")) {
+            warnings.add(new GatewayDraftValidationIssueVO(path, "CLOSED_OVERRIDE",
+                    "Current closure remains effective until an explicit reopen"));
+        }
+        var binding = resolver.resolve(owner, group, route.getRouteId(), operation.getId()).orElse(null);
+        if (binding == null) {
+            errors.add(missingBinding(path));
+            return;
+        }
+        var definition = catalog.loadDefinitions(operation.getId()).stream()
+                .filter(candidate -> Objects.equals(candidate.getId(), operation.getCurrentDefinitionId()))
+                .findFirst().orElse(null);
+        if (definition == null || !definition.isExternalAccessible()) {
+            errors.add(new GatewayDraftValidationIssueVO(path + ".operationId", "YUHENG_CILIUM_RESOURCE_VERSION_REQUIRED",
+                    "The public operation needs an approved immutable definition"));
+            return;
+        }
+        try {
+            var reference = new ResourceReference("BUSINESS_API", operation.getId(),
+                    Long.toString(definition.getDefinitionVersion()), definition.getDefinitionSha256());
+            var compiled = exposureCompiler.compile(new ExposureInput(owner, group, "1", 1L, 1L,
+                    routeMapper.toRuntimeRoute(route, canonical), protocol, true, canonical, policies,
+                    List.of(reference)), binding);
+            var proposed = GatewayUrlExposureBO.builder().ownerTenantId(owner).gatewayGroupId(group).routeId(route.getRouteId())
+                    .clusterId(binding.publicationDomain().clusterId()).gatewayNamespace(binding.gateway().namespace())
+                    .gatewayName(binding.gateway().name()).listenerName(binding.gateway().listenerName())
+                    .hostname(compiled.hostname()).httpMethod(compiled.httpMethod())
+                    .pathMatchType(compiled.pathMatchType().name()).pathValue(compiled.pathValue()).build();
+            if (exposures.hasPublishedOverlap(owner, proposed)) {
+                errors.add(new GatewayDraftValidationIssueVO(path, "YUHENG_CILIUM_PUBLICATION_OVERLAP",
+                        "The URL conflicts with an occupied match in its publication domain"));
+            }
+        } catch (IllegalArgumentException rejected) {
+            errors.add(new GatewayDraftValidationIssueVO(path, "YUHENG_EXPOSURE_COMPILE_INVALID",
+                    "The route, policy or resource version is unsupported by the Cilium publication profile"));
+        }
+    }
+
+    private static GatewayDraftValidationIssueVO missingBinding(String path) {
+        return new GatewayDraftValidationIssueVO(path, "YUHENG_CILIUM_PUBLICATION_BINDING_REQUIRED",
+                "The platform must approve this route and operation binding before publication");
     }
 
     /**

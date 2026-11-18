@@ -1,620 +1,373 @@
 package top.egon.cola.component.yuheng.admin.release.service;
 
-import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
-import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
-import org.mockito.ArgumentCaptor;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.TransactionSystemException;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import top.egon.cola.component.tianshu.model.management.DdcManagementPublishResult;
-import top.egon.cola.component.tianshu.model.management.DdcManagementPublishStatus;
-import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
+import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
+import top.egon.cola.component.outbox.api.OutboxMessage;
+import top.egon.cola.component.outbox.api.OutboxReceipt;
+import top.egon.cola.component.outbox.api.TransactionalOutbox;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
-import top.egon.cola.component.yuheng.admin.routing.service.GatewayDraftService;
-import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
-import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
-import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
-import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
-import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
-import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository;
+import top.egon.cola.component.yuheng.admin.exposure.converter.GatewayUrlExposureViewConverter;
+import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
+import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
+import top.egon.cola.component.yuheng.admin.exposure.domain.exception.GatewayUrlExposureException;
+import top.egon.cola.component.yuheng.admin.exposure.domain.vo.GatewayUrlExposureVO;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.BindingVO;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.PublicationDomainVO;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.*;
 import top.egon.cola.component.yuheng.admin.group.domain.bo.GatewayGroupBO;
 import top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository;
-import top.egon.cola.component.yuheng.admin.mcp.service.McpReleaseContentFactory;
-import top.egon.cola.component.yuheng.admin.rule.domain.vo.CompiledGatewayRelease;
-import top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool;
-import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRequestBodyMode;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRouteProfile;
-import top.egon.cola.component.yuheng.contract.rule.GatewayTransportResponseMode;
+import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
+import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
+import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
+import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO;
+import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseAttemptBO;
+import top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO;
+import top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseRollbackCommandDTO;
+import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
+import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
+import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository;
+import top.egon.cola.component.yuheng.admin.routing.service.GatewayDraftService;
+import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
+import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
+import top.egon.cola.component.yuheng.admin.shared.domain.enums.AdminActorTypeEnum;
+
 import java.time.Clock;
-import java.time.Instant;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayPublicationStatusEnum.FAILED;
-import static top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayPublicationStatusEnum.SUCCESS;
-import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
-import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
-import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO;
-import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
 
 class GatewayReleaseServiceTest {
+    static final Instant NOW = Instant.parse("2026-11-18T20:00:00Z");
+    static final long OWNER = 101L;
+    static final String GROUP = "800001";
+    static final AdminActor ADMIN = new AdminActor("admin-a", AdminActorTypeEnum.USER,
+            Set.of(GatewayPermissionCodes.RELEASES_WRITE), Set.of(), Set.of(GatewayPermissionCodes.RELEASES_WRITE));
+    static final RequestAuditContext REQUEST = new RequestAuditContext("request-a", "trace-a");
+    NativeFixture f;
 
-    @BeforeAll
-    static void bindTheProcessWideEngine() {
-        SnowflakeIdGenerator.initialize(0L, Duration.ofMillis(5));
-    }
-
-    private static final Instant NOW =
-            Instant.parse("2026-07-26T08:00:00Z");
+    @BeforeAll static void ids() { SnowflakeIdGenerator.initialize(0L, Duration.ofMillis(5)); }
+    @BeforeEach void setup() { MDC.put("tenantId", Long.toString(OWNER)); f = new NativeFixture(); }
+    @AfterEach void clear() { MDC.clear(); }
 
     @Test
-    void activationSuccessCompletesReleaseAndAdvancesDraft() {
-        Fixture fixture = fixture(outcome(SUCCESS));
-
-        fixture.service.retry("release-1", actor(), request());
-
-        verify(fixture.releases).completeAttempt(
-                eq("release-1"),
-                eq(2),
-                eq(GatewayReleaseStatus.SUCCESS),
-                eq(false),
-                eq("018f22d8155d70008000000000000001"),
-                isNull(),
-                isNull(),
-                eq(List.of()),
-                eq(NOW)
-        );
-        assertThat(fixture.draft.getBasedOnReleaseId())
-                .isEqualTo("release-1");
-        verify(fixture.drafts).save(org.mockito.ArgumentMatchers.any(GatewayDraftBO.class));
+    void legacyRetryIsReadOnlyAndCannotBeginAnotherPublicationAttempt() {
+        f.heads.put("810001", f.header("810001", GatewayReleaseStatus.UNKNOWN));
+        assertThatThrownBy(() -> f.service.retry("810001", ADMIN, REQUEST)).isInstanceOf(IllegalStateException.class)
+                .hasMessage(GatewayReleasePublicationCoordinator.LEGACY_READ_ONLY);
+        verify(f.releases, never()).nextAttempt(anyString(), any());
+        verify(f.releases, never()).beginAttempt(anyString(), anyInt(), any());
+        verify(f.releases, never()).loadCompiled(anyString());
     }
 
     @Test
-    void failedPublicationDoesNotAdvanceDraft() {
-        Fixture fixture = fixture(outcome(FAILED));
-
-        fixture.service.retry("release-1", actor(), request());
-
-        verify(fixture.releases).completeAttempt(
-                eq("release-1"),
-                eq(2),
-                eq(GatewayReleaseStatus.FAILED),
-                eq(false),
-                eq("018f22d8155d70008000000000000001"),
-                eq("TIANSHU_PUBLISH_FAILED"),
-                eq("failed"),
-                eq(List.of()),
-                eq(NOW)
-        );
-        assertThat(fixture.draft.getBasedOnReleaseId()).isNull();
-        verify(fixture.drafts, never()).save(org.mockito.ArgumentMatchers.any(GatewayDraftBO.class));
+    void initialPublishRegistersOneStableGenerationAndOnlyEnqueuesNativeWork() {
+        var result = f.create();
+        assertThat(result.status()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
+        assertThat(f.rows).hasSize(1);
+        var row = f.onlyRow();
+        assertThat(row.getDesiredGeneration()).isEqualTo(1L);
+        assertThat(row.getObservedGeneration()).isZero();
+        assertThat(row.getDesiredState()).isEqualTo(GatewayUrlExposureStateEnum.OPEN);
+        assertThat(row.getRouteName()).isEqualTo("yuheng-exposure-" + row.getId());
+        assertThat(result.exposureOutcomes()).hasSize(1);
+        assertThat(result.exposureOutcomes().getFirst().result()).isNull();
+        assertThat(result.clusterTargets().getFirst().converged()).isFalse();
+        assertThat(f.messages).hasSize(1);
+        assertThat(f.audits).hasSize(1);
+        assertThat(f.artifacts.get(result.releaseId()).chunkManifest().path("resources").get(0).path("object").path("spec").path("parentRefs")).isEmpty();
+        verify(f.releases, never()).insert(any(), any(), anyInt());
+        verify(f.releases, never()).loadCompiled(anyString());
     }
 
     @Test
-    void createMapsLegacyDraftOntoCanonicalTypedTransportPolicy() {
-        Map<String, Object> routeContent = Map.of(
-                "host", "ai.example.com",
-                "listener", "PUBLIC",
-                "method", "POST",
-                "path", "/v1/**",
-                "transportPolicy", Map.of(
-                        "profile", "OPENAI_HTTP",
-                        "requestBodyMode", "STREAMING",
-                        "responseMode", "AUTO_STREAM",
-                        "connectTimeoutMs", 10_000,
-                        "retryEnabled", false
-                )
-        );
-        CreateFixture fixture = createFixture(routeContent);
-
-        fixture.service.create(
-                "group-1",
-                new top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO(
-                        0L,
-                        "publish transport route"
-                ),
-                actor(),
-                request()
-        );
-
-        ArgumentCaptor<CompiledGatewayRelease> compiled =
-                ArgumentCaptor.forClass(CompiledGatewayRelease.class);
-        verify(fixture.releases).insert(
-                any(top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO.class),
-                compiled.capture(),
-                eq(1)
-        );
-        var publishedRoute = compiled.getValue()
-                .snapshot()
-                .content()
-                .routes()
-                .getFirst();
-        assertThat(publishedRoute.host()).isEqualTo("ai.example.com");
-        assertThat(publishedRoute.httpMethod()).isEqualTo("POST");
-        assertThat(publishedRoute.pathPattern()).isEqualTo("/v1/**");
-        assertThat(publishedRoute.accessZones())
-                .containsExactly(AccessZone.PUBLIC);
-        assertThat(publishedRoute.transportPolicy().profile())
-                .isEqualTo(GatewayRouteProfile.OPENAI_HTTP);
-        assertThat(publishedRoute.transportPolicy().requestBodyMode())
-                .isEqualTo(GatewayRequestBodyMode.STREAMING);
-        assertThat(publishedRoute.transportPolicy().responseMode())
-                .isEqualTo(GatewayTransportResponseMode.AUTO_STREAM);
-        assertThat(publishedRoute.transportPolicy().connectTimeoutMs())
-                .isEqualTo(10_000L);
-        assertThat(publishedRoute.transportPolicy().retryEnabled()).isFalse();
+    void contentPublishKeepsClosedAndAdvancesOnlyItsContentGeneration() {
+        f.create();
+        var row = f.onlyRow();
+        long id = row.getId();
+        row.setDesiredState(GatewayUrlExposureStateEnum.CLOSED).setDesiredGeneration(2L).setVersion(2L);
+        f.definition.setDefinitionVersion(2L).setDefinitionSha256("e".repeat(64));
+        var next = f.create();
+        assertThat(f.onlyRow().getId()).isEqualTo(id);
+        assertThat(f.onlyRow().getDesiredState()).isEqualTo(GatewayUrlExposureStateEnum.CLOSED);
+        assertThat(f.onlyRow().getDesiredGeneration()).isEqualTo(3L);
+        assertThat(next.exposureOutcomes().getFirst().result()).isEqualTo("CLOSED_OVERRIDE");
+        assertThat(next.status()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
     }
 
     @Test
-    void createRejectsNonStringRouteTextBeforeBuildingASnapshot() {
-        CreateFixture fixture = createFixture(Map.of(
-                "host", Map.of("tenant", "x"),
-                "listener", "PUBLIC",
-                "method", false,
-                "path", "/v1/**"
-        ));
-
-        assertThatThrownBy(() -> fixture.service.create(
-                "group-1",
-                new top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO(
-                        0L,
-                        "publish invalid route"
-                ),
-                actor(),
-                request()
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("ROUTE_HOST_INVALID")
-                .hasMessageContaining("host");
-
-        verify(fixture.releases, never()).insert(
-                any(),
-                any(),
-                anyInt()
-        );
+    void terminalContentPublishNeverMutatesTheTombstoneOrAllocatesAnotherUrl() {
+        f.create();
+        var row = f.onlyRow();
+        row.setDesiredState(GatewayUrlExposureStateEnum.WITHDRAWN).setDesiredGeneration(4L).setVersion(7L);
+        String originalDigest = row.getContentSha256();
+        long originalRelease = row.getReleaseId();
+        f.definition.setDefinitionVersion(2L).setDefinitionSha256("e".repeat(64));
+        var next = f.create();
+        assertThat(f.rows).hasSize(1);
+        assertThat(f.onlyRow().getDesiredState()).isEqualTo(GatewayUrlExposureStateEnum.WITHDRAWN);
+        assertThat(f.onlyRow().getDesiredGeneration()).isEqualTo(4L);
+        assertThat(f.onlyRow().getVersion()).isEqualTo(7L);
+        assertThat(f.onlyRow().getContentSha256()).isEqualTo(originalDigest);
+        assertThat(f.onlyRow().getReleaseId()).isEqualTo(originalRelease);
+        assertThat(next.exposureOutcomes().getFirst().result()).isEqualTo("WITHDRAWN_OVERRIDE");
     }
 
     @Test
-    void createIncludesMcpDraftInTheCanonicalReleaseSnapshot() {
-        McpReleaseContentFactory mcp = mock(McpReleaseContentFactory.class);
-        McpRuleContent mcpContent = new McpRuleContent(
-                List.of(new McpRuntimeServer(
-                        "server-1",
-                        "billing",
-                        "Billing",
-                        null,
-                        null,
-                        Set.of(McpProtocolDialect.STABLE_2025_11_25),
-                        "https://resource.egon.top/yuheng-mcp",
-                        30,
-                        true
-                )),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-        when(mcp.compileForRelease("group-1", 0L)).thenReturn(mcpContent);
-        CreateFixture fixture = createFixture(Map.of(
-                "host", "ai.example.com",
-                "listener", "PUBLIC",
-                "method", "POST",
-                "path", "/v1/**"
-        ), mcp);
-
-        fixture.service.create(
-                "group-1",
-                new top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO(
-                        0L,
-                        "publish Gateway and MCP"
-                ),
-                actor(),
-                request()
-        );
-
-        ArgumentCaptor<CompiledGatewayRelease> compiled =
-                ArgumentCaptor.forClass(CompiledGatewayRelease.class);
-        verify(fixture.releases).insert(
-                any(top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO.class),
-                compiled.capture(),
-                eq(1)
-        );
-        assertThat(compiled.getValue().snapshot().content().mcp())
-                .isEqualTo(mcpContent);
-        verify(mcp).compileForRelease("group-1", 0L);
+    void retryOfAnOlderGenerationIsStaleAndOnlyWakesTheCurrentClosedIntent() {
+        var original = f.create();
+        f.heads.get(original.releaseId()).setStatus(GatewayReleaseStatus.UNKNOWN);
+        f.onlyRow().setDesiredState(GatewayUrlExposureStateEnum.CLOSED).setDesiredGeneration(2L).setVersion(3L);
+        var result = f.service.retry(original.releaseId(), ADMIN, REQUEST);
+        assertThat(result.status()).isEqualTo(GatewayReleaseStatus.SUPERSEDED);
+        assertThat(result.exposureOutcomes().getFirst().result()).isEqualTo("STALE");
+        assertThat(f.onlyRow().getDesiredState()).isEqualTo(GatewayUrlExposureStateEnum.CLOSED);
+        assertThat(f.onlyRow().getDesiredGeneration()).isEqualTo(2L);
     }
 
     @Test
-    void managedToolPublishesItsOperationWithoutARoute() {
-        McpReleaseContentFactory mcp = mock(McpReleaseContentFactory.class);
-        McpRuleContent mcpContent = new McpRuleContent(
-                List.of(new McpRuntimeServer(
-                        "server-1",
-                        "billing",
-                        "Billing",
-                        null,
-                        null,
-                        Set.of(McpProtocolDialect.STABLE_2025_11_25),
-                        "https://resource.egon.top/yuheng-mcp",
-                        30,
-                        true
-                )),
-                List.of(new McpRuntimeTool(
-                        "tool-1",
-                        "billing",
-                        "orders.get",
-                        "Get an order",
-                        "LOCAL_OPERATION",
-                        "operation-1",
-                        "HTTP",
-                        null,
-                        "{\"type\":\"object\"}",
-                        "{\"type\":\"object\"}",
-                        Map.of(),
-                        Set.of(),
-                        "LOW",
-                        true,
-                        true
-                )),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-        when(mcp.compileForRelease("group-1", 0L)).thenReturn(mcpContent);
-        CreateFixture fixture = createFixture(Map.of(
-                "host", "ai.example.com",
-                "listener", "PUBLIC",
-                "method", "GET",
-                "path", "/orders/{id}"
-        ), mcp, false);
-
-        fixture.service.create(
-                "group-1",
-                new top.egon.cola.component.yuheng.admin.release.domain.dto.GatewayReleaseCreateCommandDTO(
-                        0L,
-                        "publish managed Tool without Route"
-                ),
-                actor(),
-                request()
-        );
-
-        ArgumentCaptor<CompiledGatewayRelease> compiled =
-                ArgumentCaptor.forClass(CompiledGatewayRelease.class);
-        verify(fixture.releases).insert(
-                any(top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO.class),
-                compiled.capture(),
-                eq(1)
-        );
-        assertThat(compiled.getValue().snapshot().content().routes()).isEmpty();
-        assertThat(compiled.getValue().snapshot().content().operations())
-                .extracting(operation -> operation.operationId())
-                .containsExactly("operation-1");
+    void rollbackCreatesANewNativeReleaseAndCannotRestoreTheSourceOpenState() {
+        var original = f.create();
+        f.heads.get(original.releaseId()).setStatus(GatewayReleaseStatus.SUCCESS);
+        f.onlyRow().setDesiredState(GatewayUrlExposureStateEnum.CLOSED).setDesiredGeneration(2L).setVersion(3L);
+        var rolled = f.service.rollback(GROUP, new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST);
+        assertThat(rolled.releaseId()).isNotEqualTo(original.releaseId());
+        assertThat(rolled.rollbackOfReleaseId()).isEqualTo(original.releaseId());
+        assertThat(rolled.exposureOutcomes().getFirst().effectiveState()).isEqualTo("CLOSED");
+        assertThat(f.onlyRow().getDesiredState()).isEqualTo(GatewayUrlExposureStateEnum.CLOSED);
     }
 
-    private CreateFixture createFixture(Map<String, Object> routeContent) {
-        return createFixture(routeContent, null);
+    @Test
+    void rollbackRejectsAMissingExactFrozenDefinitionInsteadOfSubstitutingCurrentContent() {
+        var original = f.create();
+        f.heads.get(original.releaseId()).setStatus(GatewayReleaseStatus.SUCCESS);
+        f.definition.setDefinitionSha256("e".repeat(64));
+        assertThatThrownBy(() -> f.service.rollback(GROUP,
+                new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(f.artifacts).hasSize(1);
+        assertThat(f.rows).hasSize(1);
     }
 
-    private CreateFixture createFixture(
-            Map<String, Object> routeContent,
-            McpReleaseContentFactory mcpContentFactory) {
-        return createFixture(routeContent, mcpContentFactory, true);
+    @Test
+    void missingOrPartialTrustedBindingFailsBeforeAnyReleaseOrControlWrite() {
+        when(f.resolver.resolve(anyLong(), anyLong(), anyString(), anyString())).thenReturn(Optional.empty());
+        assertThatThrownBy(f::create).isInstanceOf(IllegalStateException.class);
+        assertThat(f.heads).isEmpty();
+        assertThat(f.rows).isEmpty();
+        assertThat(f.messages).isEmpty();
     }
 
-    private CreateFixture createFixture(
-            Map<String, Object> routeContent,
-            McpReleaseContentFactory mcpContentFactory,
-            boolean routeEnabled) {
-        GatewayGroupRepository groups = mock(GatewayGroupRepository.class);
-        GatewayDraftJpaRepository drafts = mock(GatewayDraftJpaRepository.class);
-        GatewayDraftService draftService = mock(GatewayDraftService.class);
-        GatewayCatalogRepository catalog = mock(GatewayCatalogRepository.class);
-        GatewayReleaseRepository releases = mock(GatewayReleaseRepository.class);
-        GatewayAuditLogRepository audits =
-                mock(GatewayAuditLogRepository.class);
-        GatewayDraftBO draft = new GatewayDraftBO(
-                "group-1",
-                "admin",
-                NOW
-        );
-        GatewayGroupBO group = new GatewayGroupBO(
-                "group-1",
-                "orders",
-                "Orders",
-                "local",
-                "default",
-                null,
-                "admin",
-                NOW
-        );
-        List<top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO> routes = routeEnabled
-                ? List.of(new top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO(
-                        "group-1",
-                        "route-1",
-                        "operation-1",
-                        routeContent,
-                        true,
-                        NOW,
-                        "admin"
-                ))
-                : List.of();
-        top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO view =
-                new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO(
-                        "group-1",
-                        0L,
-                        null,
-                        "EDITABLE",
-                        null,
-                        routes,
-                        List.of(),
-                        NOW
-                );
-        when(groups.findByIdAndDeletedFalse("group-1"))
-                .thenReturn(Optional.of(group));
-        when(drafts.findById("group-1")).thenReturn(Optional.of(draft));
-        when(draftService.validate("group-1")).thenReturn(
-                new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationReportVO(
-                        true,
-                        0L,
-                        List.of(),
-                        List.of(),
-                        "draft-sha"
-                )
-        );
-        when(draftService.get("group-1")).thenReturn(view);
-        when(catalog.findOperation("operation-1"))
-                .thenReturn(Optional.of(operation()));
-        when(catalog.loadDefinitions("operation-1"))
-                .thenReturn(List.of(definition()));
-        when(releases.find(anyString())).thenAnswer(invocation ->
-                Optional.of(release(invocation.getArgument(0)))
-        );
-        when(releases.attempts(anyString())).thenReturn(List.of());
-        GatewayReleaseService service = new GatewayReleaseService(
-                groups,
-                drafts,
-                draftService,
-                catalog,
-                releases,
-                audits,
-                transactions(),
-                null,
-                mcpContentFactory,
-                Clock.fixed(NOW, ZoneOffset.UTC));
-        return new CreateFixture(service, releases);
+    @Test
+    void sourceOperationMustRemainExternallyAuthorizedAndActive() {
+        f.operation.setExternalAccessible(false);
+        assertThatThrownBy(f::create).isInstanceOf(IllegalStateException.class);
+        assertThat(f.heads).isEmpty();
+        f.operation.setExternalAccessible(true).setLifecycleStatus("OFFLINE");
+        assertThatThrownBy(f::create).isInstanceOf(IllegalStateException.class);
     }
 
-    private Fixture fixture(
-            top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayPublicationOutcomeVO outcome) {
-        GatewayGroupRepository groups = mock(GatewayGroupRepository.class);
-        GatewayDraftJpaRepository drafts = mock(GatewayDraftJpaRepository.class);
-        GatewayDraftService draftService = mock(GatewayDraftService.class);
-        GatewayCatalogRepository catalog = mock(GatewayCatalogRepository.class);
-        GatewayReleaseRepository releases = mock(GatewayReleaseRepository.class);
-        GatewayAuditLogRepository audits =
-                mock(GatewayAuditLogRepository.class);
-        GatewayReleasePublicationCoordinator publications =
-                mock(GatewayReleasePublicationCoordinator.class);
-        CompiledGatewayRelease compiled = mock(CompiledGatewayRelease.class);
-        GatewayDraftBO draft = new GatewayDraftBO(
-                "group-1",
-                "admin",
-                NOW
-        );
-        top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release = release();
-        when(releases.find("release-1"))
-                .thenReturn(Optional.of(release));
-        when(releases.nextAttempt("release-1", NOW)).thenReturn(2);
-        when(releases.loadCompiled("release-1")).thenReturn(compiled);
-        when(releases.attempts("release-1")).thenReturn(List.of());
-        when(drafts.findById("group-1")).thenReturn(Optional.of(draft));
-        when(publications.execute(
-                "release-1",
-                2,
-                compiled,
-                "admin"
-        )).thenReturn(outcome);
-        GatewayReleaseService service = new GatewayReleaseService(
-                groups,
-                drafts,
-                draftService,
-                catalog,
-                releases,
-                audits,
-                transactions(),
-                publications,
-                Clock.fixed(NOW, ZoneOffset.UTC));
-        return new Fixture(service, releases, drafts, draft);
+    @Test
+    void sourceCompileRejectsUnsupportedLegacyStreamingPolicyRatherThanDowngradingIt() {
+        f.route.setContent(Map.of("host", "api.example.com", "httpMethod", "GET", "pathPattern", "/orders", "accessZones", List.of("PUBLIC"),
+                "transportPolicy", Map.of("profile", "OPENAI_HTTP")));
+        assertThatThrownBy(f::create).isInstanceOf(IllegalArgumentException.class);
+        assertThat(f.heads).isEmpty();
     }
 
-    private top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayPublicationOutcomeVO outcome(
-            top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayPublicationStatusEnum status) {
-        return new top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayPublicationOutcomeVO(
-                status,
-                "018f22d8155d70008000000000000001",
-                new DdcManagementPublishResult(
-                        "018f22d8155d70008000000000000001",
-                        DdcManagementPublishStatus.valueOf(status.name()),
-                        2L,
-                        "checksum",
-                        0,
-                        List.of(),
-                        status == SUCCESS ? null : "failed",
-                        NOW,
-                        NOW,
-                        NOW
-                ),
-                false, List.of()
-        );
+    @Test
+    void anOutboxFailureRollsBackReleaseContentControlAndAuditTogether() {
+        doThrow(new IllegalStateException("synthetic outbox unavailable")).when(f.outbox).enqueue(any());
+        assertThatThrownBy(f::create).isInstanceOf(IllegalStateException.class);
+        assertThat(f.heads).isEmpty();
+        assertThat(f.artifacts).isEmpty();
+        assertThat(f.rows).isEmpty();
+        assertThat(f.audits).isEmpty();
+        assertThat(f.messages).isEmpty();
     }
 
-    private top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release() {
-        return new top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO(
-                "release-1",
-                "group-1",
-                1L,
-                null,
-                null,
-                GatewayReleaseStatus.UNKNOWN,
-                false,
-                null,
-                Map.of(),
-                Map.of(),
-                "retry",
-                NOW,
-                "admin",
-                NOW
-        );
+    @Test
+    void archiveGetPreservesTheOldProjectionWithEmptyNativeOutcomeLists() {
+        f.heads.put("810001", f.header("810001", GatewayReleaseStatus.SUCCESS));
+        var result = f.service.get("810001");
+        assertThat(result.releaseId()).isEqualTo("810001");
+        assertThat(result.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(result.exposureOutcomes()).isEmpty();
+        assertThat(result.clusterTargets()).isEmpty();
+        verify(f.releases, never()).loadCompiled(anyString());
     }
 
-    private top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO release(String releaseId) {
-        return new top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseBO(
-                releaseId,
-                "group-1",
-                0L,
-                null,
-                null,
-                GatewayReleaseStatus.FAILED,
-                false,
-                null,
-                Map.of(),
-                Map.of(),
-                "publish transport route",
-                NOW,
-                "admin",
-                NOW
-        );
-    }
+    /** Fixture uses the actual pure compiler and versioned JSON codec; database atomicity has separate PG evidence. */
+    static final class NativeFixture {
+        final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+        final GatewayGroupRepository groups = mock(GatewayGroupRepository.class);
+        final GatewayDraftJpaRepository drafts = mock(GatewayDraftJpaRepository.class);
+        final GatewayDraftService draftService = mock(GatewayDraftService.class);
+        final GatewayCatalogRepository catalog = mock(GatewayCatalogRepository.class);
+        final GatewayReleaseRepository releases = mock(GatewayReleaseRepository.class);
+        final GatewayAuditLogRepository auditStore = mock(GatewayAuditLogRepository.class);
+        final GatewayUrlExposureRepository exposures = mock(GatewayUrlExposureRepository.class);
+        final TransactionalOutbox outbox = mock(TransactionalOutbox.class);
+        final BindingResolver resolver = mock(BindingResolver.class);
+        final Map<String, GatewayReleaseBO> heads = new LinkedHashMap<>();
+        final Map<String, GatewayCiliumReleaseArtifact> artifacts = new LinkedHashMap<>();
+        final Map<Long, GatewayUrlExposureBO> rows = new LinkedHashMap<>();
+        final Map<String, List<GatewayReleaseAttemptBO>> attempts = new LinkedHashMap<>();
+        final List<OutboxMessage> messages = new ArrayList<>();
+        final List<GatewayAuditLogBO> audits = new ArrayList<>();
+        final GatewayRouteDraftBO route = GatewayRouteDraftBO.builder().gatewayGroupId(GROUP).routeId("orders-read").operationId("9001")
+                .enabled(true).content(Map.of("host", "api.example.com", "httpMethod", "GET", "pathPattern", "/orders", "accessZones", List.of("PUBLIC"))).build();
+        final GatewayOperationBO operation = GatewayOperationBO.builder().id("9001").protocol("HTTP").externalAccessible(true)
+                .lifecycleStatus("ACTIVE").currentDefinitionId("9101").build();
+        final GatewayOperationDefinitionBO definition = GatewayOperationDefinitionBO.builder().id("9101").operationId("9001")
+                .definitionVersion(1L).definitionSha256("d".repeat(64)).externalAccessible(true).build();
+        final GatewayReleasePublicationCoordinator coordinator;
+        final GatewayReleaseService service;
+        final PublicationBinding binding = binding();
+        final TransactionTemplate tx;
 
-    private top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO operation() {
-        return new top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO(
-                "operation-1",
-                "application-1",
-                "interface-1",
-                "orders",
-                "HTTP",
-                "POST /v1/orders",
-                true,
-                Map.of(
-                        "bizCode", "test-biz",
-                        "appCode", "orders",
-                        "env", "local",
-                        "namespace", "default",
-                        "serviceName", "orders",
-                        "group", "default",
-                        "version", "v1",
-                        "transport", "http"
-                ),
-                "MANUAL",
-                "ACTIVE",
-                "definition-1",
-                1L,
-                NOW,
-                NOW
-        );
-    }
+        NativeFixture() {
+            var tm = new FixtureTransactionManager();
+            tx = new TransactionTemplate(tm);
+            var beans = new StaticListableBeanFactory();
+            beans.addBean("gatewayHttpRouteBindingResolver", resolver);
+            when(groups.findByIdAndDeletedFalse(GROUP)).thenReturn(Optional.of(GatewayGroupBO.builder().id(GROUP)
+                    .gatewayGroupCode("orders").env("prod").namespace("business").enabled(true).build()));
+            when(drafts.findById(GROUP)).thenReturn(Optional.of(new GatewayDraftBO(GROUP, "admin-a", NOW)));
+            when(draftService.get(GROUP)).thenAnswer(call -> new GatewayDraftVO(GROUP, 0L, null, "EDITABLE", "source", List.of(route), List.of(), NOW));
+            when(catalog.findOperation("9001")).thenReturn(Optional.of(operation));
+            when(catalog.loadDefinitions("9001")).thenAnswer(call -> List.of(definition));
+            when(resolver.resolve(OWNER, Long.parseLong(GROUP), "orders-read", "9001")).thenReturn(Optional.of(binding));
+            when(releases.find(anyString())).thenAnswer(call -> Optional.ofNullable(heads.get(call.getArgument(0))));
+            when(releases.loadNative(anyString())).thenAnswer(call -> Optional.ofNullable(artifacts.get(call.getArgument(0))));
+            when(releases.history(GROUP)).thenAnswer(call -> new ArrayList<>(heads.values()));
+            when(releases.attempts(anyString())).thenAnswer(call -> attempts.getOrDefault(call.getArgument(0), List.of()));
+            doAnswer(call -> {
+                inTransaction();
+                GatewayReleaseBO head = call.getArgument(0); heads.put(head.getId(), head); artifacts.put(head.getId(), call.getArgument(1));
+                attempts.put(head.getId(), new ArrayList<>(List.of(GatewayReleaseAttemptBO.builder().attemptNo(1).status("PENDING").targets(List.of()).build())));
+                return null;
+            }).when(releases).insertNative(any(), any(), anyInt());
+            doAnswer(call -> { heads.get(call.getArgument(0)).setStatus(GatewayReleaseStatus.PUBLISHING); return null; })
+                    .when(releases).beginAttempt(anyString(), anyInt(), any());
+            when(releases.nextAttempt(anyString(), any())).thenAnswer(call -> {
+                var list = attempts.get(call.getArgument(0)); int next = list.size() + 1;
+                list.add(GatewayReleaseAttemptBO.builder().attemptNo(next).status("PENDING").targets(List.of()).build()); return next;
+            });
+            doAnswer(call -> { heads.get(call.getArgument(0)).setStatus(call.getArgument(2)); return null; })
+                    .when(releases).completeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any(), any(), any(), any(), any());
+            when(exposures.findOwnedRoute(anyLong(), anyLong(), anyString())).thenAnswer(call -> rows.values().stream()
+                    .filter(row -> row.getOwnerTenantId().equals(call.getArgument(0)) && row.getGatewayGroupId().equals(call.getArgument(1))
+                            && row.getRouteId().equals(call.getArgument(2))).findFirst().map(this::copy));
+            when(exposures.findOwned(anyLong(), anyLong())).thenAnswer(call -> Optional.ofNullable(rows.get(call.getArgument(1)))
+                    .filter(row -> row.getOwnerTenantId().equals(call.getArgument(0))).map(this::copy));
+            when(exposures.reserveAll(anyLong(), any())).thenAnswer(call -> {
+                inTransaction(); List<GatewayUrlExposureBO> registrations = call.getArgument(1);
+                registrations.forEach(row -> rows.put(row.getId(), copy(row).setVersion(0L).setTenantId(0L)));
+                return registrations;
+            });
+            when(exposures.compareAndSetContent(anyLong(), anyLong(), anyLong(), anyLong(), any(), anyLong(), anyString(), anyString(), anyString(), any()))
+                    .thenAnswer(call -> {
+                        inTransaction(); var row = rows.get(call.getArgument(1));
+                        if (!row.getVersion().equals(call.getArgument(2)) || !row.getDesiredGeneration().equals(call.getArgument(3))
+                                || row.getDesiredState() != call.getArgument(4)) return false;
+                        row.setReleaseId(call.getArgument(5)).setContentSha256(call.getArgument(6)).setCompilerProfileId(call.getArgument(7))
+                                .setDesiredGeneration(row.getDesiredGeneration() + 1).setVersion(row.getVersion() + 1).setReconcileStatus("PENDING").setUpdateTime(NOW);
+                        return true;
+                    });
+            when(auditStore.save(any())).thenAnswer(call -> { inTransaction(); GatewayAuditLogBO row = call.getArgument(0); audits.add(row); return row; });
+            when(outbox.enqueue(any())).thenAnswer(call -> { inTransaction(); OutboxMessage message = call.getArgument(0); messages.add(message);
+                return new OutboxReceipt(message.messageId(), message.idempotencyKey(), true); });
+            var converter = mock(GatewayUrlExposureViewConverter.class);
+            when(converter.toView(any())).thenAnswer(call -> {
+                GatewayUrlExposureBO row = call.getArgument(0);
+                return new GatewayUrlExposureVO().setExposureId(row.getId().toString()).setDesiredState(row.getDesiredState())
+                        .setDesiredGeneration(row.getDesiredGeneration().toString()).setObservedGeneration(row.getObservedGeneration().toString())
+                        .setReconcileStatus(row.getReconcileStatus()).setObservedState(row.getObservedState()).setLastErrorCode(row.getLastErrorCode());
+            });
+            coordinator = new GatewayReleasePublicationCoordinator(releases, exposures, outbox, converter, json, Clock.fixed(NOW, ZoneOffset.UTC));
+            service = new GatewayReleaseService(groups, drafts, draftService, catalog, releases, auditStore, tx, exposures,
+                    coordinator, new GatewayHttpRouteCompiler(json), beans.getBeanProvider(BindingResolver.class), json, Clock.fixed(NOW, ZoneOffset.UTC));
+        }
 
-    private top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO definition() {
-        return new top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO(
-                "definition-1",
-                "operation-1",
-                1L,
-                "sha256",
-                "orders",
-                List.of(),
-                Map.of(
-                        "$schema", "https://json-schema.org/draft/2020-12/schema",
-                        "x-egon-schema-model", "yuheng-operation-request/v2",
-                        "type", "object",
-                        "properties", Map.of(),
-                        "additionalProperties", false
-                ),
-                Map.of(
-                        "$schema", "https://json-schema.org/draft/2020-12/schema",
-                        "x-egon-schema-model", "yuheng-operation-response/v2",
-                        "type", "object",
-                        "properties", Map.of(),
-                        "additionalProperties", false
-                ),
-                List.of(),
-                null,
-                Map.of("responseMode", "TRANSPARENT"),
-                true,
-                NOW,
-                "admin"
-        );
-    }
+        top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseVO create() {
+            return service.create(GROUP, new GatewayReleaseCreateCommandDTO(0L, "native publication"), ADMIN, REQUEST);
+        }
+        GatewayUrlExposureBO onlyRow() { return rows.values().iterator().next(); }
+        GatewayUrlExposureBO copy(GatewayUrlExposureBO row) { return json.convertValue(json.valueToTree(row), GatewayUrlExposureBO.class); }
+        GatewayReleaseBO header(String id, GatewayReleaseStatus status) { return new GatewayReleaseBO(id, GROUP, 0L, null, null, status,
+                false, null, Map.of(), Map.of(), "archive", NOW, "admin-a", NOW); }
+        static void inTransaction() { assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue(); }
+        static PublicationBinding binding() {
+            var domain = new PublicationDomainVO("cluster-main", "public-https-main", "topology-1",
+                    List.of(new BindingVO("edge-system", "public-apps", "https-api")), true);
+            var backend = new BackendReference("apps-prod", "orders-public", "service-uid", "7", 80, 8080, 100, "HTTP_1_1",
+                    new GrantReference("apps-prod", "allow-orders-public", "grant-uid", "4", "yuheng-routes", "orders-public"),
+                    "a".repeat(64), Set.of("pod-a:container-a"), true);
+            return new PublicationBinding(OWNER, Long.parseLong(GROUP), "orders-read", "9001", "prod", "business", "orders-prod", 1L,
+                    domain, new GatewayReference("edge-system", "public-apps", "gateway-uid", "https-api", true, true), "yuheng-routes",
+                    Set.of("api.example.com"), Set.of("GET"), Set.of(), List.of(backend),
+                    new AuthorizationBinding(GatewayHttpRouteCompiler.AUTHORIZATION_PROFILE, "https://resource.example.com/orders", "1", "b".repeat(64), true, List.of()));
+        }
 
-    private AdminActor actor() {
-        return new AdminActor(
-                "admin",
-                top.egon.cola.component.yuheng.admin.shared.domain.enums.AdminActorTypeEnum.USER,
-                Set.of(),
-                Set.of()
-        );
-    }
-
-    private RequestAuditContext request() {
-        return new RequestAuditContext("request-1", "trace-1");
-    }
-
-    private TransactionTemplate transactions() {
-        return new TransactionTemplate(new PlatformTransactionManager() {
-            @Override
-            public TransactionStatus getTransaction(
-                    TransactionDefinition definition) {
-                return new SimpleTransactionStatus();
+        final class FixtureTransactionManager extends AbstractPlatformTransactionManager {
+            Map<String, GatewayReleaseBO> savedHeads;
+            Map<String, GatewayCiliumReleaseArtifact> savedArtifacts;
+            Map<Long, GatewayUrlExposureBO> savedRows;
+            Map<String, List<GatewayReleaseAttemptBO>> savedAttempts;
+            int savedAuditCount; int savedMessageCount;
+            @Override protected Object doGetTransaction() { return new Object(); }
+            @Override protected void doBegin(Object tx, TransactionDefinition definition) {
+                savedHeads = new LinkedHashMap<>(); heads.forEach((id, head) -> savedHeads.put(id, json.convertValue(json.valueToTree(head), GatewayReleaseBO.class)));
+                savedArtifacts = new LinkedHashMap<>(artifacts); savedRows = new LinkedHashMap<>(); rows.forEach((id, row) -> savedRows.put(id, copy(row)));
+                savedAttempts = new LinkedHashMap<>(); attempts.forEach((id, list) -> savedAttempts.put(id, new ArrayList<>(list)));
+                savedAuditCount = audits.size(); savedMessageCount = messages.size();
             }
-
-            @Override
-            public void commit(TransactionStatus status) {
+            @Override protected void doCommit(DefaultTransactionStatus status) { }
+            @Override protected void doRollback(DefaultTransactionStatus status) {
+                heads.clear(); heads.putAll(savedHeads); artifacts.clear(); artifacts.putAll(savedArtifacts); rows.clear(); rows.putAll(savedRows);
+                attempts.clear(); attempts.putAll(savedAttempts);
+                while (audits.size() > savedAuditCount) audits.removeLast(); while (messages.size() > savedMessageCount) messages.removeLast();
             }
-
-            @Override
-            public void rollback(TransactionStatus status) {
-            }
-        });
-    }
-
-    private record Fixture(
-            GatewayReleaseService service,
-            GatewayReleaseRepository releases,
-            GatewayDraftJpaRepository drafts,
-            GatewayDraftBO draft
-    ) {
-    }
-
-    private record CreateFixture(
-            GatewayReleaseService service,
-            GatewayReleaseRepository releases
-    ) {
+        }
     }
 }

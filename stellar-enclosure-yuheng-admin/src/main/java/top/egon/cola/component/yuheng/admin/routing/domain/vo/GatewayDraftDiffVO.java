@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.admin.routing.domain.vo;
 
+import java.util.List;
 import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
 import top.egon.cola.platform.tianquan.jianshen.contract.permission.PermissionManifest;
 import top.egon.cola.platform.tianquan.jianshen.contract.permission.ResourceType;
@@ -84,6 +85,27 @@ public record GatewayDraftDiffVO(
                 oauthScopes = GatewayPermissionCodes.READ)
         @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
                 plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
-        String draftSha256
+        String draftSha256,
+        @PermissionResource(key = "yuheng.field.GatewayDraftDiffVO.capabilityProfileId", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.capabilityProfileId",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        String capabilityProfileId,
+        @PermissionResource(key = "yuheng.field.GatewayDraftDiffVO.exposureIssues", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.exposureIssues",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        List<GatewayDraftValidationIssueVO> exposureIssues
 ) {
+    public GatewayDraftDiffVO {
+        exposureIssues = List.copyOf(exposureIssues);
+    }
+
+    public GatewayDraftDiffVO(String basedOnReleaseId, long revision, int routeCount, int policyCount, String draftSha256) {
+        this(basedOnReleaseId, revision, routeCount, policyCount, draftSha256, null, List.of());
+    }
 }

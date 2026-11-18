@@ -3,6 +3,7 @@ package top.egon.cola.component.yuheng.admin.bootstrap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -33,7 +34,12 @@ import top.egon.cola.component.yuheng.admin.observability.controller.scheduled.G
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayObservabilityRepository;
 import top.egon.cola.component.yuheng.admin.observability.service.GatewayCallEventIngestService;
 import top.egon.cola.component.yuheng.admin.observability.service.GatewayObservabilityQueryService;
-import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository;
+import top.egon.cola.component.outbox.api.TransactionalOutbox;
+import top.egon.cola.component.yuheng.admin.exposure.converter.GatewayUrlExposureViewConverter;
+import top.egon.cola.component.yuheng.admin.exposure.domain.exception.GatewayUrlExposureException;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayUrlExposureService;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 import top.egon.cola.component.yuheng.admin.release.service.GatewayReleasePublicationCoordinator;
 import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher;
@@ -298,41 +304,65 @@ public class GatewayAdminConfiguration {
         return new GatewayDdcRulePublisher(client);
     }
 
-    /**
-     * 中文说明：执行 网关发布PublicationCoordinator 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the gateway release publication coordinator operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.gatewayReleasePublicationCoordinator(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param journal 参数 journal；parameter journal。
-     * @param releases 参数 releases；parameter releases。
-     * @param client 参数 客户端；parameter client。
-     * @param publisher 参数 发布器；parameter publisher。
-     * @param properties 参数 properties；parameter properties。
-     * @param timeout 参数 超时；parameter timeout。
-     * @return 返回 网关发布PublicationCoordinator 的处理结果；returns the result of the operation.
-     */
-    @Bean
-    @ConditionalOnBean({
-            DdcManagementClient.class,
-            GatewayDdcRulePublisher.class
-    })
-    GatewayReleasePublicationCoordinator
-            gatewayReleasePublicationCoordinator(
-            GatewayReleasePublicationRepository journal,
-            GatewayReleaseRepository releases,
-            DdcManagementClient client,
-            GatewayDdcRulePublisher publisher,
-            GatewayAdminProperties properties,
-            @Value("${yuheng.admin.tianshu.publish-timeout:PT30S}")
-            Duration timeout) {
-        return new GatewayReleasePublicationCoordinator(
-                journal,
-                releases,
-                client,
-                publisher,
-                Clock.systemUTC(),
-                timeout,
-                properties.getDdc());
+    /** The Admin coordinator accepts durable intents; Kubernetes writes run in the separate writer. */
+    @Bean("gatewayReleasePublicationCoordinator")
+    GatewayReleasePublicationCoordinator gatewayReleasePublicationCoordinator(
+            @Qualifier("mpGatewayReleaseRepository") GatewayReleaseRepository releases,
+            @Qualifier("mpGatewayUrlExposureRepository") GatewayUrlExposureRepository exposures,
+            @Qualifier("transactionalOutbox") TransactionalOutbox outbox,
+            @Qualifier("gatewayUrlExposureViewConverter") GatewayUrlExposureViewConverter viewConverter,
+            @Qualifier("jacksonObjectMapper") ObjectMapper json,
+            @Qualifier("gatewayProjectionClock") Clock clock) {
+        return new GatewayReleasePublicationCoordinator(releases, exposures, outbox, viewConverter, json, clock);
+    }
+
+    /** Pins explicit OPEN to the exposure's frozen content and the current approved inventory. */
+    @Bean("gatewayExposureReopenValidator")
+    GatewayUrlExposureService.ReopenValidator gatewayExposureReopenValidator(
+            @Qualifier("mpGatewayReleaseRepository") GatewayReleaseRepository releases,
+            @Qualifier("gatewayHttpRouteCompiler") GatewayHttpRouteCompiler compiler,
+            @Qualifier("gatewayHttpRouteBindingResolver") ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> resolvers,
+            @Qualifier("jacksonObjectMapper") ObjectMapper json) {
+        return (owner, current) -> {
+            if (current.getReleaseId() == null) throw GatewayUrlExposureException.bindingConflict();
+            var artifact = releases.loadNative(current.getReleaseId().toString())
+                    .orElseThrow(GatewayUrlExposureException::bindingConflict);
+            if (!artifact.ownerTenantId().equals(Long.toString(owner))
+                    || !artifact.gatewayGroupId().equals(current.getGatewayGroupId().toString())) {
+                throw GatewayUrlExposureException.bindingConflict();
+            }
+            JsonNode entry = null;
+            for (JsonNode candidate : artifact.canonicalSnapshot().path("exposurePublication").path("exposures")) {
+                if (!current.getId().toString().equals(candidate.path("exposureId").asText())) continue;
+                if (entry != null) throw GatewayUrlExposureException.bindingConflict();
+                entry = candidate;
+            }
+            if (entry == null || !current.getRouteId().equals(entry.path("routeId").asText())
+                    || !current.getContentSha256().equals(entry.path("contentSha256").asText())) {
+                throw GatewayUrlExposureException.bindingConflict();
+            }
+            JsonNode pinned = null;
+            for (JsonNode dependency : artifact.chunkManifest().path("dependencies")) {
+                JsonNode candidate = dependency.path("publicationBinding");
+                if (candidate.path("ownerTenantId").asLong(-1) != owner
+                        || candidate.path("gatewayGroupId").asLong(-1) != current.getGatewayGroupId()
+                        || !current.getRouteId().equals(candidate.path("routeId").asText())) continue;
+                if (pinned != null) throw GatewayUrlExposureException.bindingConflict();
+                pinned = candidate;
+            }
+            var resolver = resolvers.getIfAvailable();
+            if (pinned == null || resolver == null) throw GatewayUrlExposureException.bindingConflict();
+            var currentBinding = resolver.resolve(owner, current.getGatewayGroupId(), current.getRouteId(),
+                    pinned.path("operationId").asText()).orElseThrow(GatewayUrlExposureException::bindingConflict);
+            try {
+                compiler.validateBinding(currentBinding);
+                if (!compiler.contentDigest(pinned).equals(compiler.contentDigest(json.valueToTree(currentBinding)))) {
+                    throw GatewayUrlExposureException.bindingConflict();
+                }
+            } catch (IllegalArgumentException invalid) {
+                throw GatewayUrlExposureException.bindingConflict();
+            }
+        };
     }
 
     /**

@@ -59,6 +59,8 @@ import top.egon.cola.component.yuheng.admin.release.domain.po.GatewayReleaseReco
 import top.egon.cola.component.yuheng.admin.release.domain.po.GatewayReleaseTargetRecordPO;
 import top.egon.cola.component.yuheng.admin.release.repository.impl.MpGatewayReleasePublicationRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.impl.MpGatewayReleaseRepository;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import top.egon.cola.component.yuheng.admin.release.repository.mp.GatewayReleaseAttemptPersistenceRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.mp.GatewayReleaseContentPersistenceRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.mp.GatewayReleasePersistenceRepository;
@@ -1230,6 +1232,299 @@ class GatewayPublicationMpTest {
      * conflict message and no later statement is issued at all (half a registration is never reported successful), and a
      * non-decimal identifier is refused by the converter before persistence is touched.
      */
+    @Test
+    void nativeArtifactHasASeparateJsonEnvelopeAndNeverPromotesLegacyEngineContent() throws Exception {
+        Class<?> artifact = Class.forName("top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact");
+        assertThat(artifact.getConstructor(JsonNode.class, JsonNode.class, JsonNode.class)).isNotNull();
+        assertThat(artifact.getMethod("canonicalSnapshot").getReturnType()).isEqualTo(JsonNode.class);
+        assertThat(artifact.getMethod("activationContent").getReturnType()).isEqualTo(JsonNode.class);
+        assertThat(artifact.getMethod("chunkManifest").getReturnType()).isEqualTo(JsonNode.class);
+        assertThat(releases.getClass().getMethod("insertNative", GatewayReleaseBO.class, artifact, int.class).getReturnType())
+                .isEqualTo(void.class);
+        var load = releases.getClass().getMethod("loadNative", String.class);
+        assertThat(load.getReturnType()).isEqualTo(java.util.Optional.class);
+        when(releaseDAO.selectActiveById(any(Serializable.class))).thenReturn(releaseHead(RELEASE_ID, GatewayReleaseStatus.READY, RELEASE_CREATED_AT, 0L));
+        var legacy = releaseContent(RELEASE_ID);
+        legacy.setCanonicalSnapshot(JSON.createObjectNode().put("ruleSchemaVersion", "v1"));
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(legacy);
+        assertThat((java.util.Optional<?>) load.invoke(releases, Long.toString(RELEASE_ID))).isEmpty();
+        verify(releaseDAO, never()).insert(any(GatewayReleaseRecordPO.class));
+        verify(releaseContentDAO, never()).insert(any(GatewayReleaseContentPO.class));
+    }
+
+    @Test
+    void jsonbParametersCarryTheNativePostgreSqlTypeBeforeRoutingReplay() throws Exception {
+        var statement = mock(java.sql.PreparedStatement.class);
+        var handler = new top.egon.cola.component.yuheng.admin.shared.dao.typehandler.GatewayJsonbTypeHandler(JsonNode.class);
+        JsonNode document = JSON.createObjectNode().put("schemaVersion", GatewayCiliumReleaseArtifact.SCHEMA_VERSION);
+        handler.setNonNullParameter(statement, 1, document, org.apache.ibatis.type.JdbcType.OTHER);
+        var parameter = ArgumentCaptor.forClass(Object.class);
+        verify(statement).setObject(org.mockito.ArgumentMatchers.eq(1), parameter.capture(), org.mockito.ArgumentMatchers.eq(java.sql.Types.OTHER));
+        assertThat(parameter.getValue()).isInstanceOf(org.postgresql.util.PGobject.class);
+        var nativeJsonb = (org.postgresql.util.PGobject) parameter.getValue();
+        assertThat(nativeJsonb.getType()).isEqualTo("jsonb");
+        assertThat(JSON.readTree(nativeJsonb.getValue())).isEqualTo(document);
+        handler.setNonNullParameter(statement, 2, document.toString(), org.apache.ibatis.type.JdbcType.OTHER);
+        verify(statement).setObject(org.mockito.ArgumentMatchers.eq(2), parameter.capture(), org.mockito.ArgumentMatchers.eq(java.sql.Types.OTHER));
+        assertThat(parameter.getValue()).isInstanceOf(org.postgresql.util.PGobject.class);
+        assertThat(((org.postgresql.util.PGobject) parameter.getValue()).getValue()).isEqualTo(document.toString());
+    }
+
+    @Test
+    void nativeRegistrationReusesTheGuardedHeadJsonContentAndAttemptStores() {
+        var artifact = nativeArtifact();
+        when(releaseDAO.insert(any(GatewayReleaseRecordPO.class))).thenReturn(1);
+        when(releaseContentDAO.insert(any(GatewayReleaseContentPO.class))).thenReturn(1);
+        when(releaseAttemptDAO.insert(any(GatewayReleaseAttemptRecordPO.class))).thenReturn(1);
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            releases.insertNative(releaseCarrier(GatewayReleaseStatus.READY), artifact, 1);
+            var order = org.mockito.Mockito.inOrder(releaseDAO, releaseContentDAO, releaseAttemptDAO);
+            order.verify(releaseDAO).insert(any(GatewayReleaseRecordPO.class));
+            var content = ArgumentCaptor.forClass(GatewayReleaseContentPO.class);
+            order.verify(releaseContentDAO).insert(content.capture());
+            order.verify(releaseAttemptDAO).insert(any(GatewayReleaseAttemptRecordPO.class));
+            assertThat(content.getValue().getReleaseId()).isEqualTo(RELEASE_ID);
+            assertThat(content.getValue().getCanonicalSnapshot()).isEqualTo(artifact.canonicalSnapshot());
+            assertThat(content.getValue().getActivationContent()).isEqualTo(artifact.activationContent());
+            assertThat(content.getValue().getChunkManifest()).isEqualTo(artifact.chunkManifest());
+            assertThat(content.getValue().getRuleContentSha256()).isEqualTo(artifact.ruleContentSha256());
+            assertThat(content.getValue().getArtifactSha256()).isEqualTo(artifact.artifactSha256());
+            assertThat(content.getValue().getSnapshotSize()).isEqualTo(artifact.snapshotSize());
+            clearInvocations(releaseDAO, releaseContentDAO, releaseAttemptDAO);
+            when(releaseContentDAO.insert(any(GatewayReleaseContentPO.class))).thenReturn(0);
+            assertThatThrownBy(() -> releases.insertNative(releaseCarrier(GatewayReleaseStatus.READY), artifact, 1))
+                    .hasMessage("YUHENG_ADMIN_RELEASE_CONTENT_INSERT_CONFLICT");
+            verify(releaseAttemptDAO, never()).insert(any(GatewayReleaseAttemptRecordPO.class));
+        } finally { TransactionSynchronizationManager.setActualTransactionActive(false); }
+    }
+
+    @Test
+    void nativeInsertRequiresTheExistingTransactionAndTrustedArtifactOwnerBeforeAnyWrite() {
+        var artifact = nativeArtifact();
+        assertThatThrownBy(() -> releases.insertNative(releaseCarrier(GatewayReleaseStatus.READY), artifact, 1))
+                .hasMessage("YUHENG_NATIVE_RELEASE_TRANSACTION_REQUIRED");
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            var canonical = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.canonicalSnapshot();
+            canonical.put("ownerTenantId", Long.toString(FOREIGN_TENANT));
+            var foreign = new GatewayCiliumReleaseArtifact(canonical, artifact.activationContent(), artifact.chunkManifest());
+            assertThatThrownBy(() -> releases.insertNative(releaseCarrier(GatewayReleaseStatus.READY), foreign, 1))
+                    .hasMessage("YUHENG_NATIVE_RELEASE_IDENTITY_MISMATCH");
+            assertThatThrownBy(() -> releases.insertNative(releaseCarrier(GatewayReleaseStatus.READY), artifact, 0))
+                    .hasMessage("YUHENG_NATIVE_RELEASE_IDENTITY_MISMATCH");
+        } finally { TransactionSynchronizationManager.setActualTransactionActive(false); }
+        verify(releaseDAO, never()).insert(any(GatewayReleaseRecordPO.class));
+        verify(releaseContentDAO, never()).insert(any(GatewayReleaseContentPO.class));
+    }
+
+    @Test
+    void nativeReadChecksCurrentHeadAndPersistedHashesInsteadOfDecodingAsLegacyActivation() {
+        var artifact = nativeArtifact();
+        when(releaseDAO.selectActiveById(any(Serializable.class))).thenReturn(releaseHead(RELEASE_ID, GatewayReleaseStatus.READY, RELEASE_CREATED_AT, 0L));
+        var row = nativeContent(artifact);
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(row);
+        var loaded = releases.loadNative(Long.toString(RELEASE_ID)).orElseThrow();
+        verify(releaseDAO).selectActiveById(RELEASE_ID);
+        verify(releaseContentDAO).selectOne(any(), anyBoolean());
+        assertThat(loaded.canonicalSnapshot()).isEqualTo(artifact.canonicalSnapshot());
+        assertThat(loaded.chunkManifest()).isEqualTo(artifact.chunkManifest());
+        row.setArtifactSha256("f".repeat(64));
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID)))
+                .hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT").hasNoCause();
+        row.setArtifactSha256(artifact.artifactSha256()).setRuleContentSha256("f".repeat(64));
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID))).hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT");
+        row.setRuleContentSha256(artifact.ruleContentSha256()).setSnapshotSize(artifact.snapshotSize() + 1);
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID))).hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT");
+        row.setSnapshotSize(artifact.snapshotSize());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) row.getCanonicalSnapshot().get("exposurePublication"))
+                .put("schemaVersion", "cilium-exposure-v99");
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID)))
+                .hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT").hasNoCause();
+        clearInvocations(releaseDAO, releaseContentDAO);
+        assertThat(releases.loadNative("not-a-decimal")).isEmpty();
+        verify(releaseDAO, never()).selectActiveById(any(Serializable.class));
+        verify(releaseContentDAO, never()).selectOne(any(), anyBoolean());
+    }
+
+    @Test
+    void nativeReadKeepsAbsenceLegacyAndUntrustedOwnerDistinct() {
+        assertThat(releases.loadNative(Long.toString(RELEASE_ID))).isEmpty();
+        var artifact = nativeArtifact();
+        var head = releaseHead(RELEASE_ID, GatewayReleaseStatus.READY, RELEASE_CREATED_AT, 0L);
+        when(releaseDAO.selectActiveById(any(Serializable.class))).thenReturn(head);
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(null);
+        assertThat(releases.loadNative(Long.toString(RELEASE_ID))).isEmpty();
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(releaseContent(RELEASE_ID));
+        assertThat(releases.loadNative(Long.toString(RELEASE_ID))).isEmpty();
+        var canonical = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.canonicalSnapshot();
+        canonical.put("ownerTenantId", Long.toString(FOREIGN_TENANT));
+        var foreign = new GatewayCiliumReleaseArtifact(canonical, artifact.activationContent(), artifact.chunkManifest());
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(nativeContent(foreign));
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID))).hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT");
+    }
+
+    @Test
+    void nativeDocumentsAreDefensiveAndJsonbNumericFormattingDoesNotChangeTheArtifactDigest() {
+        var artifact = nativeArtifact();
+        var canonical = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.canonicalSnapshot();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) canonical.get("sourceContent")).put("numeric", 1.00d);
+        var numeric = new GatewayCiliumReleaseArtifact(canonical, artifact.activationContent(), artifact.chunkManifest());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) canonical.get("sourceContent")).put("numeric", 1);
+        var integral = new GatewayCiliumReleaseArtifact(canonical, artifact.activationContent(), artifact.chunkManifest());
+        assertThat(numeric.artifactSha256()).isEqualTo(integral.artifactSha256());
+        canonical.put("ownerTenantId", "9999");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) numeric.canonicalSnapshot()).remove("sourceContent");
+        assertThat(numeric.ownerTenantId()).isEqualTo(Long.toString(TRUSTED_TENANT));
+        assertThat(numeric.canonicalSnapshot().has("sourceContent")).isTrue();
+        assertThat(numeric.toString()).doesNotContain("numeric", "ownerTenantId");
+    }
+
+    @Test
+    void nativeEnvelopeRejectsProfileKindAndCrossDocumentDigestMismatch() {
+        var artifact = nativeArtifact();
+        var activation = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.activationContent();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) activation.get("exposures").get(0)).put("contentSha256", "f".repeat(64));
+        assertThatThrownBy(() -> new GatewayCiliumReleaseArtifact(artifact.canonicalSnapshot(), activation, artifact.chunkManifest()))
+                .hasMessage("YUHENG_CILIUM_ARTIFACT_INVALID");
+        var manifest = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.chunkManifest();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) manifest.get("resources").get(0).get("object")).put("kind", "GRPCRoute");
+        assertThatThrownBy(() -> new GatewayCiliumReleaseArtifact(artifact.canonicalSnapshot(), artifact.activationContent(), manifest))
+                .hasMessage("YUHENG_CILIUM_ARTIFACT_INVALID");
+        var canonical = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.canonicalSnapshot();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) canonical.get("exposurePublication")).put("capabilityProfileId", "old-tls-profile");
+        assertThatThrownBy(() -> new GatewayCiliumReleaseArtifact(canonical, artifact.activationContent(), artifact.chunkManifest()))
+                .hasMessage("YUHENG_CILIUM_ARTIFACT_INVALID");
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "yuheng.outbox.test.postgres.url", matches = ".+")
+    void nativeV2JsonbRoundTripAndRollbackPreserveTheExistingV1Archive() throws Exception {
+        top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.withManagedOutbox(application -> {
+            assertThat(application).hasNotFailed();
+            var sessionsFactory = application.getBean(org.apache.ibatis.session.SqlSessionFactory.class);
+            var sessionConfiguration = sessionsFactory.getConfiguration();
+            for (String mapper : List.of("GatewayReleaseDAO", "GatewayReleaseContentDAO", "GatewayReleaseAttemptDAO",
+                    "GatewayReleaseTargetDAO", "GatewayReleasePublicationDAO")) {
+                var resource = new org.springframework.core.io.ClassPathResource("mybatis/mapper/release/" + mapper + ".xml");
+                try (var stream = resource.getInputStream()) {
+                    new org.apache.ibatis.builder.xml.XMLMapperBuilder(stream, sessionConfiguration,
+                            resource.toString(), sessionConfiguration.getSqlFragments()).parse();
+                }
+            }
+            var sessions = new org.mybatis.spring.SqlSessionTemplate(sessionsFactory);
+            var properties = application.getBean(EgonColaMybatisPlusProperties.class);
+            var repository = new MpGatewayReleaseRepository(
+                    new GatewayReleasePersistenceRepository(sessions.getMapper(GatewayReleaseDAO.class), properties),
+                    new GatewayReleaseContentPersistenceRepository(sessions.getMapper(GatewayReleaseContentDAO.class), properties),
+                    new GatewayReleaseAttemptPersistenceRepository(sessions.getMapper(GatewayReleaseAttemptDAO.class), properties),
+                    new GatewayReleaseTargetPersistenceRepository(sessions.getMapper(GatewayReleaseTargetDAO.class), properties),
+                    new GatewayReleasePublicationPersistenceRepository(sessions.getMapper(GatewayReleasePublicationDAO.class), properties),
+                    new GatewayReleasePersistenceConverter(), new GatewayReleaseAttemptPersistenceConverter(),
+                    new GatewayReleaseTargetPersistenceConverter(), application.getBean("jacksonObjectMapper", ObjectMapper.class));
+            var context = application.getBean(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent.class);
+            var transactions = application.getBean("gatewayExposureTransactionTemplate", org.springframework.transaction.support.TransactionTemplate.class);
+            var logical = new org.springframework.jdbc.core.JdbcTemplate(application.getBean("dataSource", javax.sql.DataSource.class));
+            var physical = new org.springframework.jdbc.core.JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_URL),
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_USER), ""));
+            var nativeSnapshot = (com.fasterxml.jackson.databind.node.ObjectNode) nativeArtifact().canonicalSnapshot();
+            nativeSnapshot.put("ownerTenantId", "7001");
+            ((com.fasterxml.jackson.databind.node.ObjectNode) nativeSnapshot.get("sourceContent")).put("numeric", 1.00d);
+            var nativeRelease = new GatewayCiliumReleaseArtifact(nativeSnapshot, nativeArtifact().activationContent(), nativeArtifact().chunkManifest());
+            context.call(null, () -> transactions.execute(status -> {
+                logical.update("""
+                        INSERT INTO gateway_group(id,tenant_id,create_user_id,create_time,update_user_id,update_time,
+                            gateway_group_code,display_name,env,namespace)
+                        VALUES (?,7001,'scheduled-test-service',CURRENT_TIMESTAMP,'scheduled-test-service',CURRENT_TIMESTAMP,
+                            'native-release-acceptance','Native release acceptance','isolated','acceptance')
+                        """, GATEWAY_GROUP_ID);
+                repository.insertNative(releaseCarrier(GatewayReleaseStatus.READY), nativeRelease, 1);
+                repository.insert(releaseCarrier(GatewayReleaseStatus.SUCCESS).setId(Long.toString(SUCCESSOR_RELEASE_ID)), compiledRelease(), 1);
+                return null;
+            }));
+            var originalV1 = physical.queryForMap("""
+                    SELECT canonical_snapshot::text, activation_content::text, chunk_manifest::text,
+                        rule_content_sha256, artifact_sha256, snapshot_size, xmin::text AS transaction_id
+                    FROM public.gateway_release_content_t0 WHERE release_id=?
+                    """, SUCCESSOR_RELEASE_ID);
+            var loaded = context.call(null, () -> transactions.execute(status -> repository.loadNative(Long.toString(RELEASE_ID)).orElseThrow()));
+            assertThat(loaded.canonicalSnapshot()).isEqualTo(nativeRelease.canonicalSnapshot());
+            assertThat(loaded.activationContent()).isEqualTo(nativeRelease.activationContent());
+            assertThat(loaded.chunkManifest()).isEqualTo(nativeRelease.chunkManifest());
+            assertThat(loaded.ruleContentSha256()).isEqualTo(nativeRelease.ruleContentSha256());
+            assertThat(loaded.artifactSha256()).isEqualTo(nativeRelease.artifactSha256());
+            assertThat(context.call(null, () -> repository.loadNative(Long.toString(SUCCESSOR_RELEASE_ID)))).isEmpty();
+            assertThat(physical.queryForMap("""
+                    SELECT canonical_snapshot::text, activation_content::text, chunk_manifest::text,
+                        rule_content_sha256, artifact_sha256, snapshot_size, xmin::text AS transaction_id
+                    FROM public.gateway_release_content_t0 WHERE release_id=?
+                    """, SUCCESSOR_RELEASE_ID)).isEqualTo(originalV1);
+            assertThat(physical.queryForList("""
+                    SELECT xmin::text FROM public.gateway_release_t0 WHERE id=?
+                    UNION ALL SELECT xmin::text FROM public.gateway_release_content_t0 WHERE release_id=?
+                    UNION ALL SELECT xmin::text FROM public.gateway_release_attempt_t0 WHERE release_id=?
+                    """, String.class, RELEASE_ID, RELEASE_ID, RELEASE_ID)).hasSize(3).allMatch(
+                    physical.queryForObject("SELECT xmin::text FROM public.gateway_release_t0 WHERE id=?", String.class, RELEASE_ID)::equals);
+            assertThat(physical.queryForObject("""
+                    SELECT pg_typeof(canonical_snapshot)::text || ',' || pg_typeof(activation_content)::text || ',' || pg_typeof(chunk_manifest)::text
+                    FROM public.gateway_release_content_t0 WHERE release_id=?
+                    """, String.class, RELEASE_ID)).isEqualTo("jsonb,jsonb,jsonb");
+            long rolledBackId = 9103L;
+            var rollbackSnapshot = (com.fasterxml.jackson.databind.node.ObjectNode) nativeRelease.canonicalSnapshot();
+            rollbackSnapshot.put("releaseId", Long.toString(rolledBackId));
+            var rollbackActivation = (com.fasterxml.jackson.databind.node.ObjectNode) nativeRelease.activationContent();
+            rollbackActivation.put("releaseId", Long.toString(rolledBackId));
+            var rollbackArtifact = new GatewayCiliumReleaseArtifact(rollbackSnapshot, rollbackActivation, nativeRelease.chunkManifest());
+            assertThatThrownBy(() -> context.call(null, () -> transactions.execute(status -> {
+                repository.insertNative(releaseCarrier(GatewayReleaseStatus.READY).setId(Long.toString(rolledBackId)), rollbackArtifact, 1);
+                throw new IllegalStateException("controlled-native-release-rollback");
+            }))).hasMessage("controlled-native-release-rollback");
+            for (String table : List.of("gateway_release_t0", "gateway_release_content_t0", "gateway_release_attempt_t0")) {
+                String column = table.equals("gateway_release_t0") ? "id" : "release_id";
+                assertThat(physical.queryForObject("SELECT count(*) FROM public." + table + " WHERE " + column + "=?", Long.class, rolledBackId)).isZero();
+            }
+            assertThat(context.call(null, () -> repository.loadNative(Long.toString(rolledBackId)))).isEmpty();
+        });
+    }
+
+    private static GatewayReleaseContentPO nativeContent(GatewayCiliumReleaseArtifact artifact) {
+        return releaseContent(RELEASE_ID).setCanonicalSnapshot(artifact.canonicalSnapshot())
+                .setActivationContent(artifact.activationContent()).setChunkManifest(artifact.chunkManifest())
+                .setRuleContentSha256(artifact.ruleContentSha256()).setArtifactSha256(artifact.artifactSha256())
+                .setSnapshotSize(artifact.snapshotSize());
+    }
+
+    private static GatewayCiliumReleaseArtifact nativeArtifact() {
+        var snapshot = JSON.createObjectNode().put("releaseId", Long.toString(RELEASE_ID))
+                .put("ownerTenantId", Long.toString(TRUSTED_TENANT)).put("gatewayGroupId", Long.toString(GATEWAY_GROUP_ID))
+                .put("generatedAt", NOW.toString());
+        snapshot.putObject("sourceContent").putArray("routes");
+        var publication = snapshot.putObject("exposurePublication").put("schemaVersion", GatewayCiliumReleaseArtifact.SCHEMA_VERSION)
+                .put("target", "CILIUM_GATEWAY_API").put("gatewayClassName", "cilium")
+                .put("routeControllerName", "io.cilium/gateway-controller").put("compilerVersion", "2")
+                .put("capabilityProfileId", GatewayCiliumReleaseArtifact.CAPABILITY_PROFILE_ID)
+                .put("publicationDomainId", "public-https-main").put("backendAuthorizationProfile", "oauth2-resource-server-v1");
+        var exposure = publication.putArray("exposures").addObject().put("exposureId", "810001").put("routeId", "orders-read")
+                .put("contentSha256", RULE_SHA).put("expectedDesiredGeneration", "1").put("requestedState", "OPEN");
+        exposure.putArray("resourceRefs"); exposure.putArray("backendRefs");
+        exposure.putObject("routeObject").put("kind", "HTTPRoute").put("namespace", "yuheng-routes").put("name", "yuheng-exposure-810001");
+        var activation = JSON.createObjectNode().put("schemaVersion", GatewayCiliumReleaseArtifact.SCHEMA_VERSION)
+                .put("releaseId", Long.toString(RELEASE_ID));
+        activation.putArray("exposures").addObject().put("exposureId", "810001").put("desiredGeneration", "1")
+                .put("effectiveState", "OPEN").put("contentSha256", RULE_SHA).putNull("precondition");
+        var manifest = JSON.createObjectNode().put("schemaVersion", GatewayCiliumReleaseArtifact.SCHEMA_VERSION)
+                .put("compilerVersion", "2").put("capabilityProfileId", GatewayCiliumReleaseArtifact.CAPABILITY_PROFILE_ID);
+        manifest.putArray("dependencies");
+        var resource = manifest.putArray("resources").addObject().put("exposureId", "810001").put("contentSha256", RULE_SHA);
+        var object = resource.putObject("object").put("apiVersion", "gateway.networking.k8s.io/v1").put("kind", "HTTPRoute");
+        object.putObject("metadata").put("namespace", "yuheng-routes").put("name", "yuheng-exposure-810001");
+        object.putObject("spec").putArray("parentRefs");
+        resource.putObject("approvedParent").put("group", "gateway.networking.k8s.io").put("kind", "Gateway")
+                .put("namespace", "gateway-system").put("name", "public-gateway").put("sectionName", "https-public");
+        return new GatewayCiliumReleaseArtifact(snapshot, activation, manifest);
+    }
+
     @Test
     @DisplayName("registering a release writes the head, the frozen content snapshot and the first attempt")
     @SuppressWarnings("unchecked")

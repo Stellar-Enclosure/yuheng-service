@@ -3,6 +3,9 @@ package top.egon.cola.component.yuheng.admin.release.repository;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayRecoverableReleaseAttemptBO;
 import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseAttemptBO;
@@ -45,6 +48,13 @@ public interface GatewayReleaseRepository {
             @Valid GatewayReleaseBO release,
             CompiledGatewayRelease compiled,
             int attemptNo);
+
+    /** Inserts one native head, its versioned documents and initial attempt in the caller's PRIMARY transaction. */
+    void insertNative(@NotNull @Valid GatewayReleaseBO release, @NotNull @Valid GatewayCiliumReleaseArtifact artifact,
+                      @Positive int attemptNo);
+
+    /** Legacy or absent records are empty; native corruption never falls back to the Engine decoder. */
+    Optional<GatewayCiliumReleaseArtifact> loadNative(@NotBlank String releaseId);
 
     /**
      * 中文说明：执行 find 操作；按不透明编号读取单个活跃发布头业务载体，缺失或不可命中时如实返回空。

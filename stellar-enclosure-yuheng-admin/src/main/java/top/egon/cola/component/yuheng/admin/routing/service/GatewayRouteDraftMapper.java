@@ -1,9 +1,12 @@
 package top.egon.cola.component.yuheng.admin.routing.service;
 
 
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
+import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRequestBodyMode;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRouteProfile;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRouteTransportPolicy;
+import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeRoute;
 import top.egon.cola.component.yuheng.contract.rule.GatewayTransportProtocol;
 import top.egon.cola.component.yuheng.contract.rule.GatewayTransportResponseMode;
 
@@ -75,6 +78,23 @@ public final class GatewayRouteDraftMapper {
         );
         copyTransportPolicy(canonical, content.get("transportPolicy"));
         return Collections.unmodifiableMap(canonical);
+    }
+
+    /** Maps an already normalized draft for validation and compilation through the same syntax path. */
+    public GatewayRuntimeRoute toRuntimeRoute(GatewayRouteDraftBO route, Map<String, Object> canonical) {
+        var zones = new LinkedHashSet<AccessZone>();
+        if (canonical.get("accessZones") instanceof Iterable<?> values) {
+            for (Object value : values) {
+                if (!(value instanceof String zone)) {
+                    throw new IllegalArgumentException("Invalid route access zone");
+                }
+                zones.add(AccessZone.valueOf(zone.toUpperCase(Locale.ROOT)));
+            }
+        }
+        int priority = canonical.get("priority") instanceof Number number ? number.intValue() : 0;
+        return new GatewayRuntimeRoute(route.getRouteId(), route.getOperationId(), text(canonical.get("host")),
+                text(canonical.get("httpMethod")), text(canonical.get("pathPattern")), zones, priority,
+                route.isEnabled(), transportPolicy(canonical));
     }
 
     /**

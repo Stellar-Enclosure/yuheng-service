@@ -12,6 +12,8 @@ import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationIssueVO;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftRepository;
 import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository;
@@ -266,6 +268,25 @@ class GatewayDraftServiceTest {
                 .containsKey("credentialRecoveryProviderId");
         assertThat(policy.getValue().getContent()
                 .get("credentialRecoveryProviderId")).isNull();
+    }
+
+    @Test
+    void validatesAndDiffsPublicDraftWithoutInventingAPlatformBinding() {
+        Fixture fixture = fixture();
+        when(fixture.store.routes("group-1")).thenReturn(List.of(
+                new GatewayRouteDraftBO("group-1", "public-on", "operation-1",
+                        legacyRoute("/v1/orders"), true, NOW, "admin"),
+                new GatewayRouteDraftBO("group-1", "public-off", "operation-1",
+                        legacyRoute("/v1/orders-old"), false, NOW, "admin")));
+        var report = fixture.service.validate("group-1");
+        assertThat(report.valid()).isFalse();
+        assertThat(report.errors()).filteredOn(issue -> issue.code().equals("YUHENG_CILIUM_PUBLICATION_BINDING_REQUIRED"))
+                .extracting(GatewayDraftValidationIssueVO::path).containsExactly("routes.public-on");
+        var diff = fixture.service.diff("group-1");
+        assertThat(diff.capabilityProfileId()).isEqualTo(GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID);
+        assertThat(diff.draftSha256()).isEqualTo(report.draftSha256());
+        assertThat(diff.exposureIssues()).containsAll(report.errors());
+        verify(fixture.store, never()).upsertRoute(any());
     }
 
     @Test

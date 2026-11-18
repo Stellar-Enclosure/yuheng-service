@@ -310,6 +310,14 @@ class GatewayUrlExposureRepositoryIT {
         assertThat(withdrawal.getDesiredGeneration()).isEqualTo(3L);
         assertThat(withdrawal.getVersion()).isEqualTo(3L);
         assertThat(withdrawal.getWithdrawnAt()).isEqualTo(NOW);
+        var byStableRoute = asOwner(OWNER, () -> repository.findOwnedRoute(OWNER, GROUP, registration.getRouteId()))
+                .orElseThrow();
+        assertThat(byStableRoute.getId()).isEqualTo(withdrawal.getId());
+        assertThat(byStableRoute.getDesiredState()).isEqualTo(WITHDRAWN);
+        assertThat(asOwner(OWNER, () -> repository.findOwnedRoute(OWNER, OTHER_GROUP, registration.getRouteId()))).isEmpty();
+        assertThat(asOwner(OTHER_OWNER, () -> repository.findOwnedRoute(OTHER_OWNER, GROUP, registration.getRouteId()))).isEmpty();
+        assertThatThrownBy(() -> asOwner(OTHER_OWNER, () -> repository.findOwnedRoute(OWNER, GROUP, registration.getRouteId())))
+                .isInstanceOf(IllegalStateException.class).hasMessage("TENANT_CONTEXT_MISMATCH");
         var replay = transaction(OWNER, () -> repository.reserve(OWNER, registration));
         assertThat(replay.getDesiredState()).isEqualTo(WITHDRAWN);
         assertThat(replay.getVersion()).isEqualTo(3L);
@@ -365,6 +373,9 @@ class GatewayUrlExposureRepositoryIT {
         }
         assertThat(transaction(OTHER_OWNER, () -> repository.reserve(OTHER_OWNER, sibling)).getId())
                 .isEqualTo(6503L);
+        assertThat(asOwner(OWNER, () -> repository.hasPublishedOverlap(OWNER, first))).isFalse();
+        assertThat(asOwner(OTHER_OWNER, () -> repository.hasPublishedOverlap(OTHER_OWNER, overlapping))).isTrue();
+        assertThat(asOwner(OTHER_OWNER, () -> repository.hasPublishedOverlap(OTHER_OWNER, sibling))).isFalse();
         assertThat(asOwner(OTHER_OWNER, () -> repository.findOwned(OTHER_OWNER, 6502L))).isEmpty();
     }
 

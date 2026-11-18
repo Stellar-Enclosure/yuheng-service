@@ -222,6 +222,139 @@ public record GatewayReleaseVO(
                 oauthScopes = GatewayPermissionCodes.READ)
         @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
                 plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
-        List<top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseAttemptBO> attempts
+        List<top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseAttemptBO> attempts,
+        @PermissionResource(key = "yuheng.field.GatewayReleaseVO.exposureOutcomes", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.exposureOutcomes",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        List<ExposureOutcomeVO> exposureOutcomes,
+        @PermissionResource(key = "yuheng.field.GatewayReleaseVO.clusterTargets", type = ResourceType.FIELD,
+                labelPage = "gateway.permissions", labelKey = "field.clusterTargets",
+                allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                oauthScopes = GatewayPermissionCodes.READ)
+        @FieldPermissions(valueType = PermissionManifest.JsonFieldType.ARRAY,
+                plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+        List<ClusterTargetVO> clusterTargets
 ) {
+    public GatewayReleaseVO {
+        exposureOutcomes = List.copyOf(exposureOutcomes == null ? List.of() : exposureOutcomes);
+        clusterTargets = List.copyOf(clusterTargets == null ? List.of() : clusterTargets);
+    }
+
+    /** Preserves the historical release projection constructor for archive consumers. */
+    public GatewayReleaseVO(String releaseId, String gatewayGroupId, long draftRevision, String basedOnReleaseId,
+            String rollbackOfReleaseId, GatewayReleaseStatus status, boolean partialApplied, String changeId,
+            Map<String, Object> validationReport, Map<String, Object> structuredDiff, String changeReason,
+            Instant createdAt, Instant updatedAt,
+            List<top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayReleaseAttemptBO> attempts) {
+        this(releaseId, gatewayGroupId, draftRevision, basedOnReleaseId, rollbackOfReleaseId, status, partialApplied,
+                changeId, validationReport, structuredDiff, changeReason, createdAt, updatedAt, attempts, List.of(), List.of());
+    }
+
+    /** result is null while the accepted target has no measured result. */
+    public record ExposureOutcomeVO(
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.exposureId", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.exposureId",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String exposureId,
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.desiredGeneration", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.desiredGeneration",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String desiredGeneration,
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.observedGeneration", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.observedGeneration",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String observedGeneration,
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.effectiveState", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.effectiveState",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String effectiveState,
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.result", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.result",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String result,
+            @PermissionResource(key = "yuheng.field.ExposureOutcomeVO.errorCode", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.errorCode",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String errorCode
+    ) { }
+
+    public record ClusterTargetVO(
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.clusterId", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.clusterId",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String clusterId,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.kind", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.kind",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String kind,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.namespace", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.namespace",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String namespace,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.name", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.name",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String name,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.uid", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.uid",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String uid,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.metadataGeneration", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.metadataGeneration",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String metadataGeneration,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.resourceVersion", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.resourceVersion",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            String resourceVersion,
+            @PermissionResource(key = "yuheng.field.ClusterTargetVO.converged", type = ResourceType.FIELD,
+                    labelPage = "gateway.permissions", labelKey = "field.converged",
+                    allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+                    oauthScopes = GatewayPermissionCodes.READ)
+            @FieldPermissions(valueType = PermissionManifest.JsonFieldType.BOOLEAN,
+                    plainRead = @PermissionGroup(codes = GatewayPermissionCodes.READ))
+            boolean converged
+    ) { }
 }

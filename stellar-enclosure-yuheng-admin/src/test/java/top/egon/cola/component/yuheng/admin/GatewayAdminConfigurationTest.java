@@ -2,23 +2,96 @@ package top.egon.cola.component.yuheng.admin.bootstrap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminOpenApiProperties;
 import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
 import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientFactory;
 import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientHandle;
+import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
+import top.egon.cola.component.yuheng.admin.exposure.domain.exception.GatewayUrlExposureException;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.BindingVO;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.PublicationDomainVO;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.AuthorizationBinding;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.BackendReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.BindingResolver;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.GatewayReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.GrantReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.PublicationBinding;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
+import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class GatewayAdminConfigurationTest {
+
+    @Test
+    void explicitReopenRequiresTheSameStillApprovedBindingAndFrozenContent() {
+        var configuration = new GatewayAdminConfiguration();
+        ObjectMapper json = configuration.gatewayOpenApiObjectMapper();
+        var compiler = new GatewayHttpRouteCompiler(json);
+        var pinned = new PublicationBinding(7, 810, "orders", "list-orders", "prod", "prod", "orders-public", 1,
+                new PublicationDomainVO("cluster", "public-zone", "1",
+                        List.of(new BindingVO("edge-system", "public-apps", "https-api")), true),
+                new GatewayReference("edge-system", "public-apps", "gateway-uid", "https-api", true, true),
+                "yuheng-routes", Set.of("api.example.com"), Set.of("GET"), Set.of(),
+                List.of(new BackendReference("apps-prod", "orders", "svc-uid", "2", 80, 8080, 100, "HTTP_1_1",
+                        new GrantReference("apps-prod", "allow-orders", "grant-uid", "4", "yuheng-routes", "orders"),
+                        "a".repeat(64), Set.of("pod-uid"), true)),
+                new AuthorizationBinding(GatewayHttpRouteCompiler.AUTHORIZATION_PROFILE, "https://api.example.com/orders",
+                        "1", "b".repeat(64), true, List.of()));
+        var approved = new AtomicReference<>(pinned);
+        BindingResolver resolver = (owner, group, route, operation) ->
+                owner == 7 && group == 810 && route.equals("orders") && operation.equals("list-orders")
+                        ? Optional.ofNullable(approved.get()) : Optional.empty();
+        var factory = new StaticListableBeanFactory();
+        factory.addBean("gatewayHttpRouteBindingResolver", resolver);
+        ObjectProvider<BindingResolver> bindings = factory.getBeanProvider(BindingResolver.class);
+        var releases = mock(GatewayReleaseRepository.class);
+        var artifact = mock(GatewayCiliumReleaseArtifact.class);
+        when(releases.loadNative("51")).thenReturn(Optional.of(artifact));
+        when(artifact.ownerTenantId()).thenReturn("7");
+        when(artifact.gatewayGroupId()).thenReturn("810");
+        String digest = "f".repeat(64);
+        var snapshot = json.createObjectNode();
+        snapshot.putObject("exposurePublication").putArray("exposures").addObject().put("exposureId", "101")
+                .put("routeId", "orders").put("contentSha256", digest).put("expectedDesiredGeneration", "1");
+        when(artifact.canonicalSnapshot()).thenReturn(snapshot);
+        var manifest = json.createObjectNode();
+        manifest.putArray("dependencies").addObject().set("publicationBinding", json.valueToTree(pinned));
+        when(artifact.chunkManifest()).thenReturn(manifest);
+        var validator = configuration.gatewayExposureReopenValidator(releases, compiler, bindings, json);
+        var closed = GatewayUrlExposureBO.builder().id(101L).ownerTenantId(7L).gatewayGroupId(810L)
+                .routeId("orders").releaseId(51L).contentSha256(digest).desiredGeneration(9L).build();
+
+        validator.validate(7, closed);
+        closed.setContentSha256("e".repeat(64));
+        assertThatThrownBy(() -> validator.validate(7, closed)).isInstanceOfSatisfying(GatewayUrlExposureException.class,
+                failure -> assertThat(failure.code()).isEqualTo("YUHENG_EXPOSURE_BINDING_CONFLICT"));
+        closed.setContentSha256(digest);
+        com.fasterxml.jackson.databind.node.ObjectNode changed = json.valueToTree(pinned);
+        changed.put("bindingVersion", 2);
+        approved.set(json.convertValue(changed, PublicationBinding.class));
+        assertThatThrownBy(() -> validator.validate(7, closed)).isInstanceOfSatisfying(GatewayUrlExposureException.class,
+                failure -> assertThat(failure.status()).isEqualTo(409));
+        approved.set(null);
+        assertThatThrownBy(() -> validator.validate(7, closed)).isInstanceOf(GatewayUrlExposureException.class);
+    }
 
     @Test
     void projectionClockIsNamedAndIndependentOfOpenApiFlag() throws Exception {

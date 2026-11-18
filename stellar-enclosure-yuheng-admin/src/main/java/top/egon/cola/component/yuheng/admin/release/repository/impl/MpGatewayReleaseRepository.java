@@ -10,8 +10,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.converter.GatewayReleaseAttemptPersistenceConverter;
 import top.egon.cola.component.yuheng.admin.release.converter.GatewayReleasePersistenceConverter;
 import top.egon.cola.component.yuheng.admin.release.converter.GatewayReleaseTargetPersistenceConverter;
@@ -63,7 +69,7 @@ import java.util.Optional;
  */
 @Slf4j
 @Repository("mpGatewayReleaseRepository")
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Validated
 public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
 
@@ -153,6 +159,65 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                 PENDING_ATTEMPT_STATUS,
                 release.getCreatedAt()
         );
+    }
+
+    @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.MANDATORY)
+    public void insertNative(GatewayReleaseBO release, GatewayCiliumReleaseArtifact artifact, int attemptNo) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("YUHENG_NATIVE_RELEASE_TRANSACTION_REQUIRED");
+        }
+        Objects.requireNonNull(release, "release"); Objects.requireNonNull(artifact, "artifact");
+        if (attemptNo <= 0 || !artifact.releaseId().equals(release.getId())
+                || !artifact.gatewayGroupId().equals(release.getGatewayGroupId())
+                || !artifact.ownerTenantId().equals(Long.toString(EgonColaTenantIdProvider.currentTenantId()))) {
+            throw new IllegalArgumentException("YUHENG_NATIVE_RELEASE_IDENTITY_MISMATCH");
+        }
+        GatewayReleaseRecordPO head = releasePersistenceConverter.newRow(release);
+        requireWritten(releasePersistenceRepository.save(head), "YUHENG_ADMIN_RELEASE_INSERT_CONFLICT");
+        var content = GatewayReleaseContentPO.builder().releaseId(head.getId())
+                .ruleContentSha256(artifact.ruleContentSha256()).artifactSha256(artifact.artifactSha256())
+                .canonicalSnapshot(artifact.canonicalSnapshot()).activationContent(artifact.activationContent())
+                .chunkManifest(artifact.chunkManifest()).snapshotSize(artifact.snapshotSize()).build();
+        requireWritten(contentPersistenceRepository.save(content), "YUHENG_ADMIN_RELEASE_CONTENT_INSERT_CONFLICT");
+        insertAttempt(head.getId(), attemptNo, PENDING_ATTEMPT_STATUS, release.getCreatedAt());
+    }
+
+    @Override
+    public Optional<GatewayCiliumReleaseArtifact> loadNative(String releaseId) {
+        Long key = technicalId(releaseId);
+        if (key == null) return Optional.empty();
+        var head = releasePersistenceRepository.getOptById(key);
+        if (head.isEmpty()) return Optional.empty();
+        var content = contentPersistenceRepository.getOneOpt(boundPredicate(Wrappers.<GatewayReleaseContentPO>lambdaQuery()
+                .eq(GatewayReleaseContentPO::getReleaseId, key)));
+        if (content.isEmpty()) return Optional.empty();
+        var row = content.orElseThrow();
+        JsonNode snapshot = row.getCanonicalSnapshot();
+        boolean nativeFormat = snapshot != null && snapshot.has("exposurePublication")
+                || nativeSchema(row.getActivationContent()) || nativeSchema(row.getChunkManifest());
+        if (!nativeFormat) return Optional.empty();
+        try {
+            var artifact = new GatewayCiliumReleaseArtifact(snapshot, row.getActivationContent(), row.getChunkManifest());
+            var release = head.orElseThrow();
+            if (!Objects.equals(row.getReleaseId(), key) || !artifact.releaseId().equals(Long.toString(key))
+                    || !Objects.equals(release.getTenantId(), row.getTenantId())
+                    || !artifact.ownerTenantId().equals(Long.toString(row.getTenantId()))
+                    || !artifact.gatewayGroupId().equals(Long.toString(release.getGatewayGroupId()))
+                    || !artifact.ruleContentSha256().equals(row.getRuleContentSha256())
+                    || !artifact.artifactSha256().equals(row.getArtifactSha256())
+                    || !Objects.equals(artifact.snapshotSize(), row.getSnapshotSize())) {
+                throw new IllegalStateException("YUHENG_NATIVE_RELEASE_CORRUPT");
+            }
+            return Optional.of(artifact);
+        } catch (RuntimeException corrupt) {
+            throw new IllegalStateException("YUHENG_NATIVE_RELEASE_CORRUPT");
+        }
+    }
+
+    private static boolean nativeSchema(JsonNode node) {
+        JsonNode schema = node == null ? null : node.get("schemaVersion");
+        return schema != null && schema.isTextual() && schema.textValue().startsWith("cilium-");
     }
 
     /**

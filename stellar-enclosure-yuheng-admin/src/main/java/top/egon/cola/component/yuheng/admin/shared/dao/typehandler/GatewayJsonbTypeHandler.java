@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.type.BaseTypeHandler;
 import org.apache.ibatis.type.JdbcType;
+import org.postgresql.util.PGobject;
 
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
@@ -69,9 +70,12 @@ public class GatewayJsonbTypeHandler extends BaseTypeHandler<Object> {
     @Override
     public void setNonNullParameter(PreparedStatement statement, int index, Object parameter,
                                     JdbcType jdbcType) throws SQLException {
-        // Types.OTHER keeps the driver from sending character varying, so PostgreSQL infers jsonb
-        // from the target column instead of rejecting an untyped string.
-        statement.setObject(index, encode(parameter), Types.OTHER);
+        // ShardingSphere retains the value but replays setObject without the JDBC type argument.
+        // Carry jsonb on the value itself so both routed and direct PostgreSQL statements retain it.
+        PGobject jsonb = new PGobject();
+        jsonb.setType("jsonb");
+        jsonb.setValue(encode(parameter));
+        statement.setObject(index, jsonb, Types.OTHER);
     }
 
     @Override

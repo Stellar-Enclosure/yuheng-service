@@ -25,6 +25,12 @@ public interface GatewayUrlExposureRepository {
 
     Optional<GatewayUrlExposureBO> findOwned(@Positive long trustedOwner, @Positive long exposureId);
 
+    Optional<GatewayUrlExposureBO> findOwnedRoute(@Positive long trustedOwner, @Positive long gatewayGroupId,
+                                                String routeId);
+
+    /** Reports domain occupancy without returning a conflicting tenant's identity or mutating its state. */
+    boolean hasPublishedOverlap(@Positive long trustedOwner, @NotNull GatewayUrlExposureBO proposed);
+
     boolean compareAndSetDesired(long trustedOwner, long exposureId, long expectedVersion,
             long expectedGeneration, GatewayUrlExposureStateEnum oldState,
             GatewayUrlExposureStateEnum nextState, String reason, Instant at);

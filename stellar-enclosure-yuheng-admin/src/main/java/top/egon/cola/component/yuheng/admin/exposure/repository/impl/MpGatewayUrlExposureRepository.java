@@ -97,7 +97,7 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
                     reserved.add(converter.toBusiness(existing));
                     continue; // Current CLOSED/WITHDRAWN facts are never replaced by a replayed OPEN.
                 }
-                assertNoOverlap(row, scopes.get(index));
+                if (hasOverlap(row, scopes.get(index))) throw bindingConflict();
                 try {
                     if (!persistence.save(row)) { throw new IllegalStateException("URL_EXPOSURE_INSERT_CONFLICT"); }
                 } catch (DuplicateKeyException conflict) {
@@ -119,6 +119,33 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
     }
 
     @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.SUPPORTS, readOnly = true)
+    public Optional<GatewayUrlExposureBO> findOwnedRoute(long trustedOwner, long gatewayGroupId, String routeId) {
+        requireOwner(trustedOwner);
+        positive(gatewayGroupId);
+        if (routeId == null || routeId.isBlank() || routeId.length() > 128) {
+            throw new IllegalArgumentException("URL_EXPOSURE_ROUTE_ID_INVALID");
+        }
+        return context.withinUrlExposureControl(trustedOwner, () ->
+                Optional.ofNullable(persistence.findOwnedRoute(trustedOwner, gatewayGroupId, routeId))
+                        .map(converter::toBusiness));
+    }
+
+    @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.SUPPORTS, readOnly = true)
+    public boolean hasPublishedOverlap(long trustedOwner, GatewayUrlExposureBO proposed) {
+        requireOwner(trustedOwner);
+        if (!Objects.equals(proposed.getOwnerTenantId(), trustedOwner)) {
+            throw new IllegalStateException("OWNER_CONTEXT_MISMATCH");
+        }
+        GatewayUrlExposurePO row = converter.toPersistence(proposed);
+        // A preview may exclude only the authenticated tenant's current row for this stable route.
+        row.setId(findOwnedRoute(trustedOwner, proposed.getGatewayGroupId(), proposed.getRouteId())
+                .map(GatewayUrlExposureBO::getId).orElse(null));
+        return context.withinUrlExposureControl(trustedOwner, () -> hasOverlap(row, domain(row)));
+    }
+
+    @Override
     public boolean compareAndSetDesired(long trustedOwner, long exposureId, long expectedVersion,
             long expectedGeneration, GatewayUrlExposureStateEnum oldState,
             GatewayUrlExposureStateEnum nextState, String reason, Instant at) {
@@ -135,7 +162,7 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
             if (nextState == GatewayUrlExposureStateEnum.OPEN) {
                 PublicationDomainVO domain = domain(row);
                 persistence.lockPublicationDomain(lockKey(domain));
-                assertNoOverlap(row, domain);
+                if (hasOverlap(row, domain)) throw bindingConflict();
             }
             row.setDesiredState(nextState).setReconcileStatus("PENDING").setChangeReason(reason);
             if (nextState == GatewayUrlExposureStateEnum.WITHDRAWN) { row.setWithdrawnAt(Objects.requireNonNull(at, "at")); }
@@ -161,7 +188,7 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
                     && Objects.equals(row.getCompilerProfileId(), compilerProfileId)) { return true; }
             PublicationDomainVO domain = domain(row);
             persistence.lockPublicationDomain(lockKey(domain));
-            assertNoOverlap(row, domain);
+            if (hasOverlap(row, domain)) throw bindingConflict();
             row.setReleaseId(releaseId).setContentSha256(contentSha256).setCompilerProfileId(compilerProfileId)
                     .setReconcileStatus("PENDING").setChangeReason(reason);
             stamp(row, at);
@@ -260,7 +287,7 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
         return domain;
     }
 
-    private void assertNoOverlap(GatewayUrlExposurePO proposed, PublicationDomainVO domain) {
+    private boolean hasOverlap(GatewayUrlExposurePO proposed, PublicationDomainVO domain) {
         for (BindingVO binding : domain.bindings()) {
             long cursor = 0;
             while (true) {
@@ -269,12 +296,13 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
                     if (existing.getId() <= cursor) { throw new IllegalStateException("URL_EXPOSURE_SCAN_NOT_PROGRESSING"); }
                     cursor = existing.getId();
                     if (!Objects.equals(existing.getId(), proposed.getId()) && overlaps(existing, proposed)) {
-                        throw bindingConflict();
+                        return true;
                     }
                 }
                 if (page.size() < persistence.pageSize()) { break; }
             }
         }
+        return false;
     }
 
     private boolean sameRegistration(GatewayUrlExposurePO stored, GatewayUrlExposurePO proposed) {
