@@ -9,7 +9,10 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -179,22 +182,26 @@ class GatewayProfileParityTest {
 
     @Test
     @DisplayName("受管 schema 只有一个版本与指纹事实来源，且不被任何主源码写死")
-    void theManagedSchemaExpectationHasOneSourceOfTruth() throws IOException {
+    void theManagedSchemaExpectationHasOneSourceOfTruth() throws IOException, NoSuchAlgorithmException {
         JsonNode manifest = MANIFEST_MAPPER.readTree(Files.readString(ADMIN_MANIFEST, StandardCharsets.UTF_8));
         assertThat(manifest.path("family").asText()).isEqualTo("web");
         JsonNode scripts = manifest.path("scripts");
         assertThat(scripts.isArray()).isTrue();
-        assertThat(scripts).hasSize(2);
+        assertThat(scripts).hasSize(3);
         List<String> versions = new ArrayList<>();
         for (JsonNode script : scripts) {
             String version = script.path("version").asText();
             String fingerprint = script.path("sha256").asText();
             assertThat(version).matches("\\d{8}_\\d{3}");
             assertThat(fingerprint).matches("[0-9a-f]{64}");
-            assertThat(Path.of("src/main/resources").resolve(script.path("path").asText()))
-                    .exists();
+            Path sql = Path.of("src/main/resources").resolve(script.path("path").asText());
+            assertThat(sql).isRegularFile();
+            assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(sql))))
+                    .as("manifest fingerprint must match final SQL bytes for %s", version)
+                    .isEqualTo(fingerprint);
             versions.add(version);
         }
+        assertThat(versions).containsExactly("20260922_001", "20261116_002", "20261117_003");
 
         List<String> hardCoded = new ArrayList<>();
         for (String module : IDENTITY_BINDINGS.keySet()) {

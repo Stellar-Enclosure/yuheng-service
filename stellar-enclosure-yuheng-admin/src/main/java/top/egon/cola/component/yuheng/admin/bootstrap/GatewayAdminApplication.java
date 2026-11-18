@@ -24,6 +24,7 @@ import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusP
         "top.egon.cola.component.yuheng.admin.application.dao",
         "top.egon.cola.component.yuheng.admin.catalog.dao",
         "top.egon.cola.component.yuheng.admin.credential.dao",
+        "top.egon.cola.component.yuheng.admin.exposure.dao",
         "top.egon.cola.component.yuheng.admin.group.dao",
         "top.egon.cola.component.yuheng.admin.llm.dao",
         "top.egon.cola.component.yuheng.admin.mcp.dao",

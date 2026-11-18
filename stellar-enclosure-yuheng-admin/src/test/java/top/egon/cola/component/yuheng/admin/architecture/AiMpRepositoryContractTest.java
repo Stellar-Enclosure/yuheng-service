@@ -1,7 +1,11 @@
 package top.egon.cola.component.yuheng.admin.architecture;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.annotation.TableName;
+import org.apache.ibatis.type.TypeHandler;
 import org.junit.jupiter.api.Test;
+import top.egon.cola.component.common.mybatis.extension.EgonColaExplicitTenantScopeMapper;
+import top.egon.cola.component.common.mybatis.extension.EgonColaMapper;
 import top.egon.cola.component.common.mybatis.model.EgonModel;
 
 import java.io.IOException;
@@ -13,6 +17,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -26,7 +32,8 @@ import static org.junit.jupiter.api.Assertions.fail;
 /**
  * Fixes the Step 3 persistence boundary: every migrated table has one MyBatis-Plus
  * row model on the starter base type, one guarded mapper XML, and no bypass of the
- * starter's tenant/soft-delete guards.
+ * starter's tenant/soft-delete guards. Step 23 adds exactly one fixed-zero SINGLE
+ * control table, whose explicit owner predicates have their own contract below.
  */
 class AiMpRepositoryContractTest {
 
@@ -78,6 +85,13 @@ class AiMpRepositoryContractTest {
 
     private static final Path MAPPER_XML_ROOT =
             Path.of("src/main/resources/mybatis/mapper");
+
+    private static final Path EXPOSURE_XML = MAPPER_XML_ROOT.resolve("exposure/GatewayUrlExposureDAO.xml");
+    private static final String EXPOSURE_MAPPER =
+            "top.egon.cola.component.yuheng.admin.exposure.dao.GatewayUrlExposureDAO";
+    private static final String EXPOSURE_MODEL =
+            "top.egon.cola.component.yuheng.admin.exposure.domain.po.GatewayUrlExposurePO";
+    private static final String EXPOSURE_TABLE = "public.gateway_url_exposure_t0";
 
     private static final Pattern NAMESPACE = Pattern.compile(
             "<mapper\\s+namespace\\s*=\\s*\"([^\"]+)\"");
@@ -148,10 +162,13 @@ class AiMpRepositoryContractTest {
     void everyGuardedMapperXmlResolvesToItsAccessInterfaceAndFiltersActiveRows()
             throws IOException {
         List<Path> xmlFiles = mapperXmlFiles();
-        assertEquals(42, xmlFiles.size(),
-                "one guarded mapper XML per migrated table, found: " + xmlFiles.size());
+        assertEquals(43, xmlFiles.size(),
+                "42 ordinary mapper XMLs plus the fixed technical exposure mapper");
+        assertTrue(xmlFiles.contains(EXPOSURE_XML), "the 43rd mapper must be the exact exposure mapper");
+        List<Path> ordinaryXmlFiles = xmlFiles.stream().filter(xml -> !xml.equals(EXPOSURE_XML)).toList();
+        assertEquals(42, ordinaryXmlFiles.size(), "the original ordinary persistence inventory stays at 42");
         List<String> violations = new ArrayList<>();
-        for (Path xml : xmlFiles) {
+        for (Path xml : ordinaryXmlFiles) {
             String text = Files.readString(xml);
             Matcher namespace = NAMESPACE.matcher(text);
             if (!namespace.find()) {
@@ -181,6 +198,95 @@ class AiMpRepositoryContractTest {
             }
         }
         assertTrue(violations.isEmpty(), "Mapper XML boundary violations: " + violations);
+    }
+
+    @Test
+    void exposureIsTheOnlyFixedTechnicalMapperAndKeepsOwnerAndActivePredicates()
+            throws ReflectiveOperationException, IOException {
+        Class<?> model = Class.forName(EXPOSURE_MODEL);
+        assertTrue(EgonModel.class.isAssignableFrom(model));
+        assertFalse(MP_ROW_MODELS.contains(EXPOSURE_MODEL), "the 42 ordinary models retain their own inventory");
+        TableName table = model.getDeclaredAnnotation(TableName.class);
+        assertNotNull(table);
+        assertEquals("public", table.schema());
+        assertEquals("gateway_url_exposure_t0", table.value(),
+                "SINGLE uses the exact physical name; ordinary logical routing is unchanged");
+        assertTrue(table.autoResultMap());
+        for (String ordinaryModel : MP_ROW_MODELS) {
+            assertFalse(table.value().equals(Class.forName(ordinaryModel)
+                    .getDeclaredAnnotation(TableName.class).value()), "the technical table has one row owner");
+        }
+
+        Class<?> mapper = Class.forName(EXPOSURE_MAPPER);
+        assertTrue(mapper.isInterface());
+        assertTrue(EgonColaMapper.class.isAssignableFrom(mapper));
+        EgonColaExplicitTenantScopeMapper scope = mapper.getDeclaredAnnotation(
+                EgonColaExplicitTenantScopeMapper.class);
+        assertNotNull(scope);
+        assertEquals(model, scope.technicalModel());
+        assertEquals(EXPOSURE_TABLE, scope.technicalTable());
+        InterceptorIgnore ignore = mapper.getDeclaredAnnotation(InterceptorIgnore.class);
+        assertNotNull(ignore);
+        assertEquals("true", ignore.tenantLine());
+        for (Method attribute : InterceptorIgnore.class.getDeclaredMethods()) {
+            if (!attribute.getName().equals("tenantLine")) {
+                assertTrue(Objects.deepEquals(attribute.getDefaultValue(), attribute.invoke(ignore)),
+                        "the technical mapper may bypass only tenantLine: " + attribute.getName());
+            }
+        }
+
+        String text = Files.readString(EXPOSURE_XML);
+        Matcher namespace = NAMESPACE.matcher(text);
+        assertTrue(namespace.find());
+        assertEquals(EXPOSURE_MAPPER, namespace.group(1));
+        Map<String, String> sql = exposureStatements(text);
+        assertEquals(Set.of("findOwned", "findOwnedRoute", "scanBinding", "lockPublicationDomain",
+                "compareAndSetDesired", "compareAndSetContent", "bindRouteUid", "recordObservation"), sql.keySet());
+        for (var statement : sql.entrySet()) {
+            assertTrue(statement.getValue().contains(EXPOSURE_TABLE), statement.getKey());
+            assertTrue(Pattern.compile("\\btenant_id\\s*=\\s*0\\b").matcher(statement.getValue()).find(),
+                    statement.getKey() + " must constrain the technical tenant explicitly");
+            assertTrue(statement.getValue().contains("deleted_at IS NULL"),
+                    statement.getKey() + " must retain the active-row predicate");
+            assertFalse(statement.getValue().contains("${"), "no substituted SQL in " + statement.getKey());
+        }
+        for (String id : List.of("findOwned", "findOwnedRoute")) {
+            assertTrue(sql.get(id).contains("owner_tenant_id = #{owner}"), id + " requires the trusted owner");
+        }
+        for (String id : List.of("compareAndSetDesired", "compareAndSetContent", "bindRouteUid", "recordObservation")) {
+            String where = sql.get(id).substring(sql.get(id).indexOf("WHERE"));
+            assertTrue(where.contains("owner_tenant_id = #{record.ownerTenantId}"), id);
+            assertTrue(where.contains("id = #{record.id}"), id);
+            assertTrue(where.contains("version = #{record.version}"), id + " must keep its optimistic CAS");
+        }
+        // The only owner-free reads are the internal, fixed-binding overlap scan and transaction lock.
+        String scan = sql.get("scanBinding");
+        for (String predicate : List.of("cluster_id = #{cluster}", "gateway_namespace = #{gatewayNamespace}",
+                "gateway_name = #{gatewayName}", "listener_name = #{listenerName}",
+                "id &gt; #{afterId}", "ORDER BY id ASC LIMIT #{limit}")) {
+            assertTrue(scan.contains(predicate), "cross-owner overlap scan must stay bounded by " + predicate);
+        }
+        assertFalse(scan.contains("owner_tenant_id ="), "overlap detection must include other owners");
+        assertTrue(sql.get("lockPublicationDomain").contains("pg_advisory_xact_lock("));
+        assertTrue(sql.get("lockPublicationDomain").contains("current_setting('transaction_isolation')"));
+        assertTrue(sql.get("lockPublicationDomain").contains("'read committed'"));
+        assertTrue(statements(text, "delete", "insert").isEmpty(), "reservations are never physically removed");
+
+        for (String handler : typeHandlers(text)) {
+            assertTrue(Files.isRegularFile(sourceOf(handler))
+                            || handler.equals("com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler"),
+                    "only the exact framework enum handler has no local source: " + handler);
+            assertTrue(TypeHandler.class.isAssignableFrom(Class.forName(handler)), handler);
+        }
+        for (Path xml : mapperXmlFiles()) {
+            Matcher candidate = NAMESPACE.matcher(Files.readString(xml));
+            assertTrue(candidate.find(), xml.toString());
+            EgonColaExplicitTenantScopeMapper marker = Class.forName(candidate.group(1))
+                    .getDeclaredAnnotation(EgonColaExplicitTenantScopeMapper.class);
+            if (marker != null && marker.technicalModel() != Void.class) {
+                assertEquals(EXPOSURE_XML, xml, "no additional fixed-zero mapper may enter this inventory");
+            }
+        }
     }
 
     @Test
@@ -302,6 +408,33 @@ class AiMpRepositoryContractTest {
             handlers.add(matcher.group(1));
         }
         return handlers;
+    }
+
+    private static Map<String, String> exposureStatements(String text) {
+        Map<String, String> fragments = new LinkedHashMap<>();
+        Matcher fragment = Pattern.compile("<sql\\s+id=\"([^\"]+)\"[^>]*>(.*?)</sql>", Pattern.DOTALL).matcher(text);
+        while (fragment.find()) {
+            assertTrue(fragments.put(fragment.group(1), fragment.group(2)) == null,
+                    "duplicate SQL fragment " + fragment.group(1));
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        Matcher statement = Pattern.compile("<(select|update|insert|delete)\\s+id=\"([^\"]+)\"[^>]*>(.*?)</\\1>",
+                Pattern.DOTALL).matcher(text);
+        Pattern include = Pattern.compile("<include\\s+refid=\"([^\"]+)\"\\s*/>");
+        while (statement.find()) {
+            Matcher reference = include.matcher(statement.group(3));
+            StringBuilder body = new StringBuilder();
+            while (reference.find()) {
+                String replacement = fragments.get(reference.group(1));
+                assertNotNull(replacement, "unknown local SQL fragment " + reference.group(1));
+                assertFalse(replacement.contains("<include"), "nested fragments require explicit contract review");
+                reference.appendReplacement(body, Matcher.quoteReplacement(replacement));
+            }
+            reference.appendTail(body);
+            assertTrue(result.put(statement.group(2), body.toString()) == null,
+                    "duplicate exposure statement " + statement.group(2));
+        }
+        return result;
     }
 
     private static List<Path> mapperXmlFiles() throws IOException {

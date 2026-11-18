@@ -54,7 +54,7 @@ class YuhengAiConformanceTest {
     /** 中文说明：AI 平面在 admin 内的三个业务包 / the three AI-plane business packages inside admin. */
     private static final List<String> AI_PACKAGES = List.of("llm");
 
-    /** 中文说明：受管 DDL 的唯一脚本与清单 / the single managed-DDL script and its manifest. */
+    /** 中文说明：保留 AI 基线 DDL 与清单入口 / the retained AI baseline script and managed manifest. */
     private static final String MANAGED_SCRIPT = "db/egon-mp/20260922_001_yuheng_schema.sql";
 
     private static final String MANIFEST = "db/egon-mp/repository-manifest.json";
@@ -64,6 +64,10 @@ class YuhengAiConformanceTest {
 
     /** 中文说明：受管 DDL 声明版本 / the declared managed-DDL version. */
     private static final String SCHEMA_VERSION = "20260922_001";
+
+    private static final String LLM_CACHE_SCRIPT_NAME = "20261116_002_yuheng_llm_cache.sql";
+
+    private static final String URL_EXPOSURE_SCRIPT_NAME = "20261117_003_yuheng_url_exposure.sql";
 
     /** 中文说明：42 张逻辑表全部单分片落位 / every one of the 42 logical tables lands on one shard. */
     private static final int DECLARED_TABLE_COUNT = 42;
@@ -113,11 +117,17 @@ class YuhengAiConformanceTest {
         List<Map<String, String>> scripts = readManifestScripts();
 
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/egon-mp")))
-                .as("the managed family ships the baseline and LLM cache incremental scripts")
-                .containsExactlyInAnyOrder(MANAGED_SCRIPT_NAME, "20261116_002_yuheng_llm_cache.sql");
-        assertThat(scripts).hasSize(2);
+                .as("the managed family ships only the baseline, pinned AI cache and URL exposure ledger")
+                .containsExactlyInAnyOrder(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME);
+        assertThat(scripts).hasSize(3);
         assertThat(scripts.get(0)).containsOnly(entry("version", SCHEMA_VERSION), entry("path", MANAGED_SCRIPT),
-                entry("sha256", scripts.get(0).get("sha256")));
+                entry("sha256", "22dc8ec627ee6e0eaabb1c8ecad55f80798a5d061abcc96a964966bf74de493e"));
+        assertThat(scripts.get(1)).containsOnly(entry("version", "20261116_002"),
+                entry("path", "db/egon-mp/" + LLM_CACHE_SCRIPT_NAME),
+                entry("sha256", "44024a6466e59905ad27c5c35b38c47d573688f935b18602bc648824687987e7"));
+        assertThat(scripts.get(2)).containsOnly(entry("version", "20261117_003"),
+                entry("path", "db/egon-mp/" + URL_EXPOSURE_SCRIPT_NAME),
+                entry("sha256", "2d71e8c91db6f6d058bfc797532fe4a0866f7b1dd9f2e5daaf73f8b9d74eb17b"));
         for (Map<String, String> entryMap : scripts) {
             assertThat(DigestUtils.sha256Hex(Files.readAllBytes(ADMIN_RESOURCES.resolve(entryMap.get("path")))))
                     .as("the manifest checksum is computed from the final SQL bytes, never guessed")
@@ -130,7 +140,7 @@ class YuhengAiConformanceTest {
                 .allMatch(name -> name.matches("V(?:1|[2-9]|1[0-2])__.*\\.sql|V13__.*\\.sql"));
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/migration")))
                 .as("no legacy script was pulled back under management")
-                .doesNotContain(MANAGED_SCRIPT_NAME, "20261116_002_yuheng_llm_cache.sql");
+                .doesNotContain(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME);
     }
 
     @Test
@@ -411,7 +421,7 @@ class YuhengAiConformanceTest {
     private List<Map<String, String>> readManifestScripts() throws IOException {
         String json = Files.readString(ADMIN_RESOURCES.resolve(MANIFEST), StandardCharsets.UTF_8);
         assertThat(json).as("the managed family stays the web family").contains("\"family\"");
-        assertThat(countOccurrences(json, "\"path\"")).as("managed script count").isEqualTo(2);
+        assertThat(countOccurrences(json, "\"path\"")).as("managed script count").isEqualTo(3);
         List<Map<String, String>> entries = new ArrayList<>();
         Matcher versionMatcher = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
         Matcher pathMatcher = Pattern.compile("\"path\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
@@ -423,7 +433,7 @@ class YuhengAiConformanceTest {
             entry.put("sha256", shaMatcher.group(1));
             entries.add(entry);
         }
-        assertThat(entries).hasSize(2);
+        assertThat(entries).hasSize(3);
         assertThat(json.substring(json.indexOf("\"family\""))).as("family is web").contains("web");
         return entries;
     }

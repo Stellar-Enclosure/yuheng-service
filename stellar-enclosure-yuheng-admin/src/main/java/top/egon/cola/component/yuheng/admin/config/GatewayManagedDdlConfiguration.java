@@ -3,7 +3,6 @@ package top.egon.cola.component.yuheng.admin.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties;
@@ -26,8 +25,8 @@ import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardin
  * switch ({@code egon.cola.component.mybatis-plus.ddl.enabled}) must agree, otherwise startup is refused, because
  * enabling only one half yields the silent mismatch of "the schema was assumed to exist but never was created".
  *
- * 用法 / Usage: 由 Spring 容器装配；DDL 关闭时本配置整体退场，组件原厂
- * {@code YamlShardingSphereDataSourceFactory} 工厂保持默认行为不变。
+ * 用法 / Usage: Admin 始终占用该扩展点；缺失或关闭 DDL 职责直接拒绝，不能退回默认工厂后才发现角色错误。
+ * The Admin always owns this extension point and rejects missing/disabled ownership before datasource bootstrap.
  */
 @Slf4j
 @Configuration(proxyBeanMethods = false)
@@ -43,7 +42,6 @@ public class GatewayManagedDdlConfiguration {
      * @return 受管 DDL 优先的逻辑数据源工厂；returns the managed-DDL-first logical datasource factory.
      */
     @Bean("egonColaShardingLogicalDataSourceFactory")
-    @ConditionalOnProperty(prefix = "yuheng.persistence", name = "managed-ddl-enabled", havingValue = "true")
     public EgonColaShardingDataSourceBootstrapper.LogicalDataSourceFactory egonColaShardingLogicalDataSourceFactory(
             EgonColaShardingProperties shardingProperties,
             EgonColaMybatisPlusProperties mybatisPlusProperties,
@@ -51,12 +49,22 @@ public class GatewayManagedDdlConfiguration {
             GatewayPersistenceProperties persistenceProperties,
             @Qualifier("egonColaShardingTopologyValidator") EgonColaShardingTopologyValidator topologyValidator,
             @Qualifier("egonColaPostgreDdlRunner") EgonColaPostgreDdlRunner ddlRunner) {
-        if (!mybatisPlusProperties.getDdl().isEnabled()) {
+        Boolean managed = persistenceProperties.getManagedDdlEnabled();
+        if (managed == null) {
+            throw new EgonColaMybatisPlusConfigurationException("MANAGED_DDL_FLAG_REQUIRED");
+        }
+        if (managed.booleanValue() != mybatisPlusProperties.getDdl().isEnabled()) {
             throw new EgonColaMybatisPlusConfigurationException("MANAGED_DDL_FLAG_CONFLICT");
+        }
+        if (!managed) {
+            throw new EgonColaMybatisPlusConfigurationException("MANAGED_DDL_ROLE_MISMATCH");
+        }
+        if (mybatisPlusProperties.getDdl().isAutoMigrate()) {
+            throw new EgonColaMybatisPlusConfigurationException("MANAGED_DDL_OWNER_CONFLICT");
         }
         log.info("managed ddl ownership claimed for expected schema version {}",
                 persistenceProperties.getExpectedSchemaVersion());
         return new GatewayManagedDdlFactory(shardingProperties, objectMapper, persistenceProperties,
-                topologyValidator, ddlRunner, mybatisPlusProperties.getDdl().getTopologyReadyTimeout());
+                topologyValidator, ddlRunner);
     }
 }

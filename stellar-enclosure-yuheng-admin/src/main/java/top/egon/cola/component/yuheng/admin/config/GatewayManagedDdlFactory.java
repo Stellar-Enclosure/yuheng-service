@@ -4,19 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import javax.sql.DataSource;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.shardingsphere.driver.api.yaml.YamlShardingSphereDataSourceFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlManifestBO;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlResult;
-import top.egon.cola.component.common.mybatis.ddl.EgonColaManagedDdlInitializer;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlTargetBO;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaPostgreDdlRunner;
 import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfigurationException;
@@ -40,7 +38,6 @@ import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardin
  * 业务代码不得直接调用。失败一律向上抛出以 fail-closed 启动，空库外的未知 schema 由 runner 拒绝而不是本机修复。
  */
 @Slf4j
-@RequiredArgsConstructor
 public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourceBootstrapper.LogicalDataSourceFactory {
 
     private static final String MANIFEST_RESOURCE = "db/egon-mp/repository-manifest.json";
@@ -52,12 +49,17 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
     private final EgonColaShardingTopologyValidator topologyValidator;
     @Qualifier("egonColaPostgreDdlRunner")
     private final EgonColaPostgreDdlRunner ddlRunner;
-    private final Duration topologyReadyTimeout;
 
     public GatewayManagedDdlFactory(EgonColaShardingProperties shardingProperties, ObjectMapper objectMapper,
                                     GatewayPersistenceProperties persistenceProperties,
                                     EgonColaShardingTopologyValidator topologyValidator, EgonColaPostgreDdlRunner ddlRunner) {
-        this(shardingProperties, objectMapper, persistenceProperties, topologyValidator, ddlRunner, Duration.ofSeconds(60));
+        // This bean is built before the component bootstrapper: reject unsupported routing before even its DDL initializer.
+        GatewayPersistenceConfiguration.prepareUrlExposureControlTopology(shardingProperties);
+        this.shardingProperties = shardingProperties;
+        this.objectMapper = objectMapper;
+        this.persistenceProperties = persistenceProperties;
+        this.topologyValidator = topologyValidator;
+        this.ddlRunner = ddlRunner;
     }
 
     @Override
@@ -68,18 +70,11 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
         EgonColaDdlManifestBO manifest = readManifest();
         requireExpectedScript(manifest);
         var topology = topologyValidator.validate(shardingProperties, yaml);
-        ddlRunner.run(targets(physical, topology.fingerprint(), topology.schemas(), manifest)).stream()
+        GatewayPersistenceConfiguration.validateUrlExposureControlTopology(shardingProperties, topology);
+        ddlRunner.run(targets(physical, topology, manifest)).stream()
                 .filter(result -> EgonColaDdlResult.StatusEnum.APPLIED.equals(result.status()))
                 .forEach(result -> log.info("managed ddl applied alias={} schema={} version={}",
                         result.alias(), result.schema(), result.version()));
-        if (shardingProperties.getMode() == EgonColaShardingProperties.ModeEnum.SHARDING_READWRITE) {
-            var primaries = new LinkedHashMap<String, EgonColaShardingProperties.PhysicalDataSourceProperties>();
-            shardingProperties.getDataSources().stream()
-                    .filter(source -> source.role() == EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY)
-                    .forEach(source -> primaries.put(source.logicalName(), source));
-            EgonColaManagedDdlInitializer.awaitReplicaReplay(shardingProperties.getDataSources(), primaries,
-                    physical, topologyReadyTimeout);
-        }
         return YamlShardingSphereDataSourceFactory.createDataSource(physical, topology.yaml());
     }
 
@@ -102,20 +97,25 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
         }
     }
 
-    private List<EgonColaDdlTargetBO> targets(Map<String, DataSource> physical, String routeFingerprint,
-                                              Map<String, String> schemas, EgonColaDdlManifestBO manifest) {
+    private List<EgonColaDdlTargetBO> targets(Map<String, DataSource> physical,
+                                              EgonColaShardingTopologyValidator.TopologyBO topology,
+                                              EgonColaDdlManifestBO manifest) {
+        // Only this additive table may explain a previous routing fingerprint; all existing addresses must match exactly.
+        var precedingProfiles = new TreeMap<>(topology.profiles());
+        precedingProfiles.remove(GatewayPersistenceConfiguration.URL_EXPOSURE_TABLE);
+        Set<String> preceding = Set.of(EgonColaShardingTopologyValidator.fingerprint(precedingProfiles, topology.schemas()));
         List<EgonColaDdlTargetBO> targets = new ArrayList<>();
         for (EgonColaShardingProperties.PhysicalDataSourceProperties dataSource : shardingProperties.getDataSources()) {
             if (!EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY.equals(dataSource.role())) {
                 continue;
             }
             DataSource physicalDataSource = physical.get(dataSource.name());
-            String schema = schemas.get(dataSource.logicalName());
+            String schema = topology.schemas().get(dataSource.logicalName());
             if (physicalDataSource == null || schema == null) {
                 throw new EgonColaMybatisPlusConfigurationException("DDL_PRIMARY_TARGET_UNRESOLVED");
             }
             targets.add(new EgonColaDdlTargetBO(dataSource.name(), schema,
-                    EgonColaDdlTargetBO.RoleEnum.SHARD, physicalDataSource, manifest, routeFingerprint));
+                    EgonColaDdlTargetBO.RoleEnum.SHARD, physicalDataSource, manifest, topology.fingerprint(), preceding));
         }
         if (targets.isEmpty()) {
             throw new EgonColaMybatisPlusConfigurationException("DDL_PRIMARY_TARGET_UNRESOLVED");

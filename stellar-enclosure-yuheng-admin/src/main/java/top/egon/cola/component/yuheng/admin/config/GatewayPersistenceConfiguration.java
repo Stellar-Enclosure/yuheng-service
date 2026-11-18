@@ -17,6 +17,13 @@ import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfi
 
 import javax.sql.DataSource;
 import java.util.Arrays;
+import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import top.egon.cola.component.common.mybatis.sharding.EgonColaShardingProperties;
+import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingTopologyValidator;
+import top.egon.cola.component.common.mybatis.routing.EgonColaRoutingProfileBO;
+import top.egon.cola.component.common.mybatis.routing.EgonColaPhysicalTargetBO;
 
 /**
  * 中文说明：{@code GatewayPersistenceConfiguration} 是 Admin 进程持久化运行期的唯一装配点。组件的
@@ -138,6 +145,132 @@ public class GatewayPersistenceConfiguration implements SmartInitializingSinglet
         registration.addUrlPatterns("/*");
         registration.setOrder(GatewayPersistenceContextFilter.FILTER_ORDER);
         return registration;
+    }
+
+    static final String URL_EXPOSURE_TABLE = "gateway_url_exposure_t0";
+    private static final List<String> CONTROL_BUSINESS_TABLES = List.of(
+            "gateway_group", "gateway_release", "gateway_release_content",
+            "gateway_idempotency_record", "gateway_audit_log");
+
+    /**
+     * Registers only the new control table before the component assembles STRATEGY YAML.
+     * The supported installation is explicitly one PRIMARY with LOCAL transactions; read/write splitting
+     * is rejected because a logical SINGLE group would otherwise permit replica reads of current intent.
+     */
+    public static void prepareUrlExposureControlTopology(EgonColaShardingProperties properties) {
+        var primary = requireControlPrimary(properties);
+        if (properties.getTables() == null || !properties.getTables().keySet().containsAll(CONTROL_BUSINESS_TABLES)) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTES_REQUIRED");
+        }
+        Map<String, EgonColaShardingProperties.TableProperties> tables = new LinkedHashMap<>(properties.getTables());
+        var existing = tables.get(URL_EXPOSURE_TABLE);
+        if (existing != null && (!"SINGLE".equals(existing.type())
+                || !primary.logicalName().equals(existing.dataSource()) || !"public".equals(existing.schema())
+                || existing.shardingColumn() != null && !existing.shardingColumn().isBlank()
+                || existing.rootKeyName() != null && !existing.rootKeyName().isBlank()
+                || existing.tableColumns() != null && !existing.tableColumns().isEmpty()
+                || existing.shardGroups() != null && !existing.shardGroups().isEmpty())) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_SINGLE_ROUTE_REQUIRED");
+        }
+        for (var entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            var table = entry.getValue();
+            if (tableName == null || table == null || table.type() == null) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTES_REQUIRED");
+            }
+            if (tableName.startsWith("gateway_url_exposure") && !URL_EXPOSURE_TABLE.equals(tableName)) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_SINGLE_ROUTE_REQUIRED");
+            }
+            boolean sameGroup = table.shardGroups() == null || table.shardGroups().isEmpty()
+                    || table.shardGroups().equals(List.of(primary.logicalName()));
+            boolean primaryTarget = table.dataSource() == null || table.dataSource().isBlank()
+                    || primary.logicalName().equals(table.dataSource());
+            boolean standard = "STANDARD_TENANT_ID".equals(table.type()) && "public".equals(table.schema())
+                    && (table.shardingColumn() == null || table.shardingColumn().isBlank()
+                        || "tenant_id".equals(table.shardingColumn()));
+            boolean single = "SINGLE".equals(table.type()) && primary.logicalName().equals(table.dataSource())
+                    && ("public".equals(table.schema()) || "egon_cola_outbox_message".equals(tableName)
+                        && "egon_outbox".equals(table.schema()));
+            // Step 24 may supply the existing Components Outbox route; this does not add its dependency or schema.
+            boolean outbox = "egon_cola_outbox_message".equals(tableName)
+                    && "TECHNICAL_GROUP".equals(table.type()) && "egon_outbox".equals(table.schema())
+                    && primary.logicalName().equals(table.dataSource())
+                    && List.of(primary.logicalName()).equals(table.shardGroups())
+                    && (table.shardingColumn() == null || "shard_slot".equals(table.shardingColumn()));
+            if (!sameGroup || !primaryTarget || !(standard || single || outbox)
+                    || CONTROL_BUSINESS_TABLES.contains(tableName) && !standard) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+            }
+        }
+        tables.putIfAbsent(URL_EXPOSURE_TABLE, new EgonColaShardingProperties.TableProperties(
+                "SINGLE", primary.logicalName(), null, null, null, "public"));
+        properties.setTables(tables);
+    }
+
+    /** Checks the component's materialized addresses before the managed DDL runner may receive any target. */
+    public static void validateUrlExposureControlTopology(EgonColaShardingProperties properties,
+                                                         EgonColaShardingTopologyValidator.TopologyBO topology) {
+        var primary = requireControlPrimary(properties);
+        if (topology == null || topology.profiles() == null || topology.schemas() == null
+                || properties.getTables() == null || !topology.profiles().keySet().equals(properties.getTables().keySet())
+                || !Map.of(primary.logicalName(), "public").equals(topology.schemas())) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+        }
+        var exposure = topology.profiles().get(URL_EXPOSURE_TABLE);
+        if (exposure == null || exposure.kind() != EgonColaRoutingProfileBO.TableKindEnum.SINGLE
+                || !singleNode(exposure).equals(new EgonColaPhysicalTargetBO(primary.logicalName(), "public", URL_EXPOSURE_TABLE))) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_SINGLE_ROUTE_REQUIRED");
+        }
+        for (String table : CONTROL_BUSINESS_TABLES) {
+            var profile = topology.profiles().get(table);
+            if (profile == null || profile.kind() != EgonColaRoutingProfileBO.TableKindEnum.TENANT_LEGACY
+                    || !singleNode(profile).equals(new EgonColaPhysicalTargetBO(primary.logicalName(), "public", table + "_t0"))) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+            }
+        }
+        for (var entry : topology.profiles().entrySet()) {
+            var table = properties.getTables().get(entry.getKey());
+            var profile = entry.getValue();
+            var node = singleNode(profile);
+            var kind = switch (table.type()) {
+                case "STANDARD_TENANT_ID" -> EgonColaRoutingProfileBO.TableKindEnum.TENANT_LEGACY;
+                case "SINGLE" -> EgonColaRoutingProfileBO.TableKindEnum.SINGLE;
+                case "TECHNICAL_GROUP" -> EgonColaRoutingProfileBO.TableKindEnum.TECHNICAL_GROUP;
+                default -> throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+            };
+            String actualTable = "STANDARD_TENANT_ID".equals(table.type()) ? entry.getKey() + "_t0" : entry.getKey();
+            if (profile.kind() != kind || !primary.logicalName().equals(node.group())
+                    || !table.schema().equals(node.schema()) || !actualTable.equals(node.table())) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+            }
+        }
+    }
+
+    private static EgonColaShardingProperties.PhysicalDataSourceProperties requireControlPrimary(
+            EgonColaShardingProperties properties) {
+        if (properties == null || !properties.isEnabled()
+                || properties.getMode() != EgonColaShardingProperties.ModeEnum.SHARDING
+                || properties.getConfigStyle() != EgonColaShardingProperties.ConfigStyleEnum.STRATEGY
+                || !"LOCAL".equals(properties.getTransactionDefaultType())
+                || properties.getNativeRulesResource() != null && !properties.getNativeRulesResource().isBlank()
+                || properties.getDataSources() == null || properties.getDataSources().size() != 1) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_PRIMARY_REQUIRED");
+        }
+        var primary = properties.getDataSources().getFirst();
+        if (primary == null || primary.role() != EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY
+                || primary.name() == null || !primary.name().equals(primary.logicalName())
+                || !"org.postgresql.Driver".equals(primary.driverClassName())) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_PRIMARY_REQUIRED");
+        }
+        return primary;
+    }
+
+    private static EgonColaPhysicalTargetBO singleNode(EgonColaRoutingProfileBO profile) {
+        var nodes = profile.actualNodes().values().stream().flatMap(List::stream).toList();
+        if (profile.tenantSlotCount() != 1 || profile.secondaryBucketCount() != 1 || nodes.size() != 1) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_CONTROL_ROUTE_MISMATCH");
+        }
+        return nodes.getFirst();
     }
 
     @Override

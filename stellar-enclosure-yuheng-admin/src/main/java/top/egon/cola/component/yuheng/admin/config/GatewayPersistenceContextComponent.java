@@ -5,10 +5,14 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties;
+import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
 import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfigurationException;
+import top.egon.cola.component.common.mybatis.extension.EgonColaTechnicalTenantScope;
+import top.egon.cola.component.yuheng.admin.exposure.dao.GatewayUrlExposureDAO;
 
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 /**
  * 中文说明：{@code GatewayPersistenceContextComponent} 是 Admin 单企业安装域的持久化身份上下文。它把已通过认证的
@@ -86,6 +90,21 @@ public final class GatewayPersistenceContextComponent {
      */
     public Long installationTenantId() {
         return persistenceProperties.getTenantId();
+    }
+
+    /** Keeps the verified owner on the caller side of the fixed exposure mapper's technical scope. */
+    public <T> T withinUrlExposureControl(long trustedOwner, Supplier<T> work) {
+        if (trustedOwner <= 0 || !Objects.equals(EgonColaTenantIdProvider.currentTenantId(), trustedOwner)) {
+            throw new IllegalStateException("OWNER_CONTEXT_MISMATCH");
+        }
+        String tenantKey = mybatisPlusProperties.getTenantId().getMdcKey();
+        String previousTenant = MDC.get(tenantKey);
+        MDC.put(tenantKey, "0");
+        try {
+            return EgonColaTechnicalTenantScope.execute(GatewayUrlExposureDAO.class, work);
+        } finally {
+            restore(tenantKey, previousTenant);
+        }
     }
 
     /**

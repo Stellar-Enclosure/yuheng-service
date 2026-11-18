@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.egon.cola.component.yuheng.admin.exposure.dao.GatewayUrlExposureDAO">
+    <resultMap id="Exposure" type="top.egon.cola.component.yuheng.admin.exposure.domain.po.GatewayUrlExposurePO">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="create_user_id" property="createUserId"/>
+        <result column="create_time" property="createTime" jdbcType="TIMESTAMP"/>
+        <result column="update_user_id" property="updateUserId"/>
+        <result column="update_time" property="updateTime" jdbcType="TIMESTAMP"/>
+        <result column="deleted_at" property="deletedAt" jdbcType="TIMESTAMP"/>
+        <result column="version" property="version"/>
+        <result column="owner_tenant_id" property="ownerTenantId"/>
+        <result column="gateway_group_id" property="gatewayGroupId"/>
+        <result column="route_id" property="routeId"/>
+        <result column="cluster_id" property="clusterId"/>
+        <result column="gateway_namespace" property="gatewayNamespace"/>
+        <result column="gateway_name" property="gatewayName"/>
+        <result column="gateway_uid" property="gatewayUid"/>
+        <result column="listener_name" property="listenerName"/>
+        <result column="hostname" property="hostname"/>
+        <result column="http_method" property="httpMethod"/>
+        <result column="path_match_type" property="pathMatchType"/>
+        <result column="path_value" property="pathValue"/>
+        <result column="route_kind" property="routeKind"/>
+        <result column="route_namespace" property="routeNamespace"/>
+        <result column="route_name" property="routeName"/>
+        <result column="route_uid" property="routeUid"/>
+        <result column="desired_state" property="desiredState" typeHandler="com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler"/>
+        <result column="desired_generation" property="desiredGeneration"/>
+        <result column="observed_state" property="observedState"/>
+        <result column="observed_generation" property="observedGeneration"/>
+        <result column="reconcile_status" property="reconcileStatus"/>
+        <result column="release_id" property="releaseId"/>
+        <result column="content_sha256" property="contentSha256"/>
+        <result column="compiler_profile_id" property="compilerProfileId"/>
+        <result column="observation" property="observation" javaType="com.fasterxml.jackson.databind.JsonNode" jdbcType="OTHER" typeHandler="top.egon.cola.component.yuheng.admin.shared.dao.typehandler.GatewayJsonbTypeHandler"/>
+        <result column="last_error_code" property="lastErrorCode"/>
+        <result column="change_reason" property="changeReason"/>
+        <result column="withdrawn_at" property="withdrawnAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+    <sql id="columns">id, tenant_id, create_user_id, create_time, update_user_id, update_time, deleted_at, version, owner_tenant_id, gateway_group_id, route_id, cluster_id, gateway_namespace, gateway_name, gateway_uid, listener_name, hostname, http_method, path_match_type, path_value, route_kind, route_namespace, route_name, route_uid, desired_state, desired_generation, observed_state, observed_generation, reconcile_status, release_id, content_sha256, compiler_profile_id, observation, last_error_code, change_reason, withdrawn_at</sql>
+    <sql id="ownedVersion">tenant_id = 0 AND deleted_at IS NULL AND owner_tenant_id = #{record.ownerTenantId}
+        AND id = #{record.id} AND version = #{record.version}</sql>
+    <select id="findOwned" resultMap="Exposure">
+        SELECT <include refid="columns"/> FROM public.gateway_url_exposure_t0
+        WHERE tenant_id = 0 AND deleted_at IS NULL AND owner_tenant_id = #{owner} AND id = #{id}
+    </select>
+    <select id="findOwnedRoute" resultMap="Exposure">
+        SELECT <include refid="columns"/> FROM public.gateway_url_exposure_t0
+        WHERE tenant_id = 0 AND deleted_at IS NULL AND owner_tenant_id = #{owner}
+          AND gateway_group_id = #{groupId} AND route_id = #{routeId}
+    </select>
+    <select id="scanBinding" resultMap="Exposure">
+        SELECT <include refid="columns"/> FROM public.gateway_url_exposure_t0
+        WHERE tenant_id = 0 AND deleted_at IS NULL AND cluster_id = #{cluster}
+          AND gateway_namespace = #{gatewayNamespace} AND gateway_name = #{gatewayName}
+          AND listener_name = #{listenerName} AND id &gt; #{afterId}
+        ORDER BY id ASC LIMIT #{limit}
+    </select>
+    <select id="lockPublicationDomain" resultType="int">
+        SELECT CASE WHEN current_setting('transaction_isolation') = 'read committed'
+                    THEN pg_backend_pid() ELSE 0 END AS backend_pid,
+               pg_advisory_xact_lock(#{lockKey} + 0 * COUNT(*)) AS publication_lock
+        FROM (SELECT id FROM public.gateway_url_exposure_t0
+              WHERE tenant_id = 0 AND deleted_at IS NULL LIMIT 0) control_anchor
+    </select>
+    <update id="compareAndSetDesired">
+        UPDATE public.gateway_url_exposure_t0
+        SET desired_state = #{record.desiredState,javaType=top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum,typeHandler=com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler},
+            desired_generation = desired_generation + 1, reconcile_status = 'PENDING',
+            change_reason = #{record.changeReason}, withdrawn_at = #{record.withdrawnAt,jdbcType=TIMESTAMP},
+            update_user_id = #{record.updateUserId}, update_time = #{record.updateTime,jdbcType=TIMESTAMP}, version = version + 1
+        WHERE <include refid="ownedVersion"/> AND desired_generation = #{generation}
+          AND desired_state = #{oldState} AND desired_state &lt;&gt; 'WITHDRAWN'
+    </update>
+    <update id="compareAndSetContent">
+        UPDATE public.gateway_url_exposure_t0
+        SET release_id = #{record.releaseId}, content_sha256 = #{record.contentSha256},
+            compiler_profile_id = #{record.compilerProfileId}, desired_generation = desired_generation + 1,
+            reconcile_status = 'PENDING', change_reason = #{record.changeReason},
+            update_user_id = #{record.updateUserId}, update_time = #{record.updateTime,jdbcType=TIMESTAMP}, version = version + 1
+        WHERE <include refid="ownedVersion"/> AND desired_generation = #{generation}
+          AND desired_state = #{oldState} AND desired_state &lt;&gt; 'WITHDRAWN'
+    </update>
+    <update id="bindRouteUid">
+        UPDATE public.gateway_url_exposure_t0 SET route_uid = #{record.routeUid},
+            update_user_id = #{record.updateUserId}, update_time = #{record.updateTime,jdbcType=TIMESTAMP}, version = version + 1
+        WHERE <include refid="ownedVersion"/> AND route_uid IS NULL
+    </update>
+    <update id="recordObservation">
+        UPDATE public.gateway_url_exposure_t0
+        SET observed_state = #{record.observedState}, observed_generation = #{record.observedGeneration},
+            reconcile_status = #{record.reconcileStatus},
+            observation = CAST(#{record.observation,jdbcType=OTHER,typeHandler=top.egon.cola.component.yuheng.admin.shared.dao.typehandler.GatewayJsonbTypeHandler} AS jsonb),
+            last_error_code = #{record.lastErrorCode,jdbcType=VARCHAR},
+            update_user_id = #{record.updateUserId}, update_time = #{record.updateTime,jdbcType=TIMESTAMP}, version = version + 1
+        WHERE <include refid="ownedVersion"/> AND desired_generation = #{generation}
+          AND route_uid = #{verifiedUid} AND observed_generation &lt;= #{record.observedGeneration}
+    </update>
+</mapper>

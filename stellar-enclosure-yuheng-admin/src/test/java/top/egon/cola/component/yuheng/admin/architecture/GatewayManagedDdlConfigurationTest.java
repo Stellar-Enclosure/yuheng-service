@@ -31,10 +31,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import top.egon.cola.component.common.mybatis.ddl.EgonColaDdlManifestBO;
+import top.egon.cola.component.common.mybatis.ddl.EgonColaPostgreDdlRunner;
+import top.egon.cola.component.common.mybatis.sharding.EgonColaShardingProperties;
+import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingTopologyValidator;
+import javax.sql.DataSource;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfigurationException;
 import top.egon.cola.component.yuheng.admin.config.GatewayManagedDdlConfiguration;
 import top.egon.cola.component.yuheng.admin.config.GatewayManagedDdlFactory;
@@ -42,15 +48,15 @@ import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties;
 
 /**
  * 中文说明：{@code GatewayManagedDdlConfigurationTest} 固定 Step 9 的切换合同：MyBatis-Plus 是唯一数据源/TM，
- * 装配中不得再残留 JPA/Flyway/ORM 运行期类型；空库基线必须把 yuheng 各模块声明的<b>每一个</b> {@code @TableName}
- * 落成恰好一张 {@code *_t0} 物理表（合计 42 张）、自带 {@code ddl_history}，且不含组件 runner 禁止的
+ * 装配中不得再残留 JPA/Flyway/ORM 运行期类型；001 的42张业务逻辑表继续各落一张 {@code *_t0} 物理表，
+ * 当前清单另增加直接映射的 SINGLE {@code gateway_url_exposure_t0}，不重复追加后缀。基线自带 {@code ddl_history}，且不含组件 runner 禁止的
  * {@code DROP}/事务控制/{@code CONCURRENTLY} 语句；manifest 的 family 只能取组件允许的六个值之一（本项目为
  * {@code web}），其 sha256 必须等于<b>最终 SQL 字节</b>的摘要——绝不为了通过检查而改哈希；期望版本或摘要与
  * manifest 不一致时，工厂必须在触达拓扑与任何连接动作<b>之前</b>失败关闭。
  * English summary: {@code GatewayManagedDdlConfigurationTest} pins the Step 9 cutover contract: MyBatis-Plus is the only
  * datasource/transaction manager and no JPA, Flyway or ORM runtime type may remain in the wiring; the empty-database
- * baseline must materialise <b>every</b> {@code @TableName} declared across the yuheng modules as exactly one
- * {@code *_t0} physical table (42 in total), ship its own {@code ddl_history}, and contain no statement the component
+ * 001 baseline preserves its 42 logical-table mappings; the current manifest additionally declares the direct SINGLE
+ * {@code gateway_url_exposure_t0} mapping without another suffix. The baseline ships {@code ddl_history} and contains no statement the component
  * runner forbids ({@code DROP}, transaction control, {@code CONCURRENTLY}); the manifest family must be one the component
  * accepts ({@code web} here) and its sha256 must equal the digest of the <b>final SQL bytes</b> — the hash is never
  * edited to force a pass; and a mismatching expected version or checksum must fail closed <b>before</b> the factory
@@ -65,6 +71,7 @@ class GatewayManagedDdlConfigurationTest {
     private static final String MANIFEST_RESOURCE = "db/egon-mp/repository-manifest.json";
     private static final String EXPECTED_VERSION = "20260922_001";
     private static final String TECHNICAL_TABLE = "ddl_history";
+    private static final String EXPOSURE_SINGLE_TABLE = "gateway_url_exposure_t0";
     private static final Pattern CREATE_TABLE =
             Pattern.compile("CREATE TABLE (?:IF NOT EXISTS )?(?:[a-z_][a-z0-9_]*\\.)?([a-z][a-z0-9_]*)",
                     Pattern.CASE_INSENSITIVE);
@@ -99,16 +106,25 @@ class GatewayManagedDdlConfigurationTest {
     }
 
     @Test
-    @DisplayName("基线把每个MP模型落成恰好一张_t0节点表")
-    void baselineMaterialisesEveryMappedModelAsOnePhysicalNode() {
+    @DisplayName("001保留42个逻辑节点且当前清单为新增SINGLE只映射一次")
+    void baselineAndCurrentManifestMaterializeEachMappedModelAtItsDeclaredNode() throws IOException {
         Set<String> baselineTables = tablesIn(baselineSql);
-
-        assertThat(mappedTables).hasSize(42);
+        Set<String> originalLogicalTables = new LinkedHashSet<>(mappedTables);
+        assertThat(originalLogicalTables.remove(EXPOSURE_SINGLE_TABLE)).isTrue();
+        assertThat(mappedTables).hasSize(43);
+        assertThat(originalLogicalTables).hasSize(42);
         assertThat(baselineTables).hasSize(43).contains(TECHNICAL_TABLE);
         assertThat(baselineTables).filteredOn(name -> !TECHNICAL_TABLE.equals(name))
-                .allMatch(name -> name.endsWith("_t0"), "every business table must use the _t0 node suffix");
-        assertThat(baselineTables)
-                .containsExactlyInAnyOrderElementsOf(unionOfBusinessNodes(mappedTables));
+                .allMatch(name -> name.endsWith("_t0"), "every original business table uses the _t0 node suffix");
+        assertThat(baselineTables).containsExactlyInAnyOrderElementsOf(unionOfBusinessNodes(originalLogicalTables));
+
+        EgonColaDdlManifestBO manifest = new ObjectMapper().readValue(readResource(MANIFEST_RESOURCE), EgonColaDdlManifestBO.class);
+        Set<String> currentTables = new LinkedHashSet<>();
+        for (var script : manifest.scripts()) { currentTables.addAll(tablesIn(readResource(script.path()))); }
+        Set<String> expected = unionOfBusinessNodes(originalLogicalTables);
+        expected.add(EXPOSURE_SINGLE_TABLE);
+        assertThat(currentTables).containsExactlyInAnyOrderElementsOf(expected)
+                .doesNotContain(EXPOSURE_SINGLE_TABLE + "_t0");
     }
 
     @Test
@@ -157,7 +173,8 @@ class GatewayManagedDdlConfigurationTest {
         EgonColaDdlManifestBO manifest =
                 new ObjectMapper().readValue(readResource(MANIFEST_RESOURCE), EgonColaDdlManifestBO.class);
         assertThat(manifest.family()).isEqualTo("web");
-        assertThat(manifest.scripts()).hasSize(2);
+        assertThat(manifest.scripts()).extracting(EgonColaDdlManifestBO.ScriptBO::version)
+                .containsExactly(EXPECTED_VERSION, "20261116_002", "20261117_003");
         EgonColaDdlManifestBO.ScriptBO script = manifest.scripts().get(0);
         assertThat(script.version()).isEqualTo(EXPECTED_VERSION);
         assertThat(script.path()).isEqualTo(SQL_RESOURCE);
@@ -176,12 +193,16 @@ class GatewayManagedDdlConfigurationTest {
         GatewayPersistenceProperties stale = new GatewayPersistenceProperties(
                 9001L, 9002L, "stellar-enclosure-yuheng-admin-service", "19700101_001", "0".repeat(64), true);
 
-        // 拓扑校验器与 runner 传 null：一旦实现越过去触碰它们就会抛 NPE，从而证明错配确实在最早处被拦下。
-        // The validator and runner are null: reaching either would raise an NPE, proving the mismatch is caught first.
+        var validator = mock(EgonColaShardingTopologyValidator.class);
+        var runner = mock(EgonColaPostgreDdlRunner.class);
+        var physical = mock(DataSource.class);
+        // Supply a valid supported topology so only the expected-version/checksum mismatch can stop this path.
         assertThatThrownBy(() -> new GatewayManagedDdlFactory(
-                null, new ObjectMapper(), stale, null, null).create(Map.of(), new byte[0]))
+                validControlTopology(), new ObjectMapper(), stale, validator, runner)
+                .create(Map.of("primary", physical), new byte[0]))
                 .isInstanceOf(EgonColaMybatisPlusConfigurationException.class)
                 .hasMessageContaining("SCHEMA_MANIFEST_MISMATCH");
+        verifyNoInteractions(validator, runner, physical);
     }
 
     @Test
@@ -200,21 +221,19 @@ class GatewayManagedDdlConfigurationTest {
     }
 
     @Test
-    @DisplayName("受管DDL只覆盖组件扩展点名且开关必须显式打开")
+    @DisplayName("Admin受管DDL只占用组件唯一扩展点，角色错误由实际工厂入口失败关闭")
     void configurationOverridesOnlyTheComponentExtensionPoint() {
         List<Bean> beans = new ArrayList<>();
-        List<ConditionalOnProperty> conditions = new ArrayList<>();
         for (var method : GatewayManagedDdlConfiguration.class.getDeclaredMethods()) {
             if (method.getAnnotation(Bean.class) != null) {
                 beans.add(method.getAnnotation(Bean.class));
-                conditions.add(method.getAnnotation(ConditionalOnProperty.class));
+                assertThat(method.getAnnotation(ConditionalOnProperty.class))
+                        .as("Admin ownership must fail closed rather than back off to the component default factory")
+                        .isNull();
             }
         }
         assertThat(beans).hasSize(1);
         assertThat(beans.get(0).value()).containsExactly("egonColaShardingLogicalDataSourceFactory");
-        assertThat(conditions.get(0).prefix()).isEqualTo("yuheng.persistence");
-        assertThat(conditions.get(0).name()).containsExactly("managed-ddl-enabled");
-        assertThat(conditions.get(0).havingValue()).isEqualTo("true");
         assertThat(GatewayManagedDdlConfiguration.class.getAnnotation(Configuration.class).proxyBeanMethods())
                 .isFalse();
     }
@@ -242,6 +261,19 @@ class GatewayManagedDdlConfigurationTest {
             });
         }
         assertThat(offenders).isEmpty();
+    }
+
+    private static EgonColaShardingProperties validControlTopology() {
+        var standard = new EgonColaShardingProperties.TableProperties("STANDARD_TENANT_ID", null, "tenant_id", null, null);
+        return EgonColaShardingProperties.builder()
+                .mode(EgonColaShardingProperties.ModeEnum.SHARDING)
+                .configStyle(EgonColaShardingProperties.ConfigStyleEnum.STRATEGY)
+                .transactionDefaultType("LOCAL")
+                .dataSources(List.of(new EgonColaShardingProperties.PhysicalDataSourceProperties("primary", "primary",
+                        EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY, "org.postgresql.Driver",
+                        "jdbc:postgresql://127.0.0.1:65432/unused", "test", "test")))
+                .tables(Map.of("gateway_group", standard, "gateway_release", standard, "gateway_release_content", standard,
+                        "gateway_idempotency_record", standard, "gateway_audit_log", standard)).build();
     }
 
     private static Set<String> collectMappedTables() throws IOException {

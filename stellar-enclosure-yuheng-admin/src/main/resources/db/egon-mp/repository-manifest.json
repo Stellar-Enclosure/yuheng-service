@@ -10,6 +10,11 @@
       "version": "20261116_002",
       "path": "db/egon-mp/20261116_002_yuheng_llm_cache.sql",
       "sha256": "44024a6466e59905ad27c5c35b38c47d573688f935b18602bc648824687987e7"
+    },
+    {
+      "version": "20261117_003",
+      "path": "db/egon-mp/20261117_003_yuheng_url_exposure.sql",
+      "sha256": "2d71e8c91db6f6d058bfc797532fe4a0866f7b1dd9f2e5daaf73f8b9d74eb17b"
     }
   ]
 }
