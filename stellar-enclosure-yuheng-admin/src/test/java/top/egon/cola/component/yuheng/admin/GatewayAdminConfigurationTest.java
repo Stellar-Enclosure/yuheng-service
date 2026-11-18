@@ -73,7 +73,12 @@ class GatewayAdminConfigurationTest {
                 .put("routeId", "orders").put("contentSha256", digest).put("expectedDesiredGeneration", "1");
         when(artifact.canonicalSnapshot()).thenReturn(snapshot);
         var manifest = json.createObjectNode();
-        manifest.putArray("dependencies").addObject().set("publicationBinding", json.valueToTree(pinned));
+        var frozen = (com.fasterxml.jackson.databind.node.ObjectNode) json.valueToTree(pinned);
+        var backend = (com.fasterxml.jackson.databind.node.ObjectNode) frozen.at("/backends/0");
+        backend.put("port", new java.math.BigDecimal("8E+1"));
+        backend.put("targetPort", new java.math.BigDecimal("8.08E+3"));
+        backend.put("weight", new java.math.BigDecimal("1E+2"));
+        manifest.putArray("dependencies").addObject().set("publicationBinding", frozen);
         when(artifact.chunkManifest()).thenReturn(manifest);
         var validator = configuration.gatewayExposureReopenValidator(releases, compiler, bindings, json);
         var closed = GatewayUrlExposureBO.builder().id(101L).ownerTenantId(7L).gatewayGroupId(810L)

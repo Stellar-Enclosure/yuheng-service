@@ -41,6 +41,7 @@ import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposu
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayUrlExposureService;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.service.GatewayReleasePublicationCoordinator;
 import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher;
 import top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService;
@@ -356,7 +357,7 @@ public class GatewayAdminConfiguration {
                     pinned.path("operationId").asText()).orElseThrow(GatewayUrlExposureException::bindingConflict);
             try {
                 compiler.validateBinding(currentBinding);
-                if (!compiler.contentDigest(pinned).equals(compiler.contentDigest(json.valueToTree(currentBinding)))) {
+                if (!GatewayCiliumReleaseArtifact.sameCanonicalObject(pinned, json.valueToTree(currentBinding))) {
                     throw GatewayUrlExposureException.bindingConflict();
                 }
             } catch (IllegalArgumentException invalid) {

@@ -108,6 +108,11 @@ public record GatewayCiliumReleaseArtifact(@NotNull JsonNode canonicalSnapshot,
     public long snapshotSize() { return bytes(canonicalSnapshot).length; }
     @Override public String toString() { return "Cilium release artifact"; }
 
+    /** Compares a frozen object with freshly typed JSON using the same number semantics as JSONB artifacts. */
+    public static boolean sameCanonicalObject(JsonNode frozen, JsonNode current) {
+        return document(frozen).equals(document(current));
+    }
+
     private static JsonNode document(JsonNode value) {
         JsonNode result = normalize(object(value), new IdentityHashMap<>(), 0, new int[] { 0 });
         if (bytes(result).length > MAX_DOCUMENT_BYTES) throw invalid();
