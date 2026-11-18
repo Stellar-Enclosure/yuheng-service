@@ -43,6 +43,31 @@ class GatewayManagedDdlReplicaReplayTest {
             "gateway_release_content", "gateway_idempotency_record", "gateway_audit_log");
 
     @Test
+    void composedFactoryPreparesBothExactOutboxNodesBeforeBootstrap() throws Exception {
+        var topology = properties();
+        Class<?> initializerType = Class.forName("top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer");
+        Class<?> storageType = Class.forName("top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties");
+        var constructor = GatewayManagedDdlFactory.class.getConstructor(EgonColaShardingProperties.class,
+                ObjectMapper.class, GatewayPersistenceProperties.class, EgonColaShardingTopologyValidator.class,
+                EgonColaPostgreDdlRunner.class, initializerType, storageType);
+        constructor.newInstance(topology, new ObjectMapper(), deployment(), mock(EgonColaShardingTopologyValidator.class),
+                mock(EgonColaPostgreDdlRunner.class), mock(initializerType), storageType.getConstructor().newInstance());
+        var message = topology.getTables().get("egon_cola_outbox_message");
+        var history = topology.getTables().get("ddl_history");
+        assertThat(message).isNotNull(); assertThat(history).isNotNull();
+        assertThat(message.type()).isEqualTo("SINGLE");
+        assertThat(message.dataSource()).isEqualTo("primary");
+        assertThat(message.shardGroups()).isNullOrEmpty();
+        assertThat(message.shardingColumn()).isNull();
+        assertThat(message.schema()).isEqualTo("egon_outbox");
+        assertThat(history.type()).isEqualTo("SINGLE");
+        assertThat(history.dataSource()).isEqualTo("primary");
+        assertThat(history.schema()).isEqualTo("egon_outbox");
+        assertThatCode(() -> GatewayPersistenceConfiguration.validateUrlExposureControlTopology(topology, actualTopology(topology)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void refusesReadwriteControlTopologyBeforeRunnerOrReplicaAccess() {
         var topology = properties().setMode(EgonColaShardingProperties.ModeEnum.SHARDING_READWRITE)
                 .setDataSources(List.of(source("primary", "shard_0", EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY),
@@ -176,7 +201,7 @@ class GatewayManagedDdlReplicaReplayTest {
     @Test
     void passesOnlyTheExactAdditivePredecessorFingerprintToTheSinglePrimaryRunner() throws Exception {
         var properties = properties();
-        GatewayPersistenceConfiguration.prepareUrlExposureControlTopology(properties);
+        GatewayPersistenceConfiguration.prepareExposureOutboxTopology(properties);
         var materialized = actualTopology(properties);
         var validator = mock(EgonColaShardingTopologyValidator.class);
         var runner = mock(EgonColaPostgreDdlRunner.class);
@@ -188,10 +213,14 @@ class GatewayManagedDdlReplicaReplayTest {
             captured.set(invocation.getArgument(0));
             throw stopBeforeLogicalDatasource;
         }).when(runner).run(any());
-        var factory = new GatewayManagedDdlFactory(properties, new ObjectMapper(), deployment(), validator, runner);
+        var factory = new GatewayManagedDdlFactory(properties, new ObjectMapper(), deployment(), validator, runner,
+                mock(top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer.class),
+                new top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties());
         assertThatThrownBy(() -> factory.create(Map.of("primary", physical), materialized.yaml()))
                 .isSameAs(stopBeforeLogicalDatasource);
         var previous = new TreeMap<>(materialized.profiles());
+        previous.remove("egon_cola_outbox_message"); previous.remove("ddl_history");
+        String v003Fingerprint = EgonColaShardingTopologyValidator.fingerprint(previous, materialized.schemas());
         previous.remove("gateway_url_exposure_t0");
         String previousFingerprint = EgonColaShardingTopologyValidator.fingerprint(previous, materialized.schemas());
         assertThat(captured.get()).singleElement().satisfies(target -> {
@@ -199,12 +228,43 @@ class GatewayManagedDdlReplicaReplayTest {
             assertThat(target.schema()).isEqualTo("public");
             assertThat(target.dataSource()).isSameAs(physical);
             assertThat(target.routeFingerprint()).isEqualTo(materialized.fingerprint());
-            assertThat(target.compatibleRouteFingerprints()).containsExactly(previousFingerprint);
+            assertThat(target.compatibleRouteFingerprints()).containsExactlyInAnyOrder(v003Fingerprint, previousFingerprint);
         });
         previous.remove("gateway_audit_log");
         assertThat(captured.get().getFirst().compatibleRouteFingerprints())
                 .doesNotContain(EgonColaShardingTopologyValidator.fingerprint(previous, materialized.schemas()));
         verifyNoInteractions(physical);
+    }
+
+    @Test
+    void latestRuntimeCannotSkipTheOutboxInitializer() throws Exception {
+        var properties = properties();
+        GatewayPersistenceConfiguration.prepareUrlExposureControlTopology(properties);
+        var topology = actualTopology(properties);
+        var validator = mock(EgonColaShardingTopologyValidator.class);
+        when(validator.validate(any(), any())).thenReturn(topology);
+        var runner = mock(EgonColaPostgreDdlRunner.class);
+        var physical = mock(DataSource.class);
+        var factory = new GatewayManagedDdlFactory(properties, new ObjectMapper(), deployment(), validator, runner);
+        assertThatThrownBy(() -> factory.create(Map.of("primary", physical), topology.yaml()))
+                .hasMessageContaining("URL_EXPOSURE_OUTBOX_INITIALIZER_REQUIRED");
+        verifyNoInteractions(runner, physical);
+    }
+
+    @Test
+    void outboxNodeConflictAndReadOnlyStorageModeFailBeforeAnyDdl() throws Exception {
+        var topology = properties();
+        topology.getTables().put("ddl_history", new TableProperties("SINGLE", "primary", null, null, null, "public"));
+        assertThatThrownBy(() -> new GatewayManagedDdlFactory(topology, new ObjectMapper(), deployment(),
+                mock(EgonColaShardingTopologyValidator.class), mock(EgonColaPostgreDdlRunner.class),
+                mock(top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer.class),
+                new top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties()))
+                .hasMessageContaining("URL_EXPOSURE_OUTBOX_SINGLE_ROUTE_REQUIRED");
+        assertThatThrownBy(() -> new GatewayManagedDdlFactory(properties(), new ObjectMapper(), deployment(),
+                mock(EgonColaShardingTopologyValidator.class), mock(EgonColaPostgreDdlRunner.class),
+                mock(top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer.class),
+                new top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties().setAutoInitializeDdl(false)))
+                .hasMessageContaining("URL_EXPOSURE_OUTBOX_STORAGE_REQUIRED");
     }
 
     private static void assertAdminDdlFlags(Boolean deploymentEnabled, boolean componentEnabled, boolean genericAutoMigrate,
@@ -216,7 +276,7 @@ class GatewayManagedDdlReplicaReplayTest {
         var validator = mock(EgonColaShardingTopologyValidator.class);
         var runner = mock(EgonColaPostgreDdlRunner.class);
         assertThatThrownBy(() -> new GatewayManagedDdlConfiguration().egonColaShardingLogicalDataSourceFactory(
-                properties(), mybatis, new ObjectMapper(), persistence, validator, runner))
+                properties(), mybatis, new ObjectMapper(), persistence, validator, runner, null, null))
                 .isInstanceOf(EgonColaMybatisPlusConfigurationException.class).hasMessageContaining(error);
         verifyNoInteractions(validator, runner);
     }

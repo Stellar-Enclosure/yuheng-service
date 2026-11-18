@@ -14,6 +14,7 @@ import java.util.Set;
  * @param actorType 参数 actorType；parameter actor type。
  * @param scopes 参数 scopes；parameter scopes。
  * @param roles 参数 roles；parameter roles。
+ * @param oauthScopes authenticated OAuth token scopes from SCOPE_ authorities
  */
 public record AdminActor(
         /**
@@ -43,8 +44,13 @@ public record AdminActor(
          *
          * 用法 / Usage: 该字段通过 {@code AdminActor} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code AdminActor}; do not couple callers to its representation when the owning type exposes an API.
          */
-        Set<String> roles
+        Set<String> roles,
+        Set<String> oauthScopes
 ) {
+
+    public AdminActor(String actorId, AdminActorTypeEnum actorType, Set<String> scopes, Set<String> roles) {
+        this(actorId, actorType, scopes, roles, Set.of());
+    }
 
     /**
      * 中文说明：创建 {@code AdminActor} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
@@ -55,6 +61,7 @@ public record AdminActor(
      * @param actorType 参数 actorType；parameter actor type。
      * @param scopes 参数 scopes；parameter scopes。
      * @param roles 参数 roles；parameter roles。
+ * @param oauthScopes authenticated OAuth token scopes from SCOPE_ authorities
      */
     public AdminActor {
         if (actorId == null || actorId.isBlank()) {
@@ -67,6 +74,7 @@ public record AdminActor(
         );
         scopes = Set.copyOf(scopes == null ? Set.of() : scopes);
         roles = Set.copyOf(roles == null ? Set.of() : roles);
+        oauthScopes = Set.copyOf(oauthScopes == null ? Set.of() : oauthScopes);
     }
 
 

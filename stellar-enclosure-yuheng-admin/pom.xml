@@ -18,6 +18,7 @@
 
     <properties>
         <mapstruct.version>1.6.3</mapstruct.version>
+        <stellar-enclosure.outbox.version>0.0.2-SNAPSHOT</stellar-enclosure.outbox.version>
         <maven.deploy.skip>true</maven.deploy.skip>
         <gpg.skip>true</gpg.skip>
     </properties>
@@ -79,6 +80,11 @@
         <dependency>
             <groupId>top.egon</groupId>
             <artifactId>stellar-enclosure-component-common-id-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>top.egon</groupId>
+            <artifactId>stellar-enclosure-component-transactional-outbox-starter</artifactId>
+            <version>${stellar-enclosure.outbox.version}</version>
         </dependency>
         <dependency>
             <groupId>top.egon</groupId>

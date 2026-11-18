@@ -11,6 +11,8 @@ import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfi
 import top.egon.cola.component.common.mybatis.sharding.EgonColaShardingProperties;
 import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingDataSourceBootstrapper;
 import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingTopologyValidator;
+import top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer;
+import top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties;
 
 /**
  * 中文说明：占住组件唯一的逻辑数据源扩展点 {@code egonColaShardingLogicalDataSourceFactory}，让 Admin 在连接池建立后、
@@ -48,7 +50,9 @@ public class GatewayManagedDdlConfiguration {
             ObjectMapper objectMapper,
             GatewayPersistenceProperties persistenceProperties,
             @Qualifier("egonColaShardingTopologyValidator") EgonColaShardingTopologyValidator topologyValidator,
-            @Qualifier("egonColaPostgreDdlRunner") EgonColaPostgreDdlRunner ddlRunner) {
+            @Qualifier("egonColaPostgreDdlRunner") EgonColaPostgreDdlRunner ddlRunner,
+            @Qualifier("outboxManagedDdlInitializer") OutboxManagedDdlInitializer outboxInitializer,
+            @Qualifier("outboxMpStorageProperties") OutboxMpStorageProperties outboxStorage) {
         Boolean managed = persistenceProperties.getManagedDdlEnabled();
         if (managed == null) {
             throw new EgonColaMybatisPlusConfigurationException("MANAGED_DDL_FLAG_REQUIRED");
@@ -65,6 +69,6 @@ public class GatewayManagedDdlConfiguration {
         log.info("managed ddl ownership claimed for expected schema version {}",
                 persistenceProperties.getExpectedSchemaVersion());
         return new GatewayManagedDdlFactory(shardingProperties, objectMapper, persistenceProperties,
-                topologyValidator, ddlRunner);
+                topologyValidator, ddlRunner, outboxInitializer, outboxStorage);
     }
 }

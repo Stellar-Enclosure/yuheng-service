@@ -92,12 +92,46 @@ class PermissionProducerCoverageTest {
             }
         }
         walk(top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadCommandDTO.class, false, resources, fields, external, new HashSet<>());
-        assertThat(apiKeys).hasSize(97);
+        assertThat(apiKeys).hasSize(99).contains("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.API)
                 .map(PermissionManifest.ResourceDefinition::key).toList()).containsExactlyInAnyOrderElementsOf(apiKeys);
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.FIELD)
                 .map(PermissionManifest.ResourceDefinition::key).toList()).containsExactlyInAnyOrderElementsOf(fields);
         assertThat(external).containsExactlyInAnyOrderElementsOf(EXTERNAL_CONTRACTS);
+    }
+
+    @Test
+    void urlExposureRoutesAndEveryReachableFieldAreInTheActualPermissionFragment() throws Exception {
+        Map<String, PermissionManifest.ResourceDefinition> resources = new TreeMap<>();
+        for (var fragment : fragments()) {
+            for (var resource : fragment.resources()) {
+                assertThat(resources.put(resource.key(), resource)).as(resource.key()).isNull();
+            }
+        }
+        Class<?> controller = top.egon.cola.component.yuheng.admin.exposure.controller.GatewayUrlExposureController.class;
+        var mappings = new Mappings();
+        Set<String> apiKeys = new TreeSet<>();
+        Set<String> fields = new TreeSet<>();
+        Set<String> external = new TreeSet<>();
+        for (Method method : controller.getDeclaredMethods()) {
+            RequestMappingInfo mapping = mappings.mapping(method, controller);
+            if (mapping == null) continue;
+            PermissionResource declaration = method.getAnnotation(PermissionResource.class);
+            assertThat(declaration).as(method.getName()).isNotNull();
+            assertThat(apiKeys.add(declaration.key())).isTrue();
+            var exported = resources.get(declaration.key());
+            assertThat(exported).as(declaration.key()).isNotNull();
+            assertThat(strings(exported.target().get("paths"))).containsExactlyInAnyOrderElementsOf(mapping.getPatternValues());
+            walk(method.getGenericReturnType(), true, resources, fields, external, new HashSet<>());
+            for (Type parameter : method.getGenericParameterTypes()) {
+                walk(parameter, false, resources, fields, external, new HashSet<>());
+            }
+        }
+        assertThat(apiKeys).containsExactlyInAnyOrder("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
+        assertThat(fields).isNotEmpty();
+        assertThat(resources.values().stream().filter(resource -> resource.type() == ResourceType.FIELD
+                && resource.key().matches("yuheng\\.field\\.GatewayUrlExposure(?:VO|StateRequestDTO|KubernetesRouteVO|ConditionVO)\\..*"))
+                .map(PermissionManifest.ResourceDefinition::key).toList()).containsExactlyInAnyOrderElementsOf(fields);
     }
 
     @Test
@@ -109,7 +143,8 @@ class PermissionProducerCoverageTest {
             fragment.permissionDefinitions().forEach(value -> assertThat(definitions.add(value.code())).isTrue());
             fragment.messages().forEach(message -> assertThat(messages.put(message.pageCode() + ":" + message.key(), message)).isNull());
         }
-        assertThat(definitions).hasSize(14).doesNotContain("*");
+        assertThat(definitions).hasSize(16)
+                .contains("yuheng:exposures:write", "yuheng:exposures:reopen").doesNotContain("*");
         for (var fragment : fragments) {
             for (var resource : fragment.resources()) assertThat(messages)
                     .containsKey(resource.i18n().pageCode() + ":" + resource.i18n().labelKey());

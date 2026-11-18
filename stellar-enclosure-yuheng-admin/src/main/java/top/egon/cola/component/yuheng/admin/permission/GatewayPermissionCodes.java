@@ -7,6 +7,8 @@ import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.P
 @PermissionDefinition(code = GatewayPermissionCodes.CATALOG_WRITE, meaning = "Catalog write", labelPage = "gateway.permissions", labelKey = "permission.catalog.write")
 @PermissionDefinition(code = GatewayPermissionCodes.CREDENTIALS_WRITE, meaning = "Credentials write", labelPage = "gateway.permissions", labelKey = "permission.credentials.write")
 @PermissionDefinition(code = GatewayPermissionCodes.DRAFTS_WRITE, meaning = "Drafts write", labelPage = "gateway.permissions", labelKey = "permission.drafts.write")
+@PermissionDefinition(code = GatewayPermissionCodes.EXPOSURES_REOPEN, meaning = "Open a URL exposure", labelPage = "gateway.permissions", labelKey = "permission.exposures.reopen")
+@PermissionDefinition(code = GatewayPermissionCodes.EXPOSURES_WRITE, meaning = "Change URL exposure state", labelPage = "gateway.permissions", labelKey = "permission.exposures.write")
 @PermissionDefinition(code = GatewayPermissionCodes.GROUPS_WRITE, meaning = "Groups write", labelPage = "gateway.permissions", labelKey = "permission.groups.write")
 @PermissionDefinition(code = GatewayPermissionCodes.LLM_READ, meaning = "Llm read", labelPage = "gateway.permissions", labelKey = "permission.llm.read")
 @PermissionDefinition(code = GatewayPermissionCodes.LLM_WRITE, meaning = "Llm write", labelPage = "gateway.permissions", labelKey = "permission.llm.write")
@@ -22,6 +24,8 @@ public final class GatewayPermissionCodes {
     public static final String CATALOG_WRITE = "yuheng:catalog:write";
     public static final String CREDENTIALS_WRITE = "yuheng:credentials:write";
     public static final String DRAFTS_WRITE = "yuheng:drafts:write";
+    public static final String EXPOSURES_REOPEN = "yuheng:exposures:reopen";
+    public static final String EXPOSURES_WRITE = "yuheng:exposures:write";
     public static final String GROUPS_WRITE = "yuheng:groups:write";
     public static final String LLM_READ = "yuheng:llm:read";
     public static final String LLM_WRITE = "yuheng:llm:write";

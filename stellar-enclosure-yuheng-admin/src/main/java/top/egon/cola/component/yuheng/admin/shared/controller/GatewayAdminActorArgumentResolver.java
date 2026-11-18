@@ -79,7 +79,8 @@ public final class GatewayAdminActorArgumentResolver
                         ? top.egon.cola.component.yuheng.admin.shared.domain.enums.AdminActorTypeEnum.SERVICE
                         : top.egon.cola.component.yuheng.admin.shared.domain.enums.AdminActorTypeEnum.USER,
                 authorities(authentication, "CAP_"),
-                authorities(authentication, "ROLE_")
+                authorities(authentication, "ROLE_"),
+                authorities(authentication, "SCOPE_")
         );
     }
 

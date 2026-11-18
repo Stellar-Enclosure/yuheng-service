@@ -68,6 +68,7 @@ class YuhengAiConformanceTest {
     private static final String LLM_CACHE_SCRIPT_NAME = "20261116_002_yuheng_llm_cache.sql";
 
     private static final String URL_EXPOSURE_SCRIPT_NAME = "20261117_003_yuheng_url_exposure.sql";
+    private static final String OUTBOX_SCHEMA_SCRIPT_NAME = "20261117_004_yuheng_exposure_outbox.sql";
 
     /** 中文说明：42 张逻辑表全部单分片落位 / every one of the 42 logical tables lands on one shard. */
     private static final int DECLARED_TABLE_COUNT = 42;
@@ -113,13 +114,13 @@ class YuhengAiConformanceTest {
 
     @Test
     @DisplayName("受管 DDL 仅包含预期脚本，且清单摘要就是最终字节的 SHA-256")
-    void managedScriptIsTheOnlyNewSqlAndItsChecksumIsTheRealDigest() throws IOException {
+    void managedScriptsMatchTheImmutableHistoryAndCurrentDigests() throws IOException {
         List<Map<String, String>> scripts = readManifestScripts();
 
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/egon-mp")))
-                .as("the managed family ships only the baseline, pinned AI cache and URL exposure ledger")
-                .containsExactlyInAnyOrder(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME);
-        assertThat(scripts).hasSize(3);
+                .as("the managed family ships only the baseline, pinned AI cache, URL exposure ledger and Outbox boundary")
+                .containsExactlyInAnyOrder(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME, OUTBOX_SCHEMA_SCRIPT_NAME);
+        assertThat(scripts).hasSize(4);
         assertThat(scripts.get(0)).containsOnly(entry("version", SCHEMA_VERSION), entry("path", MANAGED_SCRIPT),
                 entry("sha256", "22dc8ec627ee6e0eaabb1c8ecad55f80798a5d061abcc96a964966bf74de493e"));
         assertThat(scripts.get(1)).containsOnly(entry("version", "20261116_002"),
@@ -128,6 +129,8 @@ class YuhengAiConformanceTest {
         assertThat(scripts.get(2)).containsOnly(entry("version", "20261117_003"),
                 entry("path", "db/egon-mp/" + URL_EXPOSURE_SCRIPT_NAME),
                 entry("sha256", "2d71e8c91db6f6d058bfc797532fe4a0866f7b1dd9f2e5daaf73f8b9d74eb17b"));
+        assertThat(scripts.get(3)).contains(entry("version", "20261117_004"),
+                entry("path", "db/egon-mp/" + OUTBOX_SCHEMA_SCRIPT_NAME));
         for (Map<String, String> entryMap : scripts) {
             assertThat(DigestUtils.sha256Hex(Files.readAllBytes(ADMIN_RESOURCES.resolve(entryMap.get("path")))))
                     .as("the manifest checksum is computed from the final SQL bytes, never guessed")
@@ -140,7 +143,7 @@ class YuhengAiConformanceTest {
                 .allMatch(name -> name.matches("V(?:1|[2-9]|1[0-2])__.*\\.sql|V13__.*\\.sql"));
         assertThat(sqlNames(ADMIN_RESOURCES.resolve("db/migration")))
                 .as("no legacy script was pulled back under management")
-                .doesNotContain(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME);
+                .doesNotContain(MANAGED_SCRIPT_NAME, LLM_CACHE_SCRIPT_NAME, URL_EXPOSURE_SCRIPT_NAME, OUTBOX_SCHEMA_SCRIPT_NAME);
     }
 
     @Test
@@ -318,14 +321,18 @@ class YuhengAiConformanceTest {
 
         assertThat(scope.keySet()).as("no event carrier is declared in the plane")
                 .noneMatch(path -> path.getFileName().toString().endsWith("Event.java"));
-        assertThat(scope.values()).as("no messaging or outbox client is imported")
-                .noneMatch(code -> code.contains("Outbox") || code.contains("KafkaTemplate")
-                        || code.contains("RocketMQ") || code.contains("MessageChannel"));
-        for (String pom : List.of("pom.xml", "../stellar-enclosure-yuheng-llm-gateway/pom.xml")) {
-            assertThat(Files.readString(Path.of(pom), StandardCharsets.UTF_8))
-                    .as("%s must not gain an outbox dependency for the AI plane", pom)
-                    .doesNotContain("transactional-outbox");
-        }
+        assertThat(scope.entrySet().stream().filter(entry -> entry.getValue().contains("Outbox"))
+                .map(entry -> entry.getKey().getFileName().toString()).toList())
+                .as("only shared persistence bootstrap may compose Outbox outside the exposure module")
+                .containsExactlyInAnyOrder("GatewayManagedDdlConfiguration.java", "GatewayManagedDdlFactory.java");
+        assertThat(scope.values()).as("no messaging client is imported by the AI plane")
+                .noneMatch(code -> code.contains("KafkaTemplate") || code.contains("RocketMQ") || code.contains("MessageChannel"));
+        assertThat(Files.readString(Path.of("../stellar-enclosure-yuheng-llm-gateway/pom.xml"), StandardCharsets.UTF_8))
+                .doesNotContain("transactional-outbox");
+        String adminPom = Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8);
+        assertThat(adminPom.indexOf("<artifactId>stellar-enclosure-component-transactional-outbox-starter</artifactId>"))
+                .isEqualTo(adminPom.lastIndexOf("<artifactId>stellar-enclosure-component-transactional-outbox-starter</artifactId>"))
+                .isGreaterThanOrEqualTo(0);
     }
 
     @Test
@@ -421,7 +428,7 @@ class YuhengAiConformanceTest {
     private List<Map<String, String>> readManifestScripts() throws IOException {
         String json = Files.readString(ADMIN_RESOURCES.resolve(MANIFEST), StandardCharsets.UTF_8);
         assertThat(json).as("the managed family stays the web family").contains("\"family\"");
-        assertThat(countOccurrences(json, "\"path\"")).as("managed script count").isEqualTo(3);
+        assertThat(countOccurrences(json, "\"path\"")).as("managed script count").isEqualTo(4);
         List<Map<String, String>> entries = new ArrayList<>();
         Matcher versionMatcher = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
         Matcher pathMatcher = Pattern.compile("\"path\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
@@ -433,7 +440,7 @@ class YuhengAiConformanceTest {
             entry.put("sha256", shaMatcher.group(1));
             entries.add(entry);
         }
-        assertThat(entries).hasSize(3);
+        assertThat(entries).hasSize(4);
         assertThat(json.substring(json.indexOf("\"family\""))).as("family is web").contains("web");
         return entries;
     }

@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties;
 import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfigurationException;
 
@@ -90,6 +92,15 @@ public class GatewayPersistenceConfiguration implements SmartInitializingSinglet
         return new DataSourceTransactionManager(dataSource);
     }
 
+    /** The exposure intent and its outbox append join the existing local PRIMARY transaction. */
+    @Bean("gatewayExposureTransactionTemplate")
+    public TransactionTemplate gatewayExposureTransactionTemplate(
+            @Qualifier(TRANSACTION_MANAGER_BEAN_NAME) PlatformTransactionManager transactionManager) {
+        var template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        return template;
+    }
+
     /**
      * 中文说明：注册部署身份与 MDC 上下文组件，并在此校验部署身份与 Admin 角色是否一致：Admin 是唯一持有受管 DDL
      * 职责的进程，{@code managed-ddl-enabled} 必须为真且必须与组件侧
@@ -148,6 +159,8 @@ public class GatewayPersistenceConfiguration implements SmartInitializingSinglet
     }
 
     static final String URL_EXPOSURE_TABLE = "gateway_url_exposure_t0";
+    static final String OUTBOX_MESSAGE_TABLE = "egon_cola_outbox_message";
+    static final String OUTBOX_HISTORY_TABLE = "ddl_history";
     private static final List<String> CONTROL_BUSINESS_TABLES = List.of(
             "gateway_group", "gateway_release", "gateway_release_content",
             "gateway_idempotency_record", "gateway_audit_log");
@@ -189,8 +202,8 @@ public class GatewayPersistenceConfiguration implements SmartInitializingSinglet
                     && (table.shardingColumn() == null || table.shardingColumn().isBlank()
                         || "tenant_id".equals(table.shardingColumn()));
             boolean single = "SINGLE".equals(table.type()) && primary.logicalName().equals(table.dataSource())
-                    && ("public".equals(table.schema()) || "egon_cola_outbox_message".equals(tableName)
-                        && "egon_outbox".equals(table.schema()));
+                    && ("public".equals(table.schema()) || (OUTBOX_MESSAGE_TABLE.equals(tableName)
+                        || OUTBOX_HISTORY_TABLE.equals(tableName)) && "egon_outbox".equals(table.schema()));
             // Step 24 may supply the existing Components Outbox route; this does not add its dependency or schema.
             boolean outbox = "egon_cola_outbox_message".equals(tableName)
                     && "TECHNICAL_GROUP".equals(table.type()) && "egon_outbox".equals(table.schema())
@@ -204,6 +217,23 @@ public class GatewayPersistenceConfiguration implements SmartInitializingSinglet
         }
         tables.putIfAbsent(URL_EXPOSURE_TABLE, new EgonColaShardingProperties.TableProperties(
                 "SINGLE", primary.logicalName(), null, null, null, "public"));
+        properties.setTables(tables);
+    }
+
+    /** Adds only the component-owned schema nodes to the same proven 1x1 LOCAL PRIMARY. */
+    public static void prepareExposureOutboxTopology(EgonColaShardingProperties properties) {
+        prepareUrlExposureControlTopology(properties);
+        var primary = requireControlPrimary(properties);
+        var tables = new LinkedHashMap<>(properties.getTables());
+        for (String name : List.of(OUTBOX_MESSAGE_TABLE, OUTBOX_HISTORY_TABLE)) {
+            var expected = new EgonColaShardingProperties.TableProperties("SINGLE", primary.logicalName(),
+                    null, null, null, "egon_outbox");
+            var existing = tables.get(name);
+            if (existing != null && !expected.equals(existing)) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_OUTBOX_SINGLE_ROUTE_REQUIRED");
+            }
+            tables.putIfAbsent(name, expected);
+        }
         properties.setTables(tables);
     }
 

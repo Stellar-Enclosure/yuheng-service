@@ -149,6 +149,32 @@ class GatewayManagedEntryPointTest {
     }
 
     @Test
+    void exposureStrictMapperStillUsesFieldAuthorizationAndWriteOnlyCanReadTheCommandRepresentation() throws Exception {
+        var manifest = manifest();
+        var registry = registry(manifest);
+        var users = new CurrentRbac3User();
+        var guard = new PermissionFieldBindingGuard(registry, users, () -> null, scopes());
+        var factory = new PermissionJsonMapperFactory(users, SensitiveStrategyRegistry.defaults(), registry, guard);
+        var converter = new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(new ObjectMapper().findAndRegisterModules());
+        new GatewayPermissionWebConfiguration(factory, converter.getObjectMapper()).extendMessageConverters(new ArrayList<>(List.of(converter)));
+
+        var requestType = top.egon.cola.component.yuheng.admin.exposure.domain.dto.GatewayUrlExposureStateRequestDTO.class;
+        var input = converter.getObjectMappersForType(requestType).get(org.springframework.http.MediaType.ALL);
+        assertThat(input.getRegisteredModuleIds()).contains("Rbac3FieldJacksonModule");
+        String request = "{\"state\":\"CLOSED\",\"changeReason\":\"Maintenance\"}";
+        authenticate(manifest, Set.of(GatewayPermissionCodes.READ), Set.of(GatewayPermissionCodes.EXPOSURES_WRITE));
+        assertThatThrownBy(() -> input.readValue(request, requestType)).hasStackTraceContaining("FIELD_ACCESS_DENIED");
+        authenticate(manifest, Set.of(GatewayPermissionCodes.EXPOSURES_WRITE), Set.of(GatewayPermissionCodes.EXPOSURES_WRITE));
+        assertThat(input.readValue(request, requestType)).isNotNull();
+        assertThatThrownBy(() -> input.readValue(request + " {}", requestType)).isInstanceOf(com.fasterxml.jackson.core.JsonProcessingException.class);
+
+        var response = new top.egon.cola.component.yuheng.admin.exposure.domain.vo.GatewayUrlExposureVO();
+        response.setExposureId("810001");
+        var output = converter.getObjectMapper();
+        assertThat(output.readTree(output.writeValueAsString(response)).get("exposureId").asText()).isEqualTo("810001");
+    }
+
+    @Test
     void jackson3DefaultCannotPrecedeThePermissionAwareHttpReader() throws Exception {
         var manifest=manifest(); var registry=registry(manifest);
         var writes=new PermissionFieldBindingGuard(registry,new CurrentRbac3User(),()->null,scopes());

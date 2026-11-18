@@ -46,6 +46,9 @@ import top.egon.cola.component.common.mybatis.sharding.strategy.EgonColaSharding
 import top.egon.cola.component.common.mybatis.sharding.strategy.EgonColaSingleTableShardingStrategy;
 import top.egon.cola.component.common.mybatis.sharding.strategy.EgonColaStandardTenantIdShardingStrategy;
 import top.egon.cola.component.yuheng.admin.config.GatewayManagedDdlFactory;
+import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceConfiguration;
+import top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties;
+import top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer;
 import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties;
 import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent;
 import top.egon.cola.component.yuheng.admin.exposure.converter.GatewayUrlExposurePersistenceConverter;
@@ -129,7 +132,7 @@ class GatewayUrlExposureRepositoryIT {
             manifest = new ObjectMapper().readValue(input, EgonColaDdlManifestBO.class);
         }
         assertThat(manifest.scripts()).extracting(EgonColaDdlManifestBO.ScriptBO::version)
-                .containsExactly("20260922_001", "20261116_002", "20261117_003");
+                .containsExactly("20260922_001", "20261116_002", "20261117_003", "20261117_004");
         var validation = new ValidationUtils(validators.getValidator());
         if (EgonColaModelValidationUtils.current() == null) {
             validationBinding = EgonColaModelValidationUtils.initialize(validation, this);
@@ -152,17 +155,34 @@ class GatewayUrlExposureRepositoryIT {
         insertRelease(OWNER, GROUP, RELEASE);
         insertRelease(OTHER_OWNER, OTHER_GROUP, OTHER_RELEASE);
 
+        // Restore the actual prior V003 state before adding any Outbox route or schema.
+        GatewayPersistenceConfiguration.prepareUrlExposureControlTopology(topology);
+        String v003Fingerprint = topologyValidator.validate(topology, loader.load(topology)).fingerprint();
+        var v003 = new EgonColaDdlManifestBO(manifest.family(), manifest.scripts().subList(0, 3));
+        runner.run(List.of(new EgonColaDdlTargetBO("yuheng_control", "public", EgonColaDdlTargetBO.RoleEnum.SHARD,
+                physical, v003, v003Fingerprint, java.util.Set.of(routeFingerprint))));
+        assertThat(sql.queryForList("SELECT version FROM public.ddl_history ORDER BY version", String.class))
+                .containsExactly("20260922_001", "20261116_002", "20261117_003");
+        assertThat(sql.queryForObject("SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname='egon_outbox'", Long.class)).isZero();
+
         var latest = manifest.scripts().getLast();
         var deployment = new GatewayPersistenceProperties(OWNER, 100L, "acceptance",
                 latest.version(), latest.sha256(), true);
+        var outboxStorage = new OutboxMpStorageProperties();
+        var initializer = new OutboxManagedDdlInitializer(runner, topologyValidator, validation, topology, outboxStorage, new ObjectMapper());
         var productionFactory = new GatewayManagedDdlFactory(topology, new ObjectMapper(), deployment,
-                topologyValidator, runner);
+                topologyValidator, runner, initializer, outboxStorage);
         routed = productionFactory.create(Map.of("yuheng_control", physical), loader.load(topology));
         assertThat(sql.queryForList("SELECT version FROM public.ddl_history ORDER BY version", String.class))
-                .containsExactly("20260922_001", "20261116_002", "20261117_003");
+                .containsExactly("20260922_001", "20261116_002", "20261117_003", "20261117_004");
         assertThat(sql.queryForList("SELECT route_fingerprint FROM public.ddl_history ORDER BY version", String.class))
-                .containsExactly(routeFingerprint, routeFingerprint,
+                .containsExactly(routeFingerprint, routeFingerprint, v003Fingerprint,
                         topologyValidator.validate(topology, loader.load(topology)).fingerprint());
+        String currentFingerprint = topologyValidator.validate(topology, loader.load(topology)).fingerprint();
+        assertThat(initializer.isReadyFor(physical, currentFingerprint)).isTrue();
+        assertThat(sql.queryForList("SELECT version FROM egon_outbox.ddl_history ORDER BY version", String.class))
+                .containsExactly("20260924_001", "20261027_001");
+        assertThat(sql.queryForObject("SELECT count(*) FROM egon_outbox.egon_cola_outbox_message", Long.class)).isZero();
         configureRepositorySessions(deployment);
     }
 

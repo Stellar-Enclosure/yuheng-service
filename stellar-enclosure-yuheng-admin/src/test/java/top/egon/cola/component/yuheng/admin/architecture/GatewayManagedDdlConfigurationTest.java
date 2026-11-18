@@ -99,6 +99,30 @@ class GatewayManagedDdlConfigurationTest {
     }
 
     @Test
+    void exposureOutboxAppendsOnlyTheFourthManagedScriptToTheImmutablePrefix() throws IOException {
+        var manifest = new ObjectMapper().readValue(readResource(MANIFEST_RESOURCE), EgonColaDdlManifestBO.class);
+        assertThat(manifest.scripts()).extracting(EgonColaDdlManifestBO.ScriptBO::version)
+                .containsExactly("20260922_001", "20261116_002", "20261117_003", "20261117_004");
+        assertThat(manifest.scripts().subList(0, 3)).extracting(EgonColaDdlManifestBO.ScriptBO::sha256).containsExactly(
+                "22dc8ec627ee6e0eaabb1c8ecad55f80798a5d061abcc96a964966bf74de493e",
+                "44024a6466e59905ad27c5c35b38c47d573688f935b18602bc648824687987e7",
+                "2d71e8c91db6f6d058bfc797532fe4a0866f7b1dd9f2e5daaf73f8b9d74eb17b");
+        var head = manifest.scripts().getLast();
+        assertThat(head.path()).isEqualTo("db/egon-mp/20261117_004_yuheng_exposure_outbox.sql");
+        assertThat(head.sha256()).isEqualTo(HexFormat.of().formatHex(sha256(readResource(head.path()).getBytes(StandardCharsets.UTF_8))));
+    }
+
+    @Test
+    void productionBootstrapComposesTheExistingOutboxInitializerAtItsOnlyFactoryHook() {
+        var factories = Stream.of(GatewayManagedDdlConfiguration.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(Bean.class)).toList();
+        assertThat(factories).hasSize(1);
+        assertThat(Stream.of(factories.getFirst().getParameterTypes()).map(Class::getName).toList()).contains(
+                "top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer",
+                "top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties");
+    }
+
+    @Test
     void mainConfigurationDisablesTheRetainedHistoricalFlywayScripts() throws IOException {
         var properties = new org.springframework.beans.factory.config.YamlPropertiesFactoryBean();
         properties.setResources(new org.springframework.core.io.ClassPathResource("application.yml"));
@@ -174,7 +198,7 @@ class GatewayManagedDdlConfigurationTest {
                 new ObjectMapper().readValue(readResource(MANIFEST_RESOURCE), EgonColaDdlManifestBO.class);
         assertThat(manifest.family()).isEqualTo("web");
         assertThat(manifest.scripts()).extracting(EgonColaDdlManifestBO.ScriptBO::version)
-                .containsExactly(EXPECTED_VERSION, "20261116_002", "20261117_003");
+                .containsExactly(EXPECTED_VERSION, "20261116_002", "20261117_003", "20261117_004");
         EgonColaDdlManifestBO.ScriptBO script = manifest.scripts().get(0);
         assertThat(script.version()).isEqualTo(EXPECTED_VERSION);
         assertThat(script.path()).isEqualTo(SQL_RESOURCE);

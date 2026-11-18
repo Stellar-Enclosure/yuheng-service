@@ -30,10 +30,7 @@ public class GatewayPermissionWebConfiguration implements WebMvcConfigurer {
         new GatewayAiJsonConfiguration().extendMessageConverters(List.of(preferred));
         for(var converter:converters) if(converter instanceof MappingJackson2HttpMessageConverter json) {
             json.setObjectMapper(fields.forTransport(json.getObjectMapper()));
-            for (var type : java.util.List.of(
-                    top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmChannelCommandDTO.class,
-                    top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmModelCommandDTO.class,
-                    top.egon.cola.component.yuheng.admin.llm.domain.dto.LlmRouteBindingDTO.class)) {
+            for (var type : GatewayAiJsonConfiguration.STRICT_REQUEST_TYPES) {
                 json.registerObjectMappersForType(type, mappings -> mappings.replaceAll((media, mapper) -> fields.forTransport(mapper)));
             }
         }

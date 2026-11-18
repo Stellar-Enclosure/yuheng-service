@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.TreeMap;
 import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,9 @@ import top.egon.cola.component.common.mybatis.exception.EgonColaMybatisPlusConfi
 import top.egon.cola.component.common.mybatis.sharding.EgonColaShardingProperties;
 import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingDataSourceBootstrapper;
 import top.egon.cola.component.common.mybatis.sharding.bootstrap.EgonColaShardingTopologyValidator;
+import top.egon.cola.component.outbox.migration.OutboxManagedDdlInitializer;
+import top.egon.cola.component.outbox.migration.OutboxLogicalDataSourceFactory;
+import top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties;
 
 /**
  * 中文说明：{@code GatewayManagedDdlConfiguration} 提供的组件扩展点实现：在组件已经建好物理连接池并校验过 YAML 之后、
@@ -49,17 +53,37 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
     private final EgonColaShardingTopologyValidator topologyValidator;
     @Qualifier("egonColaPostgreDdlRunner")
     private final EgonColaPostgreDdlRunner ddlRunner;
+    private final OutboxManagedDdlInitializer outboxInitializer;
+    private final OutboxLogicalDataSourceFactory outboxPolicy;
 
     public GatewayManagedDdlFactory(EgonColaShardingProperties shardingProperties, ObjectMapper objectMapper,
                                     GatewayPersistenceProperties persistenceProperties,
                                     EgonColaShardingTopologyValidator topologyValidator, EgonColaPostgreDdlRunner ddlRunner) {
-        // This bean is built before the component bootstrapper: reject unsupported routing before even its DDL initializer.
+        this(shardingProperties, objectMapper, persistenceProperties, topologyValidator, ddlRunner, null, null);
+    }
+
+    public GatewayManagedDdlFactory(EgonColaShardingProperties shardingProperties, ObjectMapper objectMapper,
+                                    GatewayPersistenceProperties persistenceProperties,
+                                    EgonColaShardingTopologyValidator topologyValidator, EgonColaPostgreDdlRunner ddlRunner,
+                                    OutboxManagedDdlInitializer outboxInitializer, OutboxMpStorageProperties outboxStorage) {
+        // The legacy constructor supports non-running Step23 probes; latest runtime creation always needs the initializer.
         GatewayPersistenceConfiguration.prepareUrlExposureControlTopology(shardingProperties);
+        if (outboxInitializer != null) {
+            if (outboxStorage == null || !outboxStorage.isAutoInitializeDdl() || outboxStorage.isMigrationMode()
+                    || !"sqlSessionFactory".equals(outboxStorage.getSqlSessionFactoryBeanName())
+                    || !"db/egon-outbox-mp/manifest.json".equals(outboxStorage.getManifestResource())
+                    || outboxStorage.getPreviousRouteFingerprints() == null || !outboxStorage.getPreviousRouteFingerprints().isEmpty()) {
+                throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_OUTBOX_STORAGE_REQUIRED");
+            }
+            GatewayPersistenceConfiguration.prepareExposureOutboxTopology(shardingProperties);
+        }
         this.shardingProperties = shardingProperties;
         this.objectMapper = objectMapper;
         this.persistenceProperties = persistenceProperties;
         this.topologyValidator = topologyValidator;
         this.ddlRunner = ddlRunner;
+        this.outboxInitializer = outboxInitializer;
+        this.outboxPolicy = outboxInitializer == null ? null : new OutboxLogicalDataSourceFactory(outboxInitializer);
     }
 
     @Override
@@ -71,12 +95,29 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
         requireExpectedScript(manifest);
         var topology = topologyValidator.validate(shardingProperties, yaml);
         GatewayPersistenceConfiguration.validateUrlExposureControlTopology(shardingProperties, topology);
+        if (outboxInitializer == null) {
+            throw new EgonColaMybatisPlusConfigurationException("URL_EXPOSURE_OUTBOX_INITIALIZER_REQUIRED");
+        }
         ddlRunner.run(targets(physical, topology, manifest)).stream()
                 .filter(result -> EgonColaDdlResult.StatusEnum.APPLIED.equals(result.status()))
                 .forEach(result -> log.info("managed ddl applied alias={} schema={} version={}",
                         result.alias(), result.schema(), result.version()));
+        outboxInitializer.initialize(physical, topology.yaml());
         return YamlShardingSphereDataSourceFactory.createDataSource(physical, topology.yaml());
     }
+
+    @Override
+    public boolean permitsPrimaryRead(net.sf.jsqlparser.statement.select.Select select) {
+        return outboxPolicy != null && outboxPolicy.permitsPrimaryRead(select);
+    }
+
+    @Override
+    public void validateLogicalSql(String sql) throws java.sql.SQLException {
+        if (outboxPolicy != null) { outboxPolicy.validateLogicalSql(sql); }
+    }
+
+    @Override
+    public boolean enforceSingleWriteGroup() { return outboxPolicy != null && outboxPolicy.enforceSingleWriteGroup(); }
 
     private EgonColaDdlManifestBO readManifest() {
         try (InputStream manifestStream = getClass().getClassLoader().getResourceAsStream(MANIFEST_RESOURCE)) {
@@ -100,10 +141,14 @@ public final class GatewayManagedDdlFactory implements EgonColaShardingDataSourc
     private List<EgonColaDdlTargetBO> targets(Map<String, DataSource> physical,
                                               EgonColaShardingTopologyValidator.TopologyBO topology,
                                               EgonColaDdlManifestBO manifest) {
-        // Only this additive table may explain a previous routing fingerprint; all existing addresses must match exactly.
+        // Only the exact V003 and V002 additive predecessors explain earlier fingerprints; existing nodes remain fixed.
         var precedingProfiles = new TreeMap<>(topology.profiles());
+        precedingProfiles.remove(GatewayPersistenceConfiguration.OUTBOX_MESSAGE_TABLE);
+        precedingProfiles.remove(GatewayPersistenceConfiguration.OUTBOX_HISTORY_TABLE);
+        Set<String> preceding = new LinkedHashSet<>();
+        preceding.add(EgonColaShardingTopologyValidator.fingerprint(precedingProfiles, topology.schemas()));
         precedingProfiles.remove(GatewayPersistenceConfiguration.URL_EXPOSURE_TABLE);
-        Set<String> preceding = Set.of(EgonColaShardingTopologyValidator.fingerprint(precedingProfiles, topology.schemas()));
+        preceding.add(EgonColaShardingTopologyValidator.fingerprint(precedingProfiles, topology.schemas()));
         List<EgonColaDdlTargetBO> targets = new ArrayList<>();
         for (EgonColaShardingProperties.PhysicalDataSourceProperties dataSource : shardingProperties.getDataSources()) {
             if (!EgonColaShardingProperties.DataSourceRoleEnum.PRIMARY.equals(dataSource.role())) {

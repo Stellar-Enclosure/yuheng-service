@@ -23,12 +23,14 @@ class GatewayUrlExposureSchemaTest {
 
     private static final String ROOT = "db/egon-mp/";
     private static final String SCRIPT = "20261117_003_yuheng_url_exposure.sql";
-    private static final List<String> VERSIONS = List.of("20260922_001", "20261116_002", "20261117_003");
+    private static final List<String> VERSIONS = List.of("20260922_001", "20261116_002", "20261117_003", "20261117_004");
     private static final List<String> PATHS = List.of(ROOT + "20260922_001_yuheng_schema.sql",
-            ROOT + "20261116_002_yuheng_llm_cache.sql", ROOT + SCRIPT);
+            ROOT + "20261116_002_yuheng_llm_cache.sql", ROOT + SCRIPT,
+            ROOT + "20261117_004_yuheng_exposure_outbox.sql");
     private static final List<String> FROZEN_PREFIX = List.of(
             "22dc8ec627ee6e0eaabb1c8ecad55f80798a5d061abcc96a964966bf74de493e",
-            "44024a6466e59905ad27c5c35b38c47d573688f935b18602bc648824687987e7");
+            "44024a6466e59905ad27c5c35b38c47d573688f935b18602bc648824687987e7",
+            "2d71e8c91db6f6d058bfc797532fe4a0866f7b1dd9f2e5daaf73f8b9d74eb17b");
 
     @Test
     void applicationRegistersTheExactExposureMapperPackage() {
@@ -38,13 +40,13 @@ class GatewayUrlExposureSchemaTest {
     }
 
     @Test
-    void managed003AndManifestPreserveTheExistingImmutablePrefix() throws Exception {
+    void appendedManagedScriptPreservesTheExistingImmutablePrefix() throws Exception {
         assertThat(resource(ROOT + SCRIPT)).isNotEmpty();
         JsonNode manifest = new ObjectMapper().readTree(resource(ROOT + "repository-manifest.json"));
         assertThat(manifest.path("family").asText()).isEqualTo("web");
         JsonNode scripts = manifest.path("scripts");
         assertThat(scripts.isArray()).isTrue();
-        assertThat(scripts.size()).isEqualTo(3);
+        assertThat(scripts.size()).isEqualTo(VERSIONS.size());
         for (int index = 0; index < VERSIONS.size(); index++) {
             JsonNode entry = scripts.get(index);
             assertThat(entry.path("version").asText()).isEqualTo(VERSIONS.get(index));

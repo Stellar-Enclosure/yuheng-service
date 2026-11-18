@@ -30,12 +30,13 @@ import static org.mockito.Mockito.when;
 /** Evaluates the actual class and method annotations with Spring's method-security manager. */
 class GatewayAdminSecurityScopeContractTest {
     private static final Set<String> EXPECTED = Set.of("yuheng:applications:write", "yuheng:catalog:write", "yuheng:credentials:write",
-            "yuheng:drafts:write", "yuheng:groups:write",
+            "yuheng:drafts:write", "yuheng:exposures:write", "yuheng:groups:write",
             "yuheng:llm:read", "yuheng:llm:write", "yuheng:mcp:approve", "yuheng:mcp:read", "yuheng:mcp:runtime:read", "yuheng:mcp:test",
             "yuheng:mcp:write", "yuheng:read", "yuheng:releases:write");
     private static final List<String> CONTROLLERS = List.of(
             "application.controller.GatewayApplicationController", "catalog.controller.GatewayCatalogController",
-            "credential.controller.GatewayCredentialController", "group.controller.GatewayGroupController",
+            "credential.controller.GatewayCredentialController", "exposure.controller.GatewayUrlExposureController",
+            "group.controller.GatewayGroupController",
             "llm.controller.LlmConfigurationController", "mcp.controller.McpAppAdminController", "mcp.controller.McpApprovalController",
             "mcp.controller.McpCapabilityController", "mcp.controller.McpProtocolInspectorController", "mcp.controller.McpRemoteProviderController",
             "mcp.controller.McpServerController", "mcp.controller.McpTaskAdminController", "mcp.controller.McpToolAdminController",
@@ -46,7 +47,7 @@ class GatewayAdminSecurityScopeContractTest {
     @AfterEach void cleanup() { SecurityContextHolder.clearContext(); }
 
     @Test
-    void sameScopeAndExisting14CapabilitiesOnEveryActualMethodOverride() throws Exception {
+    void sameScopeAndCapabilityOnEveryActualMethodOverride() throws Exception {
         var seen = new LinkedHashSet<String>();
         var pattern = Pattern.compile("'CAP_(yuheng:[A-Za-z0-9:._-]+)'");
         int checkedMethods = 0;
@@ -73,6 +74,16 @@ class GatewayAdminSecurityScopeContractTest {
             }
         }
         assertThat(seen).isEqualTo(EXPECTED); assertThat(checkedMethods).isGreaterThan(EXPECTED.size());
+    }
+
+    @Test
+    void exposureActorKeepsTokenScopesSeparateFromReopenCapabilities() {
+        var resolver = new top.egon.cola.component.yuheng.admin.shared.controller.GatewayAdminActorArgumentResolver();
+        SecurityContextHolder.getContext().setAuthentication(authentication("CAP_yuheng:exposures:reopen",
+                "CAP_yuheng:exposures:write", "SCOPE_yuheng:exposures:write"));
+        var actor = (top.egon.cola.component.yuheng.admin.shared.domain.AdminActor) resolver.resolveArgument(null, null, null, null);
+        assertThat(actor.scopes()).containsExactlyInAnyOrder("yuheng:exposures:reopen", "yuheng:exposures:write");
+        assertThat(actor.oauthScopes()).containsExactly("yuheng:exposures:write");
     }
 
     @Test

@@ -106,6 +106,8 @@ egon:
               "[yuheng:catalog:write]": ["yuheng:catalog:write"]
               "[yuheng:credentials:write]": ["yuheng:credentials:write"]
               "[yuheng:drafts:write]": ["yuheng:drafts:write"]
+              "[yuheng:exposures:write]": ["yuheng:exposures:write"]
+              "[yuheng:exposures:reopen]": ["yuheng:exposures:reopen"]
               "[yuheng:groups:write]": ["yuheng:groups:write"]
               "[yuheng:llm:read]": ["yuheng:llm:read"]
               "[yuheng:llm:write]": ["yuheng:llm:write"]
@@ -123,6 +125,23 @@ egon:
               resource-uri: ${YUHENG_TIANQUAN_JIANSHEN_SERVICE_TOKEN_RESOURCE_URI:}
               scopes: ${YUHENG_TIANQUAN_JIANSHEN_SERVICE_TOKEN_SCOPES:}
     component:
+      transactional-outbox:
+        enabled: true
+        storage:
+          type: MYBATIS_PLUS
+          data-source-bean-name: dataSource
+          transaction-manager-bean-name: gatewayTransactionManager
+          validate-schema: true
+          mp:
+            sql-session-factory-bean-name: sqlSessionFactory
+            auto-initialize-ddl: true
+            migration-mode: false
+            manifest-resource: db/egon-outbox-mp/manifest.json
+            previous-route-fingerprints: []
+        http:
+          enabled: false
+        rabbitmq:
+          enabled: false
       tianshu:
         tenant-id: ${TIANSHU_TENANT_ID:}
         rpc:

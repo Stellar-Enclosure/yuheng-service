@@ -81,8 +81,8 @@ import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties;
  * including on the failure path where the exception propagates unchanged; the filter wraps the whole downstream chain
  * after the authentication chain and never treats a header, parameter or body tenant value as a source of truth; the
  * deployment identity carries no default (in particular not {@code tenantId=1}) and violates binding when anything is
- * missing; and this process owns exactly one MDC-writing mechanism. No Spring context, database or container is started,
- * and time only ever appears as a fixed {@link Instant} fixture.
+ * missing; and this process owns exactly one MDC-writing mechanism. Ordinary context tests remain in-process; the separately
+ * gated atomicity case requires an explicitly named fresh loopback PostgreSQL database and real persistence auto-configuration.
  *
  * 用法 / Usage: 纯 JVM 测试，一律走公开入口 {@code context.call(claimedTenantId, work)} 与
  * {@code filter.doFilter(request, response, chain)}，不伪造成功。/ A plain JVM test that exercises the public entries
@@ -137,6 +137,110 @@ class GatewayPersistenceContextTest {
     void releaseThreadLocals() {
         MDC.clear();
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void exposureCommandUsesTheNamedRequiredTemplateAndExistingTransactionManager() throws Exception {
+        var source = org.mockito.Mockito.mock(javax.sql.DataSource.class);
+        var manager = new org.springframework.jdbc.datasource.DataSourceTransactionManager(source);
+        var method = GatewayPersistenceConfiguration.class.getMethod("gatewayExposureTransactionTemplate",
+                org.springframework.transaction.PlatformTransactionManager.class);
+        var template = (org.springframework.transaction.support.TransactionTemplate) method.invoke(
+                new GatewayPersistenceConfiguration(componentProperties, null), manager);
+        assertThat(template.getTransactionManager()).isSameAs(manager);
+        assertThat(template.getPropagationBehavior()).isEqualTo(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED);
+        assertThat(method.getAnnotation(Bean.class).value()).containsExactly("gatewayExposureTransactionTemplate");
+        assertThat(method.getParameters()[0].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value())
+                .isEqualTo("gatewayTransactionManager");
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "yuheng.outbox.test.postgres.url", matches = ".+")
+    void realPrimaryTransactionCommitsAndRollsBackIntentIdempotencyAuditAndManagedOutboxTogether() throws Exception {
+        top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.withManagedOutbox(application -> {
+            assertThat(application).hasNotFailed();
+            var dataSource = application.getBean("dataSource", javax.sql.DataSource.class);
+            var manager = application.getBean("gatewayTransactionManager", org.springframework.jdbc.datasource.DataSourceTransactionManager.class);
+            var template = application.getBean("gatewayExposureTransactionTemplate", org.springframework.transaction.support.TransactionTemplate.class);
+            assertThat(manager.getDataSource()).isSameAs(dataSource);
+            assertThat(template.getTransactionManager()).isSameAs(manager);
+            var guardedContext = application.getBean("gatewayPersistenceContextComponent", GatewayPersistenceContextComponent.class);
+            var outbox = application.getBean(top.egon.cola.component.outbox.api.TransactionalOutbox.class);
+            var logical = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+            var physical = new org.springframework.jdbc.core.JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_URL),
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_USER), ""));
+            MDC.put(tenantKey(), "previous-tenant"); MDC.put(userKey(), "previous-user");
+            guardedContext.call(null, () -> template.execute(status -> {
+                writeAtomicFacts(logical, 70101L);
+                Integer pid = logical.queryForObject("SELECT pg_backend_pid()", Integer.class);
+                outbox.enqueue(atomicMessage("atomic-commit", "atomic-key", "OPEN"));
+                assertThat(logical.queryForObject("SELECT pg_backend_pid()", Integer.class)).isEqualTo(pid);
+                assertThat(MDC.get(tenantKey())).isEqualTo("7001");
+                assertThat(MDC.get(userKey())).isEqualTo("scheduled-test-service");
+                return null;
+            }));
+            assertThat(MDC.get(tenantKey())).isEqualTo("previous-tenant");
+            assertThat(MDC.get(userKey())).isEqualTo("previous-user");
+            var transactionIds = physical.queryForList("""
+                    SELECT xmin::text AS transaction_id FROM public.gateway_group_t0 WHERE id=70101
+                    UNION ALL SELECT xmin::text FROM public.gateway_idempotency_record_t0 WHERE id=70101
+                    UNION ALL SELECT xmin::text FROM public.gateway_audit_log_t0 WHERE id=70101
+                    UNION ALL SELECT xmin::text FROM egon_outbox.egon_cola_outbox_message WHERE message_id='atomic-commit'
+                    """, String.class);
+            assertThat(transactionIds).hasSize(4);
+            assertThat(new java.util.HashSet<>(transactionIds)).hasSize(1);
+            assertThat(physical.queryForObject("SELECT tenant_id FROM egon_outbox.egon_cola_outbox_message WHERE message_id='atomic-commit'", Long.class)).isZero();
+            assertThatThrownBy(() -> guardedContext.call(null, () -> template.execute(status -> {
+                writeAtomicFacts(logical, 70102L);
+                outbox.enqueue(atomicMessage("atomic-rollback", "atomic-rollback-key", "CLOSED"));
+                throw new IllegalStateException("controlled-intent-failure");
+            }))).hasMessage("controlled-intent-failure");
+            assertAtomicFactsAbsent(physical, 70102L, "atomic-rollback");
+            assertThatThrownBy(() -> guardedContext.call(null, () -> template.execute(status -> {
+                writeAtomicFacts(logical, 70103L);
+                outbox.enqueue(atomicMessage("atomic-conflict", "atomic-key", "CLOSED"));
+                return null;
+            }))).isInstanceOf(top.egon.cola.component.outbox.common.exception.OutboxIdempotencyConflictException.class);
+            assertAtomicFactsAbsent(physical, 70103L, "atomic-conflict");
+            assertThat(MDC.get(tenantKey())).isEqualTo("previous-tenant");
+            assertThat(MDC.get(userKey())).isEqualTo("previous-user");
+        });
+    }
+
+    private static top.egon.cola.component.outbox.api.OutboxMessage atomicMessage(String id, String key, String desired) {
+        return top.egon.cola.component.outbox.api.OutboxMessage.builder().messageId(id).idempotencyKey(key)
+                .channel("yuheng-exposure").destination("exposure-desired-state-changed").schemaVersion("1")
+                .payload(Map.of("desiredState", desired)).availableAt(Instant.now().plusSeconds(3600)).build();
+    }
+
+    private static void writeAtomicFacts(org.springframework.jdbc.core.JdbcTemplate sql, long id) {
+        assertThat(sql.update("""
+                INSERT INTO gateway_group(id,tenant_id,create_user_id,create_time,update_user_id,update_time,
+                    gateway_group_code,display_name,env,namespace)
+                VALUES (?,7001,'scheduled-test-service',CURRENT_TIMESTAMP,'scheduled-test-service',CURRENT_TIMESTAMP,
+                    ?,'Atomic acceptance','isolated','acceptance')
+                """, id, "atomic-" + id)).isEqualTo(1);
+        assertThat(sql.update("UPDATE gateway_group SET revision=revision+1,version=version+1 WHERE id=? AND tenant_id=7001 AND version=0", id)).isEqualTo(1);
+        sql.update("""
+                INSERT INTO gateway_idempotency_record(id,tenant_id,create_user_id,create_time,update_user_id,update_time,
+                    scope_type,scope_id,idempotency_key,payload_sha256,resource_id,response_content)
+                VALUES (?,7001,'scheduled-test-service',CURRENT_TIMESTAMP,'scheduled-test-service',CURRENT_TIMESTAMP,
+                    'EXPOSURE',?,'intent-key',?,?,'{}'::jsonb)
+                """, id, Long.toString(id), "a".repeat(64), Long.toString(id));
+        sql.update("""
+                INSERT INTO gateway_audit_log(id,tenant_id,create_user_id,create_time,update_user_id,update_time,
+                    actor_id,actor_type,source,resource_type,resource_id,action,successful,occurred_at)
+                VALUES (?,7001,'scheduled-test-service',CURRENT_TIMESTAMP,'scheduled-test-service',CURRENT_TIMESTAMP,
+                    'operator','USER','ACCEPTANCE','EXPOSURE',?,'SET_STATE',TRUE,CURRENT_TIMESTAMP)
+                """, id, Long.toString(id));
+    }
+
+    private static void assertAtomicFactsAbsent(org.springframework.jdbc.core.JdbcTemplate physical, long id, String message) {
+        for (String table : List.of("gateway_group_t0", "gateway_idempotency_record_t0", "gateway_audit_log_t0")) {
+            assertThat(physical.queryForObject("SELECT count(*) FROM public." + table + " WHERE id=?", Long.class, id)).isZero();
+        }
+        assertThat(physical.queryForObject("SELECT count(*) FROM egon_outbox.egon_cola_outbox_message WHERE message_id=?", Long.class, message)).isZero();
     }
 
     @Test

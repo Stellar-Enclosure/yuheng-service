@@ -86,6 +86,11 @@ class GatewayProfileParityTest {
     private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL);
     private static final Pattern LINE_COMMENT = Pattern.compile("//[^\\n]*");
 
+    private static final String MYBATIS_PREFIX = "egon.cola.component.mybatis-plus.";
+    private static final String OUTBOX_LOGICAL_TABLE_EXCLUSION = "tenant-id.ignored-tables[0]";
+    private static final String ADMIN_MODULE = "stellar-enclosure-yuheng-admin";
+    private static final Path ADMIN_BASE = Path.of("..").resolve(ADMIN_MODULE).resolve("src/main/resources/application.yml");
+
     private static final Path ADMIN_MANIFEST = Path.of("src/main/resources/db/egon-mp/repository-manifest.json");
 
     @Test
@@ -144,9 +149,15 @@ class GatewayProfileParityTest {
         assertThat(documents).isNotEmpty();
         for (Path document : documents) {
             for (String prefix : OPERATOR_ONLY_PREFIXES) {
-                assertThat(leafKeys(document, prefix))
-                        .as("%s must not pin %s", document, prefix)
-                        .isEmpty();
+                List<String> keys = leafKeys(document, prefix);
+                if (document.equals(ADMIN_BASE) && prefix.equals(MYBATIS_PREFIX)) {
+                    assertThat(keys).containsExactly(OUTBOX_LOGICAL_TABLE_EXCLUSION);
+                    assertThat(new YamlPropertySourceLoader().load("admin-base", new FileSystemResource(document))
+                            .stream().map(source -> source.getProperty(MYBATIS_PREFIX + OUTBOX_LOGICAL_TABLE_EXCLUSION))
+                            .filter(java.util.Objects::nonNull).toList()).containsExactly("egon_cola_outbox_message");
+                } else {
+                    assertThat(keys).as("%s must not pin %s", document, prefix).isEmpty();
+                }
             }
         }
     }
@@ -165,9 +176,13 @@ class GatewayProfileParityTest {
             for (Path overlay : overlays(module)) {
                 Map<String, List<String>> overlayKeys = keysByPrefix(overlay);
                 for (String prefix : AI_PREFIXES) {
+                    List<String> expected = baseKeys.getOrDefault(prefix, List.of());
+                    if (module.equals(ADMIN_MODULE) && prefix.equals(MYBATIS_PREFIX)) {
+                        expected = expected.stream().filter(key -> !key.equals(OUTBOX_LOGICAL_TABLE_EXCLUSION)).toList();
+                    }
                     assertThat(overlayKeys.getOrDefault(prefix, List.of()))
                             .as("%s overlay %s under %s", module, overlay.getFileName(), prefix)
-                            .containsExactlyInAnyOrderElementsOf(baseKeys.getOrDefault(prefix, List.of()));
+                            .containsExactlyInAnyOrderElementsOf(expected);
                     compared++;
                     sharedKeyFacts += baseKeys.getOrDefault(prefix, List.of()).size();
                 }
@@ -187,7 +202,7 @@ class GatewayProfileParityTest {
         assertThat(manifest.path("family").asText()).isEqualTo("web");
         JsonNode scripts = manifest.path("scripts");
         assertThat(scripts.isArray()).isTrue();
-        assertThat(scripts).hasSize(3);
+        assertThat(scripts).hasSize(4);
         List<String> versions = new ArrayList<>();
         for (JsonNode script : scripts) {
             String version = script.path("version").asText();
@@ -201,7 +216,7 @@ class GatewayProfileParityTest {
                     .isEqualTo(fingerprint);
             versions.add(version);
         }
-        assertThat(versions).containsExactly("20260922_001", "20261116_002", "20261117_003");
+        assertThat(versions).containsExactly("20260922_001", "20261116_002", "20261117_003", "20261117_004");
 
         List<String> hardCoded = new ArrayList<>();
         for (String module : IDENTITY_BINDINGS.keySet()) {

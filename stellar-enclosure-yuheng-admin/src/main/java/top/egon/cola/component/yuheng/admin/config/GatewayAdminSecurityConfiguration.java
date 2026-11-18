@@ -2,14 +2,17 @@ package top.egon.cola.component.yuheng.admin.config;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.IdpSecurityObservationFilter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -17,6 +20,10 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
+import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingResponseWrapper;
+import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
+import top.egon.cola.component.yuheng.admin.shared.domain.vo.GatewayAdminErrorVO;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.IdpBearerAuthenticationFilter;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.IdpEndpointAuthenticationPolicy;
 import top.egon.cola.platform.tianquan.jianshen.starter.security.Rbac3BearerAuthenticationFilter;
@@ -101,14 +108,22 @@ public class GatewayAdminSecurityConfiguration {
                         .authenticationEntryPoint((request, response, error) ->
                                 writeSecurityError(request, response, objectMapper,
                                         HttpServletResponse.SC_UNAUTHORIZED,
-                                        "YUHENG_ADMIN_AUTHENTICATION_REQUIRED"))
+                                        isExposureRequest(request) ? "YUHENG_ADMIN_UNAUTHENTICATED"
+                                        : "YUHENG_ADMIN_AUTHENTICATION_REQUIRED"))
                         .accessDeniedHandler((request, response, error) ->
                                 writeSecurityError(request, response, objectMapper,
                                         HttpServletResponse.SC_FORBIDDEN,
-                                        "YUHENG_ADMIN_CAPABILITY_REQUIRED")));
+                                        isExposureRequest(request) ? "YUHENG_EXPOSURE_ACCESS_DENIED"
+                                                : "YUHENG_ADMIN_CAPABILITY_REQUIRED")))
+                .headers(headers -> headers.addHeaderWriter((request, response) -> {
+                    if (isExposureRequest(request)) {
+                        exposureResponseHeaders(request, response);
+                    }
+                }));
         if (idpFilter != null && rbac3Filter != null
                 && serviceAuthorityFilter != null) {
             http.addFilterBefore(idpFilter, AnonymousAuthenticationFilter.class);
+            http.addFilterBefore(exposureBearerErrors(objectMapper), IdpBearerAuthenticationFilter.class);
             var observation = observations.getIfAvailable();
             if (observation != null) { http.addFilterBefore(observation, IdpBearerAuthenticationFilter.class); }
             http.addFilterAfter(
@@ -146,12 +161,56 @@ public class GatewayAdminSecurityConfiguration {
         response.setHeader("Cache-Control", "no-store");
         if (delivered && status == HttpServletResponse.SC_UNAUTHORIZED) { response.setHeader("WWW-Authenticate", "Bearer"); }
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        if (isExposureRequest(request)) {
+            exposureResponseHeaders(request, response);
+            String publicCode = delivered ? code : "OAUTH_AUDIT_DELIVERY_UNAVAILABLE";
+            objectMapper.writeValue(response.getOutputStream(), new GatewayAdminErrorVO(publicCode, publicCode,
+                    null, java.util.List.of(), Instant.now()));
+            return;
+        }
         objectMapper.writeValue(response.getOutputStream(), Map.of(
                 "code", delivered ? code : "OAUTH_AUDIT_DELIVERY_UNAVAILABLE",
                 "message", delivered ? code : "OAUTH_AUDIT_DELIVERY_UNAVAILABLE",
                 "timestamp", Instant.now().toString()
         ));
     }
+    private static OncePerRequestFilter exposureBearerErrors(ObjectMapper mapper) {
+        return new OncePerRequestFilter() {
+            @Override
+            protected boolean shouldNotFilter(HttpServletRequest request) {
+                return !isExposureRequest(request) || request.getHeader(HttpHeaders.AUTHORIZATION) == null;
+            }
+
+            @Override
+            protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+                    throws ServletException, IOException {
+                // The shared bearer filter may write its own 401 before the normal Admin entry point.
+                var captured = new ContentCachingResponseWrapper(response);
+                chain.doFilter(request, captured);
+                if (captured.getStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+                    captured.resetBuffer();
+                    captured.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+                    exposureResponseHeaders(request, captured);
+                    captured.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    mapper.writeValue(captured.getOutputStream(), new GatewayAdminErrorVO(
+                            "YUHENG_ADMIN_UNAUTHENTICATED", "Authentication is required", null, List.of(), Instant.now()));
+                }
+                captured.copyBodyToResponse();
+            }
+        };
+    }
+
+    private static boolean isExposureRequest(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(request.getContextPath() + "/api/v1/yuheng/admin/exposures/");
+    }
+
+    private static void exposureResponseHeaders(HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        if (!response.containsHeader("x-egon-request-id")) {
+            response.setHeader("x-egon-request-id", RequestAuditContext.current(request.getHeader("x-egon-request-id")).requestId());
+        }
+    }
+
     @Bean("gatewayAdminAuditReadinessHealthIndicator")
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "egon.cola.platform.tianquan.shoubing.usage-observation", name = "enabled", havingValue = "true")
     org.springframework.boot.health.contributor.HealthIndicator gatewayAdminAuditReadinessHealthIndicator(
