@@ -36,28 +36,30 @@ class GatewayAiModuleContractTest {
     );
 
     @Test
-    void approvedLlmGatewayModuleAndManagedCoordinatesArePresent()
+    void approvedModelAccessModuleAndManagedCoordinatesArePresent()
             throws IOException {
         Path reactor = llmGatewayReactor();
         List<String> missing = new ArrayList<>();
 
-        require(missing, reactor.resolve("stellar-enclosure-yuheng-llm-gateway/pom.xml"));
+        require(missing, reactor.resolve("stellar-enclosure-model-access-service/pom.xml"));
         require(missing, reactor.resolve(
-                "stellar-enclosure-yuheng-llm-gateway/src/main/java/top/egon/cola/component/"
+                "stellar-enclosure-model-access-service/src/main/java/top/egon/cola/component/"
                         + "yuheng/llm/bootstrap/LlmGatewayApplication.java"));
 
         String aggregator = read(reactor.resolve("pom.xml"));
-        assertTrue(aggregator.contains("<module>stellar-enclosure-yuheng-llm-gateway</module>"),
-                "Aggregator POM does not register the stellar-enclosure-yuheng-llm-gateway module");
+        assertTrue(aggregator.contains("<module>stellar-enclosure-model-access-service</module>"),
+                "Aggregator POM does not register the stellar-enclosure-model-access-service module");
         assertTrue(
                 aggregator.contains(
-                        "<artifactId>stellar-enclosure-yuheng-llm-gateway</artifactId>"),
-                "Aggregator POM does not manage the stellar-enclosure-yuheng-llm-gateway version");
+                        "<artifactId>stellar-enclosure-model-access-service</artifactId>"),
+                "Aggregator POM does not manage the stellar-enclosure-model-access-service version");
+
+        assertTrue(!aggregator.contains("<module>stellar-enclosure-yuheng-llm-gateway</module>"));
 
         for (String consumer : List.of(
                 "stellar-enclosure-yuheng-admin/pom.xml",
-                "stellar-enclosure-yuheng-mcp-gateway/pom.xml",
-                "stellar-enclosure-yuheng-llm-gateway/pom.xml")) {
+                "stellar-enclosure-mcp-access-service/pom.xml",
+                "stellar-enclosure-model-access-service/pom.xml")) {
             Path consumerPom = reactor.resolve(consumer);
             require(missing, consumerPom);
             if (Files.exists(consumerPom)

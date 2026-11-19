@@ -53,7 +53,7 @@ Pub/Sub 仍承载变更通知。其他普通 RPC 服务仍由 Tianshu 支撑，�
 | `stellar-enclosure-yuheng-biz-gateway` | 可执行 HTTP/RPC 数据面、监听器、上游客户端、健康检查和遥测 | 否 |
 | `stellar-enclosure-yuheng-mcp-gateway` | 可执行的第二种 Engine 角色（`McpGatewayEngineApplication`），承载 MCP 数据面 | 否 |
 | `stellar-enclosure-yuheng-edge-gateway` | 浏览器统一入口，Spring Cloud Gateway/OIDC/BFF Session 与 Token Relay | 否 |
-| `stellar-enclosure-yuheng-llm-gateway` | 可执行模型调用网关 | 否 |
+| `stellar-enclosure-model-access-service` | 独立可执行服务，负责模型 API、供应商策略、流式响应和响应缓存 | 否 |
 | `stellar-enclosure-yuheng-admin` | 可执行管理控制面、持久化、规则编译、鉴权和 OpenAPI | 否 |
 | `stellar-enclosure-yuheng-starter` | Provider 接口定义上报，并向 Tianshu HTTP 注册贡献 Yuheng 元数据 | 是 |
 | `stellar-enclosure-yuheng-starter-openapi` | 与框架无关的 Provider OpenAPI 治理扩展 | 是 |

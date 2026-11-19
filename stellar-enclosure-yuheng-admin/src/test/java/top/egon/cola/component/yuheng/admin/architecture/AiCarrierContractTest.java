@@ -188,7 +188,7 @@ class AiCarrierContractTest {
                 "every shared enum has an admin snapshot entry");
         List<String> drift = new ArrayList<>();
         for (Path gatewayDir : List.of(
-                reactorSibling("stellar-enclosure-yuheng-llm-gateway",
+                reactorSibling("stellar-enclosure-model-access-service",
                         "top/egon/cola/component/yuheng/llm/proxy/domain/enums"))) {
             List<Path> sources;
             try (Stream<Path> paths = Files.list(gatewayDir)) {
@@ -378,7 +378,7 @@ class AiCarrierContractTest {
         collect(sources, adminPackage("shared").resolve("domain/validation"));
         collect(sources, Path.of("src/main/java/top/egon/cola/component"
                 + "/yuheng/admin/config"));
-        collect(sources, reactorSibling("stellar-enclosure-yuheng-llm-gateway",
+        collect(sources, reactorSibling("stellar-enclosure-model-access-service",
                 "top/egon/cola/component/yuheng/llm/proxy/domain/enums"));
         collect(sources, reactorSibling("stellar-enclosure-mcp-access-service",
                 "top/egon/cola/component/yuheng/mcp/engine/mcp/domain/enums"));

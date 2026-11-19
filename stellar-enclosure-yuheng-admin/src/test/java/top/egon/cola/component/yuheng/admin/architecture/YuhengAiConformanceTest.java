@@ -49,7 +49,7 @@ class YuhengAiConformanceTest {
     private static final Path ADMIN_RESOURCES = Path.of("src/main/resources");
 
     /** 中文说明：engine 模块主源码根 / the engine module's main source root. */
-    private static final Path ENGINE_MAIN = Path.of("../stellar-enclosure-yuheng-llm-gateway/src/main/java");
+    private static final Path ENGINE_MAIN = Path.of("../stellar-enclosure-model-access-service/src/main/java");
 
     /** 中文说明：AI 平面在 admin 内的三个业务包 / the three AI-plane business packages inside admin. */
     private static final List<String> AI_PACKAGES = List.of("llm");
@@ -327,7 +327,7 @@ class YuhengAiConformanceTest {
                 .containsExactlyInAnyOrder("GatewayManagedDdlConfiguration.java", "GatewayManagedDdlFactory.java");
         assertThat(scope.values()).as("no messaging client is imported by the AI plane")
                 .noneMatch(code -> code.contains("KafkaTemplate") || code.contains("RocketMQ") || code.contains("MessageChannel"));
-        assertThat(Files.readString(Path.of("../stellar-enclosure-yuheng-llm-gateway/pom.xml"), StandardCharsets.UTF_8))
+        assertThat(Files.readString(Path.of("../stellar-enclosure-model-access-service/pom.xml"), StandardCharsets.UTF_8))
                 .doesNotContain("transactional-outbox");
         String adminPom = Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8);
         assertThat(adminPom.indexOf("<artifactId>stellar-enclosure-component-transactional-outbox-starter</artifactId>"))

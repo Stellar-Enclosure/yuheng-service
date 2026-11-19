@@ -47,6 +47,7 @@ class McpAccessBoundaryTest {
             "top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpTaskCancelResultVO");
     private static final Set<String> FORBIDDEN_DEPENDENCIES = Set.of(
             "stellar-enclosure-yuheng-admin", "stellar-enclosure-yuheng-llm-gateway",
+                "stellar-enclosure-model-access-service",
             "stellar-enclosure-yuheng-core", "stellar-enclosure-yuheng-runtime-core",
             "stellar-enclosure-yuheng-mcp-core", "stellar-enclosure-yuheng-biz-gateway",
             "stellar-enclosure-yuheng-edge-gateway", "stellar-enclosure-tianshu-http-registration-starter",

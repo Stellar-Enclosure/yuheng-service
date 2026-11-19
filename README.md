@@ -21,7 +21,7 @@ HTTP/RPC, MCP and LLM gateways with a management control plane and browser Edge/
 | [Biz Gateway](stellar-enclosure-yuheng-biz-gateway/) | Executable Reactor Netty HTTP/RPC data plane. |
 | [MCP Gateway](stellar-enclosure-yuheng-mcp-gateway/) | Executable MCP data plane. |
 | [Edge Gateway](stellar-enclosure-yuheng-edge-gateway/) | Browser-facing Spring Cloud Gateway/OIDC/BFF entry point. |
-| [LLM Gateway](stellar-enclosure-yuheng-llm-gateway/) | Executable model invocation gateway. |
+| [Model Access Service](stellar-enclosure-model-access-service/) | Dedicated executable service for model APIs, provider policy, streaming, and response caching. |
 | [Admin](stellar-enclosure-yuheng-admin/) | Persistent management control plane, rule compilation, release and management APIs. |
 | [Starter](stellar-enclosure-yuheng-starter/) | Provider definition reporting and Yuheng metadata contribution to Tianshu HTTP registration. |
 | [OpenAPI Starter](stellar-enclosure-yuheng-starter-openapi/), [WebMVC adapter](stellar-enclosure-yuheng-starter-openapi-webmvc/), [WebFlux adapter](stellar-enclosure-yuheng-starter-openapi-webflux/) | Provider OpenAPI reporting with framework-specific adapters. |

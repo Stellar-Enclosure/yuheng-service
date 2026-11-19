@@ -20,6 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 import top.egon.cola.component.yuheng.admin.llm.converter.LlmCachePolicyConverter;
@@ -171,6 +173,7 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
                 current == null ? null : channelSummary(current),
                 channelSummary(saved)
         );
+        publishCacheInvalidationAfterCommit("*");
         log.info(
                 "YUHENG_LLM_CHANNEL_SAVED channelKey={} protocol={} deployment={} revision={}",
                 channelKey,
@@ -248,7 +251,7 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
                 current == null ? null : modelSummary(current),
                 modelSummary(saved)
         );
-        publishCacheInvalidation(modelKey);
+        publishCacheInvalidationAfterCommit(modelKey);
         log.info(
                 "YUHENG_LLM_MODEL_SAVED modelKey={} kind={} routes={} revision={}",
                 modelKey,
@@ -583,15 +586,27 @@ public class LlmConfigurationServiceImpl implements LlmConfigurationService {
         }
     }
 
-    private void publishCacheInvalidation(String modelKey) {
-        redissonClientProvider.ifAvailable(client -> {
-            try {
-                client.getTopic(CACHE_INVALIDATION_TOPIC).publish(modelKey);
-            } catch (RuntimeException failure) {
-                log.warn("YUHENG_LLM_CACHE_INVALIDATION_FAILED modelKey={} errorType={}",
-                        modelKey, failure.getClass().getSimpleName());
+    private void publishCacheInvalidationAfterCommit(String modelKey) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()
+                || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            log.warn("YUHENG_LLM_PUBLICATION_HINT_SKIPPED_NO_COMMIT");
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishCacheInvalidation(modelKey);
             }
         });
+    }
+
+    private void publishCacheInvalidation(String modelKey) {
+        try {
+            redissonClientProvider.ifAvailable(client -> client.getTopic(CACHE_INVALIDATION_TOPIC).publish(modelKey));
+        } catch (RuntimeException failure) {
+            log.warn("YUHENG_LLM_CACHE_INVALIDATION_FAILED modelKey={} errorType={}",
+                    modelKey, failure.getClass().getSimpleName());
+        }
     }
 
     /**

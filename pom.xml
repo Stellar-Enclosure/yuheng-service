@@ -25,7 +25,7 @@
         <module>stellar-enclosure-mcp-access-service</module>
         <module>stellar-enclosure-yuheng-edge-gateway</module>
         <module>stellar-enclosure-yuheng-admin</module>
-        <module>stellar-enclosure-yuheng-llm-gateway</module>
+        <module>stellar-enclosure-model-access-service</module>
         <module>stellar-enclosure-yuheng-starter</module>
         <module>stellar-enclosure-yuheng-starter-openapi</module>
         <module>stellar-enclosure-yuheng-starter-openapi-webmvc</module>
@@ -67,7 +67,7 @@
             </dependency>
             <dependency>
                 <groupId>top.egon</groupId>
-                <artifactId>stellar-enclosure-yuheng-llm-gateway</artifactId>
+                <artifactId>stellar-enclosure-model-access-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

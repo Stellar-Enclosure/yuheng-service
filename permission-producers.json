@@ -8,8 +8,8 @@
     },
     {
       "producerId": "yuheng-llm-java",
-      "module": "stellar-enclosure-yuheng-llm-gateway",
-      "artifactFile": "stellar-enclosure-yuheng-llm-gateway-exec.jar"
+      "module": "stellar-enclosure-model-access-service",
+      "artifactFile": "stellar-enclosure-model-access-service-exec.jar"
     },
     {
       "producerId": "yuheng-biz-java",

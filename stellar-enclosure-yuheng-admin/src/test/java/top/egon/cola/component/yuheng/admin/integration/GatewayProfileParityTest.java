@@ -32,7 +32,7 @@ import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusP
  * 的三个进程（Admin / MCP 数据面 / LLM 网关）上，口径是<b>键</b>而不是值：（一）三个进程必须绑定同一个部署身份前缀、
  * 同一组身份键与同一套约束（租户、受信任身份租户、服务审计主体、被期望的受管 schema 版本/指纹、受管 DDL 角色开关），
  * 任何一个进程偷偷少一个键或多一个默认值都会在这里失败——因为「配置不一致」在共享同一套受管表时等于跨进程租户错配；
- * （二）这些部署身份键在任何 profile 文档里都不许出现，它们只能由运维在启动时提供，缺值即绑定失败而不是退化成共享租户；
+ * （二）部署身份值只能由运维在启动时提供。只读角色引用环境变量并固定禁止受管 DDL，缺值即绑定失败；
  * （三）同一进程的基础文档与环境覆盖文档在 AI 面前缀下必须键结构一致；（四）受管 schema 的版本与指纹只有一个事实来源
  * （仓库清单），且任何主源码都不许把版本号或 64 位十六进制指纹写死；（五）跨进程读写租户时使用的 MDC 键必须与组件
  * 默认键同源。用户明确要求「配置先不写，启动时补充」，因此这里断言的是键的合同与缺省即失败的边界，不校验具体值。
@@ -41,9 +41,9 @@ import top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusP
  * MCP data plane and the LLM gateway), and it asserts <b>keys</b> rather than values: all three must bind one
  * deployment-identity prefix with one identical key set and identical constraints (tenant, trusted identity tenant,
  * service audit principal, expected managed schema version/fingerprint, managed-DDL role flag), because a diverging key
- * in a process that shares the same managed tables is a cross-process tenancy mismatch; those identity keys must appear
- * in no profile document at all, since only the operator supplies them at startup and a missing value has to fail
- * binding rather than degrade into a shared tenant; within one process the base document and each environment overlay
+ * in a process that shares the same managed tables is a cross-process tenancy mismatch. The read-only roles reference
+ * operator-supplied environment variables and disable managed DDL. Missing identity values fail binding at startup.
+ * Within one process the base document and each environment overlay
  * must agree on the key structure under the AI-plane prefixes; the managed schema's version and fingerprint have exactly
  * one source of truth (the repository manifest) and no main source may hard-code either the version or a 64-hex
  * fingerprint; and the MDC keys used to carry tenancy must share one origin with the component defaults. The user asked
@@ -61,9 +61,9 @@ class GatewayProfileParityTest {
     /** 中文说明：三个受管进程及其部署身份绑定类的相对位置。 English summary: the three managed processes and where their deployment-identity binding classes live. */
     private static final Map<String, String> IDENTITY_BINDINGS = Map.of(
             "stellar-enclosure-yuheng-admin", "src/main/java/top/egon/cola/component/yuheng/admin/config/GatewayPersistenceProperties.java",
-            "stellar-enclosure-yuheng-mcp-gateway",
+            "stellar-enclosure-mcp-access-service",
             "src/main/java/top/egon/cola/component/yuheng/mcp/engine/config/McpPersistenceProperties.java",
-            "stellar-enclosure-yuheng-llm-gateway", "src/main/java/top/egon/cola/component/yuheng/llm/config/LlmPersistenceProperties.java");
+            "stellar-enclosure-model-access-service", "src/main/java/top/egon/cola/component/yuheng/llm/config/LlmPersistenceProperties.java");
 
     /** 中文说明：本 Plan 的 AI 面配置前缀，基础文档与环境覆盖文档必须在这些前缀下保持键一致。
      * {@code egon.cola.component.yuheng.*}（Tianshu 注册与上报）不属于本 Plan 的合同面，其 local 覆盖差异已登记为审计发现。
@@ -78,8 +78,11 @@ class GatewayProfileParityTest {
             "egon.cola.component.mybatis-plus.");
 
     /** 中文说明：运维必须提供的部署身份键，任何 profile 文档写死它们都是越权。 English summary: the deployment-identity keys the operator must supply; pinning any of them in a profile document is a breach. */
+    private static final String PERSISTENCE_PREFIX = "yuheng.persistence.";
     private static final List<String> OPERATOR_ONLY_PREFIXES = List.of(
-            "yuheng.persistence.", "egon.cola.component.mybatis-plus.");
+            PERSISTENCE_PREFIX, "egon.cola.component.mybatis-plus.");
+    private static final List<String> REQUIRED_DEPLOYMENT_KEYS = List.of(
+            "tenant-id", "identity-tenant-id", "service-user-id", "expected-schema-version", "expected-schema-sha256");
 
     private static final Pattern FIELD = Pattern.compile("private\\s+[\\w.<>, ]+?\\s+(\\w+);");
     private static final Pattern SIXTY_FOUR_HEX = Pattern.compile("[0-9a-f]{64}");
@@ -148,12 +151,29 @@ class GatewayProfileParityTest {
 
         assertThat(documents).isNotEmpty();
         for (Path document : documents) {
+            boolean readOnlyRole = !document.startsWith(Path.of("..", ADMIN_MODULE));
+            var propertySources = new YamlPropertySourceLoader()
+                    .load(document.toString(), new FileSystemResource(document));
             for (String prefix : OPERATOR_ONLY_PREFIXES) {
                 List<String> keys = leafKeys(document, prefix);
-                if (document.equals(ADMIN_BASE) && prefix.equals(MYBATIS_PREFIX)) {
+                if (readOnlyRole && prefix.equals(PERSISTENCE_PREFIX)) {
+                    assertThat(keys).containsExactlyInAnyOrderElementsOf(
+                            Stream.concat(REQUIRED_DEPLOYMENT_KEYS.stream(), Stream.of("managed-ddl-enabled")).toList());
+                    for (String key : REQUIRED_DEPLOYMENT_KEYS) {
+                        String variable = "YUHENG_PERSISTENCE_" + key.replace('-', '_').toUpperCase(Locale.ROOT);
+                        assertThat(propertySources.stream().map(source -> source.getProperty(prefix + key))
+                                .filter(java.util.Objects::nonNull).toList())
+                                .as("%s requires operator input for %s", document, key).containsExactly("${" + variable + "}");
+                    }
+                    assertThat(propertySources.stream().map(source -> source.getProperty(prefix + "managed-ddl-enabled"))
+                            .filter(java.util.Objects::nonNull).toList()).containsExactly(false);
+                } else if (readOnlyRole && prefix.equals(MYBATIS_PREFIX)) {
+                    assertThat(keys).containsExactly("ddl.enabled");
+                    assertThat(propertySources.stream().map(source -> source.getProperty(prefix + "ddl.enabled"))
+                            .filter(java.util.Objects::nonNull).toList()).containsExactly(false);
+                } else if (document.equals(ADMIN_BASE) && prefix.equals(MYBATIS_PREFIX)) {
                     assertThat(keys).containsExactly(OUTBOX_LOGICAL_TABLE_EXCLUSION);
-                    assertThat(new YamlPropertySourceLoader().load("admin-base", new FileSystemResource(document))
-                            .stream().map(source -> source.getProperty(MYBATIS_PREFIX + OUTBOX_LOGICAL_TABLE_EXCLUSION))
+                    assertThat(propertySources.stream().map(source -> source.getProperty(MYBATIS_PREFIX + OUTBOX_LOGICAL_TABLE_EXCLUSION))
                             .filter(java.util.Objects::nonNull).toList()).containsExactly("egon_cola_outbox_message");
                 } else {
                     assertThat(keys).as("%s must not pin %s", document, prefix).isEmpty();
@@ -246,7 +266,7 @@ class GatewayProfileParityTest {
     void theMdcKeysMatchTheComponentDefaults() {
         EgonColaMybatisPlusProperties defaults = new EgonColaMybatisPlusProperties();
         String componentDefaults = new EgonColaMybatisPlusProperties().getAudit().getUserIdMdcKey();
-        String mcpAdapter = source("stellar-enclosure-yuheng-mcp-gateway",
+        String mcpAdapter = source("stellar-enclosure-mcp-access-service",
                 "src/main/java/top/egon/cola/component/yuheng/mcp/engine/mcp/adapter/support/"
                         + "McpGatewayPersistenceContext.java");
         assertThat(mcpAdapter)
@@ -259,9 +279,9 @@ class GatewayProfileParityTest {
         for (Map.Entry<String, String> entry : Map.of(
                 "stellar-enclosure-yuheng-admin", "src/main/java/top/egon/cola/component/yuheng/admin/config/"
                         + "GatewayPersistenceContextComponent.java",
-                "stellar-enclosure-yuheng-mcp-gateway", "src/main/java/top/egon/cola/component/yuheng/mcp/engine/config/"
+                "stellar-enclosure-mcp-access-service", "src/main/java/top/egon/cola/component/yuheng/mcp/engine/config/"
                         + "McpPersistenceContextComponent.java",
-                "stellar-enclosure-yuheng-llm-gateway", "src/main/java/top/egon/cola/component/yuheng/llm/config/"
+                "stellar-enclosure-model-access-service", "src/main/java/top/egon/cola/component/yuheng/llm/config/"
                         + "LlmPersistenceContextComponent.java").entrySet()) {
             String context = source(entry.getKey(), entry.getValue());
 

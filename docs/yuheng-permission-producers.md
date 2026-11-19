@@ -5,9 +5,9 @@ The four executable hosts produce independent compiler manifests for business `x
 | Producer | Expected module | Owned resource prefixes | Inventory |
 | --- | --- | --- | --- |
 | `yuheng-admin-java` | `stellar-enclosure-yuheng-admin` | `yuheng.api.`, `yuheng.field.` | Managed MVC APIs, reachable Jackson fields, explicit multipart input and native report/management metadata |
-| `yuheng-llm-java` | `stellar-enclosure-yuheng-llm-gateway` | `yuheng.llm.` | Six existing protocol entries and health; native verifier, scopes and model rules remain authoritative |
+| `yuheng-llm-java` | `stellar-enclosure-model-access-service` | `yuheng.llm.` | Six protocol entries and health, protected by native identity verification, OAuth scopes, and model access policy |
 | `yuheng-biz-java` | `stellar-enclosure-yuheng-biz-gateway` | `yuheng.biz.` | Native HTTP route table, gRPC registry and management metadata |
-| `yuheng-mcp-java` | `stellar-enclosure-yuheng-mcp-gateway` | `yuheng.mcp.` | Current and legacy transports, protected-resource metadata and management metadata |
+| `yuheng-mcp-java` | `stellar-enclosure-mcp-access-service` | `yuheng.mcp.` | MCP protocol transports, protected-resource metadata, and management metadata |
 
 The `permission-producer` profile installs the annotation processor only on javac's processor path. The build-only CLI is an exec plugin dependency: `prepare-package` assembles FULL from the successful executable fragment; `verify` inspects the final `*-exec.jar` and writes `target/permissions/artifact-evidence.json`. Neither the processor nor CLI is an application runtime dependency.
 
@@ -35,7 +35,7 @@ Run from this repository with JDK 25. The following command compiles, runs offli
 ```sh
 JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
 ./mvnw -B -ntp -fae \
-  -pl :stellar-enclosure-yuheng-admin,:stellar-enclosure-yuheng-llm-gateway,:stellar-enclosure-yuheng-biz-gateway,:stellar-enclosure-yuheng-mcp-gateway \
+  -pl :stellar-enclosure-yuheng-admin,:stellar-enclosure-model-access-service,:stellar-enclosure-yuheng-biz-gateway,:stellar-enclosure-mcp-access-service \
   -Ppermission-producer -Dpermission.commit="$(git rev-parse HEAD)" -Dpermission.buildId=local-s27-y \
   '-Dtest=*Test,!LlmLocalCredentialEgressTest,!McpGatewayHttpServerTest,!McpTransportIntegrationTest,!RpcGatewayCredentialForwardingTest,!RpcGatewayServerTest,!GatewayHttpListenerStreamingTest,!GatewayHttpServerWebSocketTest,!GatewayHttpServerTest,!ReactorNettyHttpUpstreamAdapterTest,!DefaultGatewayHttpDataPlaneHandlerCredentialForwardingTest,!ReactorNettyWebSocketUpstreamAdapterTest,!GatewayOpenAiTransportComponentTest,!GatewayTransportTimeoutComponentTest,!GatewayCancellationPropagationTest' \
   clean verify
@@ -45,7 +45,7 @@ The excluded classes include tests that start real HTTP, gRPC or WebSocket liste
 
 ```sh
 JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
-./mvnw -B -ntp -pl :stellar-enclosure-yuheng-mcp-gateway \
+./mvnw -B -ntp -pl :stellar-enclosure-mcp-access-service \
   '-Dtest=McpTransportIntegrationTest#cancellationClosesTheOuterPhysicalRequestScope+strictCapabilityReadKeepsDenyAndUnavailableDistinctAndBusinessUncalled+preservesSecurityStatusesWithoutDispatchingBusinessOrStartingAListener+keepsInitializationAndMissingSessionProtocolShapesInProcess' test
 ```
 

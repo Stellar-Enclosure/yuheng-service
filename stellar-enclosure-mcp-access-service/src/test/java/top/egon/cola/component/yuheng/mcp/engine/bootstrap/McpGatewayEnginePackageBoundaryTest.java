@@ -56,6 +56,7 @@ class McpGatewayEnginePackageBoundaryTest {
         var document = factory.newDocumentBuilder().parse(module().resolve("pom.xml").toFile());
         Set<String> forbiddenArtifacts = Set.of("stellar-enclosure-yuheng-admin", "stellar-enclosure-yuheng-biz-gateway",
                 "stellar-enclosure-yuheng-edge-gateway", "stellar-enclosure-yuheng-llm-gateway",
+                "stellar-enclosure-model-access-service",
                 "stellar-enclosure-yuheng-runtime-core", "stellar-enclosure-yuheng-core", "stellar-enclosure-yuheng-mcp-core");
         var dependencies = document.getElementsByTagName("dependency");
         for (int i = 0; i < dependencies.getLength(); i++) {
