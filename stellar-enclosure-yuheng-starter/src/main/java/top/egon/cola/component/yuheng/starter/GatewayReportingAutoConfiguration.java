@@ -11,7 +11,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import top.egon.cola.component.tianshu.http.registration.DdcHttpRegistrationContributor;
 import top.egon.cola.component.yuheng.contract.reporting.GatewayDefinitionIdentity;
 import top.egon.cola.component.yuheng.starter.discovery.GatewayDefinitionContributor;
 import top.egon.cola.component.yuheng.starter.discovery.rpc.RpcGatewayDefinitionContributor;
@@ -21,10 +20,8 @@ import top.egon.cola.component.yuheng.starter.reporting.GatewayReportingCoordina
 import top.egon.cola.component.yuheng.starter.reporting.GatewayReportingState;
 import top.egon.cola.component.rpc.contract.catalog.RpcContractCatalog;
 import top.egon.cola.component.rpc.config.EgonRpcAutoConfig;
-import top.egon.cola.component.rpc.provider.metadata.RpcProviderMetadataContributor;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Auto-configures RPC descriptor discovery, report construction, transport,
@@ -72,31 +69,6 @@ public class GatewayReportingAutoConfiguration {
         return report.identity();
     }
 
-    /** Contributes report identity to Tianshu HTTP service registration. */
-    @Bean
-    @ConditionalOnMissingBean(
-            name = "gatewayDefinitionIdentityHttpRegistrationContributor"
-    )
-    public DdcHttpRegistrationContributor
-            gatewayDefinitionIdentityHttpRegistrationContributor(
-            GatewayDefinitionIdentity identity) {
-        return new DdcHttpRegistrationContributor() {
-            @Override
-            public String serviceVersion() {
-                return identity.artifactVersion();
-            }
-
-            @Override
-            public Map<String, String> metadata() {
-                return Map.of(
-                        "yuheng.definition-set-id", identity.definitionSetId(),
-                        "yuheng.artifact-version", identity.artifactVersion(),
-                        "yuheng.build-id", identity.buildId()
-                );
-            }
-        };
-    }
-
     /** Creates the in-memory reporting lifecycle state. */
     @Bean
     @ConditionalOnMissingBean
@@ -123,26 +95,13 @@ public class GatewayReportingAutoConfiguration {
     }
 
     /**
-     * Registers the RPC descriptor contributor and registration metadata.
+     * Registers the native RPC descriptor contributor independently from
+     * physical instance registration.
      * 中文：仅在 RPC 契约目录存在时注册 RPC 描述符事实源。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(RpcContractCatalog.class)
     static class RpcContributorConfiguration {
-
-        @Bean
-        @ConditionalOnMissingBean(
-                name = "gatewayDefinitionIdentityRpcMetadataContributor"
-        )
-        RpcProviderMetadataContributor
-                gatewayDefinitionIdentityRpcMetadataContributor(
-                GatewayDefinitionIdentity identity) {
-            return ignored -> Map.of(
-                    "yuheng.definition-set-id", identity.definitionSetId(),
-                    "yuheng.artifact-version", identity.artifactVersion(),
-                    "yuheng.build-id", identity.buildId()
-            );
-        }
 
         @Bean
         @ConditionalOnBean(RpcContractCatalog.class)

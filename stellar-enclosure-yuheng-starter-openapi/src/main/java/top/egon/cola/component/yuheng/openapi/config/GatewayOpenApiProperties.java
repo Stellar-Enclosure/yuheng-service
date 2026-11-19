@@ -18,8 +18,6 @@ public class GatewayOpenApiProperties {
 
     private boolean enabled;
 
-    private boolean publishToDdc = true;
-
     @Size(max = GatewayOpenApiGroupManifestDTO.MAX_GROUPS)
     private List<String> publishedGroups = new ArrayList<>();
 
@@ -61,12 +59,18 @@ public class GatewayOpenApiProperties {
         this.enabled = enabled;
     }
 
+    /** Source compatibility only: physical instance registration has been retired. */
+    @Deprecated(since = "0.0.1", forRemoval = false)
     public boolean isPublishToDdc() {
-        return publishToDdc;
+        return false;
     }
 
+    /** Accepts the existing explicit opt-out without installing a registration transport. */
+    @Deprecated(since = "0.0.1", forRemoval = false)
     public void setPublishToDdc(boolean publishToDdc) {
-        this.publishToDdc = publishToDdc;
+        if (publishToDdc) {
+            throw new IllegalArgumentException("DDC physical OpenAPI registration is retired");
+        }
     }
 
     public List<String> getPublishedGroups() {

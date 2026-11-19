@@ -10,10 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springdoc.core.customizers.OperationCustomizer;
-import top.egon.cola.component.tianshu.http.registration.DdcHttpRegistrationContributor;
 import top.egon.cola.component.yuheng.openapi.customizer.EgonOpenApiCustomizer;
 import top.egon.cola.component.yuheng.openapi.customizer.EgonOperationCustomizer;
-import top.egon.cola.component.yuheng.openapi.registration.GatewayOpenApiRegistrationContributor;
 
 /**
  * Auto-configures framework-neutral OpenAPI governance extensions.
@@ -50,12 +48,4 @@ public class GatewayOpenApiAutoConfiguration {
         return new EgonOpenApiCustomizer(properties);
     }
 
-    @Bean(name = "gatewayOpenApiRegistrationContributor")
-    @ConditionalOnMissingBean(name = "gatewayOpenApiRegistrationContributor")
-    public DdcHttpRegistrationContributor
-            gatewayOpenApiRegistrationContributor(
-            @Qualifier("gatewayOpenApiProperties")
-            GatewayOpenApiProperties properties) {
-        return new GatewayOpenApiRegistrationContributor(properties);
-    }
 }

@@ -38,6 +38,23 @@ class GatewayOpenApiPropertiesTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    @SuppressWarnings("deprecation")
+    void formerTransportFlagRemainsFalseAndAcceptsOnlyTheSourceCompatibleFalseValue() {
+        var properties = enabledProperties();
+        assertThat(properties.isPublishToDdc()).isFalse();
+        properties.setPublishToDdc(false);
+        properties.validate();
+        assertThat(properties.isPublishToDdc()).isFalse();
+        assertThat(properties.groupManifest().groups()).containsExactly("orders");
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void formerTransportCannotBeReenabled() {
+        assertThatThrownBy(() -> enabledProperties().setPublishToDdc(true)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private GatewayOpenApiProperties enabledProperties() {
         GatewayOpenApiProperties properties = new GatewayOpenApiProperties();
         properties.setEnabled(true);
