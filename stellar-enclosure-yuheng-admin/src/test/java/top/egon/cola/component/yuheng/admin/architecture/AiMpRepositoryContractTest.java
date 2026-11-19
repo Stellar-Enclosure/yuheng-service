@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 class AiMpRepositoryContractTest {
 
-    /** The 42 managed tables of the migrated admin persistence, per the Plan. */
+    /** The 40 managed tables of the migrated admin persistence, per the Plan. */
     private static final List<String> MP_ROW_MODELS = List.of(
             "top.egon.cola.component.yuheng.admin.application.domain.po.GatewayApplicationRecordPO",
             "top.egon.cola.component.yuheng.admin.catalog.domain.po.GatewayBusinessDomainPO",
@@ -50,7 +50,6 @@ class AiMpRepositoryContractTest {
             "top.egon.cola.component.yuheng.admin.llm.domain.po.LlmChannelPO",
             "top.egon.cola.component.yuheng.admin.llm.domain.po.LlmModelPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpAppBindingDraftPO",
-            "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpApprovalRecordPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpArtifactMetadataRecordPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpManagedToolOverrideRecordPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpPromptDraftPO",
@@ -62,7 +61,6 @@ class AiMpRepositoryContractTest {
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpResourceTemplateDraftPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpServerRecordPO",
             "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpTaskPolicyDraftPO",
-            "top.egon.cola.component.yuheng.admin.mcp.domain.po.McpTaskRecordPO",
             "top.egon.cola.component.yuheng.admin.observability.domain.po.GatewayAuditLogRecordPO",
             "top.egon.cola.component.yuheng.admin.observability.domain.po.GatewayCallEventSummaryPO",
             "top.egon.cola.component.yuheng.admin.observability.domain.po.GatewayCallMetricMinutePO",
@@ -101,8 +99,8 @@ class AiMpRepositoryContractTest {
 
     @Test
     void everyMigratedRowModelExtendsTheStarterModelAndMapsOneTable() {
-        assertEquals(42, MP_ROW_MODELS.size(),
-                "the migrated persistence covers 42 tables");
+        assertEquals(40, MP_ROW_MODELS.size(),
+                "the migrated persistence covers 40 tables");
         List<String> missing = new ArrayList<>();
         List<String> violations = new ArrayList<>();
         Map<String, String> tableOwners = new LinkedHashMap<>();
@@ -155,18 +153,18 @@ class AiMpRepositoryContractTest {
         assertTrue(missing.isEmpty(),
                 "MP row models are missing (Step 3 not implemented): " + missing);
         assertTrue(violations.isEmpty(), "Row model boundary violations: " + violations);
-        assertEquals(42, tableOwners.size(), "each table is owned by exactly one row model");
+        assertEquals(40, tableOwners.size(), "each table is owned by exactly one row model");
     }
 
     @Test
     void everyGuardedMapperXmlResolvesToItsAccessInterfaceAndFiltersActiveRows()
             throws IOException {
         List<Path> xmlFiles = mapperXmlFiles();
-        assertEquals(43, xmlFiles.size(),
-                "42 ordinary mapper XMLs plus the fixed technical exposure mapper");
-        assertTrue(xmlFiles.contains(EXPOSURE_XML), "the 43rd mapper must be the exact exposure mapper");
+        assertEquals(41, xmlFiles.size(),
+                "40 ordinary mapper XMLs plus the fixed technical exposure mapper");
+        assertTrue(xmlFiles.contains(EXPOSURE_XML), "the 41st mapper must be the exact exposure mapper");
         List<Path> ordinaryXmlFiles = xmlFiles.stream().filter(xml -> !xml.equals(EXPOSURE_XML)).toList();
-        assertEquals(42, ordinaryXmlFiles.size(), "the original ordinary persistence inventory stays at 42");
+        assertEquals(40, ordinaryXmlFiles.size(), "the original ordinary persistence inventory stays at 40");
         List<String> violations = new ArrayList<>();
         for (Path xml : ordinaryXmlFiles) {
             String text = Files.readString(xml);
@@ -205,7 +203,7 @@ class AiMpRepositoryContractTest {
             throws ReflectiveOperationException, IOException {
         Class<?> model = Class.forName(EXPOSURE_MODEL);
         assertTrue(EgonModel.class.isAssignableFrom(model));
-        assertFalse(MP_ROW_MODELS.contains(EXPOSURE_MODEL), "the 42 ordinary models retain their own inventory");
+        assertFalse(MP_ROW_MODELS.contains(EXPOSURE_MODEL), "the 40 ordinary models retain their own inventory");
         TableName table = model.getDeclaredAnnotation(TableName.class);
         assertNotNull(table);
         assertEquals("public", table.schema());
@@ -456,8 +454,8 @@ class AiMpRepositoryContractTest {
         // Static-initialisation guard: the Plan's table set is the contract, so
         // a duplicate entry here must break before any assertion runs.
         assertTrue(MP_ROW_MODELS.stream().map(name -> name.substring(
-                        name.lastIndexOf('.') + 1)).distinct().count() == 42,
-                "the declared row models must be 42 distinct types");
+                        name.lastIndexOf('.') + 1)).distinct().count() == 40,
+                "the declared row models must be 40 distinct types");
         assertTrue(MP_ROW_MODELS.stream().allMatch(name -> name.endsWith("PO")),
                 "row models keep the PO suffix");
     }

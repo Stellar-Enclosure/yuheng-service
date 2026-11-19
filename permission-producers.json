@@ -18,8 +18,8 @@
     },
     {
       "producerId": "yuheng-mcp-java",
-      "module": "stellar-enclosure-yuheng-mcp-gateway",
-      "artifactFile": "stellar-enclosure-yuheng-mcp-gateway-exec.jar"
+      "module": "stellar-enclosure-mcp-access-service",
+      "artifactFile": "stellar-enclosure-mcp-access-service-exec.jar"
     },
     {
       "producerId": "yuheng-edge-java",

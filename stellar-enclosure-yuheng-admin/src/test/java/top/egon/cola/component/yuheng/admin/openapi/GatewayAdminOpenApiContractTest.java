@@ -12,10 +12,8 @@ import top.egon.cola.component.yuheng.admin.auth.controller.GatewayAuthBootstrap
 import top.egon.cola.component.yuheng.admin.catalog.controller.GatewayCatalogController;
 import top.egon.cola.component.yuheng.admin.credential.controller.GatewayCredentialController;
 import top.egon.cola.component.yuheng.admin.group.controller.GatewayGroupController;
-import top.egon.cola.component.yuheng.admin.mcp.controller.McpApprovalController;
 import top.egon.cola.component.yuheng.admin.mcp.controller.McpProtocolInspectorController;
 import top.egon.cola.component.yuheng.admin.mcp.controller.McpServerController;
-import top.egon.cola.component.yuheng.admin.mcp.controller.McpTaskAdminController;
 import top.egon.cola.component.yuheng.admin.mcp.controller.McpToolAdminController;
 import top.egon.cola.component.yuheng.admin.observability.controller.GatewayObservabilityController;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
@@ -44,10 +42,8 @@ class GatewayAdminOpenApiContractTest {
             GatewayCatalogController.class,
             GatewayCredentialController.class,
             GatewayGroupController.class,
-            McpApprovalController.class,
             McpProtocolInspectorController.class,
             McpServerController.class,
-            McpTaskAdminController.class,
             McpToolAdminController.class,
             GatewayObservabilityController.class,
             GatewayReleaseController.class,

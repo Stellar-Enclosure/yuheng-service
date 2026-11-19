@@ -31,15 +31,15 @@ import static org.mockito.Mockito.when;
 class GatewayAdminSecurityScopeContractTest {
     private static final Set<String> EXPECTED = Set.of("yuheng:applications:write", "yuheng:catalog:write", "yuheng:credentials:write",
             "yuheng:drafts:write", "yuheng:exposures:write", "yuheng:groups:write",
-            "yuheng:llm:read", "yuheng:llm:write", "yuheng:mcp:approve", "yuheng:mcp:read", "yuheng:mcp:runtime:read", "yuheng:mcp:test",
+            "yuheng:llm:read", "yuheng:llm:write", "yuheng:mcp:read", "yuheng:mcp:test",
             "yuheng:mcp:write", "yuheng:read", "yuheng:releases:write");
     private static final List<String> CONTROLLERS = List.of(
             "application.controller.GatewayApplicationController", "catalog.controller.GatewayCatalogController",
             "credential.controller.GatewayCredentialController", "exposure.controller.GatewayUrlExposureController",
             "group.controller.GatewayGroupController",
-            "llm.controller.LlmConfigurationController", "mcp.controller.McpApprovalController",
+            "llm.controller.LlmConfigurationController",
             "mcp.controller.McpProtocolInspectorController",
-            "mcp.controller.McpServerController", "mcp.controller.McpTaskAdminController", "mcp.controller.McpToolAdminController",
+            "mcp.controller.McpServerController", "mcp.controller.McpToolAdminController",
             "observability.controller.GatewayObservabilityController", "openapi.controller.GatewayOpenApiController",
             "release.controller.GatewayReleaseController", "routing.controller.GatewayDraftController", "runtime.controller.GatewayProjectionController",
             "scope.controller.GatewayScopeController");

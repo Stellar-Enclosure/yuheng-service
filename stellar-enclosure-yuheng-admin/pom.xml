@@ -55,10 +55,6 @@
         </dependency>
         <dependency>
             <groupId>top.egon</groupId>
-            <artifactId>stellar-enclosure-yuheng-mcp-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>top.egon</groupId>
             <artifactId>stellar-enclosure-tianshu-starter</artifactId>
         </dependency>
         <dependency>

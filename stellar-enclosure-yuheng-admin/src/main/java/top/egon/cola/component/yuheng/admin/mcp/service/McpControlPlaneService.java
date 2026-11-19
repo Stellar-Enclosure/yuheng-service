@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpServerBO;
 import top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpCapabilityPreviewVO;
 import top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpServerVO;
@@ -14,37 +13,23 @@ import top.egon.cola.component.yuheng.admin.mcp.repository.McpServerRepository;
 import top.egon.cola.component.yuheng.admin.mcp.repository.McpArtifactMetadataRepository;
 import top.egon.cola.component.yuheng.admin.mcp.repository.McpCapabilityDraftRepository;
 import top.egon.cola.component.yuheng.admin.mcp.repository.McpRemoteProviderRepository;
-import top.egon.cola.component.yuheng.admin.mcp.repository.McpTaskRepository;
-import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
-import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCanonicalizer;
-import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
-import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
-import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdminIdempotencyConflictException;
 import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdminNotFoundException;
-import top.egon.cola.component.yuheng.admin.shared.repository.IdempotencyRepository;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
  * Read-only legacy MCP catalog diagnostics and mapping preview.
  * Native definitions are owned by Tianshu; this service has no native asset
- * mutation or App artifact transport. The existing task bridge stays until
- * the separately ordered execution-service migration.
+ * mutation, App artifact transport or execution-task persistence. Task reads
+ * and cancellation belong exclusively to the standalone MCP access service.
  */
 @Slf4j
 @Service("mcpControlPlaneService")
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Transactional(readOnly = true)
 public class McpControlPlaneService {
-
-    private static final String TASK_IDEMPOTENCY_SCOPE = "YUHENG_MCP_TASK";
 
     @Qualifier("mcpServerRepository")
     private final McpServerRepository servers;
@@ -54,20 +39,10 @@ public class McpControlPlaneService {
     private final McpRemoteProviderRepository remote;
     @Qualifier("mpMcpArtifactMetadataRepository")
     private final McpArtifactMetadataRepository artifacts;
-    @Qualifier("mpMcpTaskRepository")
-    private final McpTaskRepository tasks;
-    @Qualifier("idempotencyRepository")
-    private final IdempotencyRepository idempotency;
-    @Qualifier("gatewayAuditLogRepository")
-    private final GatewayAuditLogRepository audits;
     @Qualifier("mcpReleaseContentFactory")
     private final McpReleaseContentFactory contentFactory;
     @Qualifier("mcpValidationService")
     private final McpValidationService validation;
-    @Qualifier("gatewayProjectionClock")
-    private final Clock clock;
-
-    private final GatewayRuleCanonicalizer canonicalizer = new GatewayRuleCanonicalizer();
 
     public List<McpServerVO> listServers(String gatewayGroupId) {
         return servers
@@ -132,112 +107,6 @@ public class McpControlPlaneService {
         ));
     }
 
-    public List<top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpTaskBO> tasks(
-            String tenantId,
-            String clientId) {
-        return tasks.list(required(tenantId, "tenantId"), clientId);
-    }
-
-    public top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpTaskBO task(String id) {
-        return tasks.find(id).orElseThrow(() -> notFound("MCP Task", id));
-    }
-
-    // Temporary legacy task bridge; retired with its controller in Step 35.
-    @Transactional
-    public boolean cancelTask(
-            String id,
-            long expectedRevision,
-            String idempotencyKey,
-            AdminActor actor,
-            RequestAuditContext request) {
-        String scopeId = "TASK:" + required(id, "id");
-        String digest = digest("CANCEL_TASK", Map.of(
-                "id", id,
-                "expectedRevision", expectedRevision
-        ));
-        Boolean replay = replayTask(scopeId, idempotencyKey, digest);
-        if (replay != null) {
-            return replay;
-        }
-        top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpTaskBO task = task(id);
-        Instant now = clock.instant();
-        boolean cancelled = tasks.cancel(id, expectedRevision, now);
-        if (!cancelled) {
-            return false;
-        }
-        audit(
-                actor,
-                request,
-                "MCP_TASK",
-                id,
-                "CANCEL",
-                Map.of(
-                        "tenantId", task.getTenantId(),
-                        "serverCode", task.getServerCode(),
-                        "toolName", task.getToolName()
-                ),
-                now
-        );
-        idempotency.save(new top.egon.cola.component.yuheng.admin.shared.domain.bo.IdempotencyBO(
-                TASK_IDEMPOTENCY_SCOPE,
-                scopeId,
-                required(idempotencyKey, "idempotencyKey"),
-                digest,
-                id,
-                Map.of("cancelled", true),
-                now,
-                now.plus(Duration.ofDays(7))
-        ));
-        return true;
-    }
-
-    private Boolean replayTask(
-            String scopeId,
-            String idempotencyKey,
-            String payloadDigest) {
-        String key = required(idempotencyKey, "idempotencyKey");
-        top.egon.cola.component.yuheng.admin.shared.domain.bo.IdempotencyBO existing = idempotency.find(
-                TASK_IDEMPOTENCY_SCOPE,
-                scopeId,
-                key
-        ).orElse(null);
-        if (existing == null) {
-            return null;
-        }
-        if (!existing.getPayloadSha256().equals(payloadDigest)) {
-            throw new GatewayAdminIdempotencyConflictException();
-        }
-        return Boolean.TRUE.equals(existing.getResponse().get("cancelled"));
-    }
-
-    private void audit(
-            AdminActor actor,
-            RequestAuditContext request,
-            String resourceType,
-            String resourceId,
-            String action,
-            Map<String, Object> summary,
-            Instant now) {
-        audits.save(new GatewayAuditLogBO(
-                SnowflakeIdGenerator.nextId(),
-                actor.actorId(),
-                actor.actorType().name(),
-                "MANAGEMENT_API",
-                request.requestId(),
-                request.traceId(),
-                resourceType,
-                resourceId,
-                action,
-                GatewayAuditLogBO.sanitized(null),
-                GatewayAuditLogBO.sanitized(summary),
-                null,
-                null,
-                true,
-                null,
-                now
-        ));
-    }
-
     private McpServerBO requiredServer(String id) {
         return servers.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> notFound("MCP Server", id));
@@ -253,12 +122,6 @@ public class McpControlPlaneService {
                     "MCP resource belongs to another Gateway Group"
             );
         }
-    }
-
-    private String digest(String action, Object command) {
-        return GatewayRuleCanonicalizer.sha256(canonicalizer.canonicalBytes(
-                Map.of("action", action, "command", command)
-        ));
     }
 
     private GatewayAdminNotFoundException notFound(

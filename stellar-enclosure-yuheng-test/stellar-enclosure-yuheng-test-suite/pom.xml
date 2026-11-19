@@ -28,7 +28,7 @@
         </dependency>
         <dependency>
             <groupId>top.egon</groupId>
-            <artifactId>stellar-enclosure-yuheng-mcp-gateway</artifactId>
+            <artifactId>stellar-enclosure-mcp-access-service</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

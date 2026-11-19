@@ -47,10 +47,24 @@ class GatewayPersistenceBoundaryTest {
 
     /** 本Step声明的公开业务端口与其受守卫 MP 实现 / the declared public ports and their guarded MyBatis-Plus implementations. */
     private static final List<String> PORTS = List.of(
-            "McpCapabilityDraftRepository", "McpApprovalRepository", "McpRemoteToolDraftRepository",
-            "McpManagedToolOverrideRepository", "McpTaskRepository", "McpArtifactMetadataRepository",
+            "McpCapabilityDraftRepository", "McpRemoteToolDraftRepository",
+            "McpManagedToolOverrideRepository", "McpArtifactMetadataRepository",
             "McpRemoteProviderRepository", "GatewayObservabilityRepository", "GatewayAuditLogRepository",
             "IdempotencyRepository");
+
+    @Test
+    void executionTaskRuntimeIsAbsentFromAdminSources() {
+        for (String source : List.of("controller/McpTaskAdminController.java", "domain/bo/McpTaskBO.java",
+                "domain/dto/McpTaskCancelRequestDTO.java", "domain/vo/McpTaskCancelResultVO.java",
+                "repository/McpTaskRepository.java", "repository/impl/MpMcpTaskRepository.java",
+                "repository/mp/McpTaskPersistenceRepository.java", "converter/McpTaskPersistenceConverter.java",
+                "dao/McpTaskDAO.java", "domain/po/McpTaskRecordPO.java")) {
+            assertFalse(Files.exists(MAIN.resolve("mcp").resolve(source)),
+                    "The task runtime must have only its standalone owner: " + source);
+        }
+        assertFalse(Files.exists(Path.of("src/main/resources/mybatis/mapper/mcp/McpTaskDAO.xml")),
+                "Admin owns the DDL but no longer owns the task Mapper");
+    }
 
     @Test
     @DisplayName("migrated persistence carriers are gone from every main source")
@@ -72,6 +86,10 @@ class GatewayPersistenceBoundaryTest {
     @DisplayName("business carriers are mutable POJO classes without persistence inheritance")
     void businessCarriersFollowThePojoContract() throws IOException {
         for (String legacy : MIGRATED) {
+            // These HTTP carriers now have only their execution-service owner; legacy PO resurrection stays forbidden above.
+            if (List.of("McpTaskPO", "McpApprovalPO").contains(legacy)) {
+                continue;
+            }
             String carrier = legacy.substring(0, legacy.length() - 2) + "BO";
             List<Path> found = mainSources().stream()
                     .filter(p -> p.getFileName().toString().equals(carrier + ".java"))

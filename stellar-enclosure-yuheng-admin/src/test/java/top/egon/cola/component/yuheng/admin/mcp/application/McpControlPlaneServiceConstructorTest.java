@@ -1,13 +1,10 @@
 package top.egon.cola.component.yuheng.admin.mcp.service;
 
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 
-import java.time.Duration;
 import java.util.Arrays;
-import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,11 +23,6 @@ class McpControlPlaneServiceConstructorTest {
                         "putMount", "deleteMount", "uploadArtifact", "registerArtifact", "revokeArtifact");
     }
 
-    @BeforeAll
-    static void bindTheProcessWideEngine() {
-        SnowflakeIdGenerator.initialize(0L, Duration.ofMillis(5));
-    }
-
     @Test
     void selectsTheProductionConstructorForSpringInjection() {
         var constructors = Arrays.stream(
@@ -44,7 +36,7 @@ class McpControlPlaneServiceConstructorTest {
         assertThat(constructors).singleElement()
                 .satisfies(constructor -> assertThat(
                         constructor.getParameterCount()
-                ).isEqualTo(10));
+                ).isEqualTo(6));
         assertThat(constructors.getFirst().getParameters()).allSatisfy(parameter ->
                 assertThat(parameter.getAnnotation(Qualifier.class)).isNotNull());
         assertThat(Arrays.stream(constructors.getFirst().getParameterTypes()).map(Class::getName))
@@ -54,11 +46,11 @@ class McpControlPlaneServiceConstructorTest {
     }
 
     @Test
-    void taskBridgeRemainsUntilItsIndependentExecutionMigration() {
+    void executionTaskBridgeIsAbsentAfterItsStandaloneMigration() {
         assertThat(Arrays.stream(McpControlPlaneService.class.getDeclaredMethods())
                 .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
                 .map(java.lang.reflect.Method::getName))
-                .contains("tasks", "task", "cancelTask");
+                .doesNotContain("tasks", "task", "cancelTask");
     }
 
     @Test

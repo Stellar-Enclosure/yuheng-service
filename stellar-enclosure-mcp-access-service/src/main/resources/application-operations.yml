@@ -1,0 +1,208 @@
+spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
+    codecs:
+      preferred-json-mapper: jackson2
+  application:
+    name: stellar-enclosure-mcp-access-service
+  profiles:
+    default: local
+  datasource:
+    url: ${YUHENG_MCP_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/gateway_admin}
+    username: ${YUHENG_MCP_POSTGRES_USER:postgres}
+    password: ${YUHENG_MCP_POSTGRES_PASSWORD:postgres}
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  flyway:
+    enabled: false
+
+server:
+  address: 127.0.0.1
+  port: ${YUHENG_MCP_ENGINE_PORT:18084}
+  forward-headers-strategy: none
+  ssl:
+    enabled: false
+  shutdown: graceful
+  tomcat:
+    connection-timeout: ${YUHENG_MCP_CONNECT_TIMEOUT:15s}
+
+management:
+  server:
+    port: ${YUHENG_MCP_ENGINE_MANAGEMENT_PORT:18085}
+  otlp:
+    tracing:
+      export:
+        enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,mcpGatewayAuditReadiness,gatewayMcpRuntime
+      show-details: when-authorized
+
+mybatis-plus:
+  mapper-locations: 'classpath*:/mybatis/mapper/mcp/*.xml'
+
+egon:
+  cola:
+    platform:
+      tianquan:
+        shoubing:
+          enabled: ${TIANQUAN_SHOUBING_ENABLED:true}
+          register-filter: false
+          rpc:
+            enabled: true
+            consumer:
+              enabled: true
+            provider:
+              enabled: false
+          issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+          jwk-set-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+          resource-server-id: ${YUHENG_MCP_ENGINE_RESOURCE_SERVER_ID:}
+          resource-uri: ${YUHENG_MCP_ENGINE_RESOURCE_URI:}
+          authority:
+            base-uri: ${TIANQUAN_SHOUBING_AUTHORITY_BASE_URI}
+            timeout: PT2S
+            bindings:
+              platform:
+                issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
+                registration-id: ${YUHENG_MCP_AUTHORITY_PLATFORM_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: PLATFORM
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+              tenant-a:
+                issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+                registration-id: ${YUHENG_MCP_AUTHORITY_TENANT_A_REGISTRATION_ID}
+                audience: ${TIANQUAN_SHOUBING_AUTHORITY_RESOURCE_URI}
+                context: TENANT
+                tenant-id: ${TIANSHU_TENANT_ID}
+                scopes: ["tianquan-shoubing:security-state:resolve", "tianquan-shoubing:audit:append"]
+          service-client:
+            app-id: ${YUHENG_MCP_AUTHORITY_SERVICE_APP_ID}
+          trusted-issuers:
+            platform:
+              issuer: ${TIANQUAN_SHOUBING_PLATFORM_OAUTH_ISSUER}
+              jwks-uri: ${TIANQUAN_SHOUBING_PLATFORM_JWK_SET_URI}
+              realm-key: platform
+              realm-type: PLATFORM
+              status: ACTIVE
+              trust-version: 1
+            tenant-a:
+              issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+              jwks-uri: ${TIANQUAN_SHOUBING_JWK_SET_URI}
+              realm-key: ${TIANQUAN_SHOUBING_TENANT_REALM_KEY}
+              realm-type: TENANT
+              tenant-id: ${TIANSHU_TENANT_ID}
+              status: ACTIVE
+              trust-version: 1
+          usage-observation:
+            enabled: true
+            receiver: MCP
+            fallback-issuer: ${TIANQUAN_SHOUBING_OAUTH_ISSUER}
+            allow-local-plaintext: false
+        jianshen:
+          enabled: ${YUHENG_MCP_TIANQUAN_JIANSHEN_ENABLED:true}
+          register-filter: false
+          system-code: ${YUHENG_MCP_TIANQUAN_JIANSHEN_SYSTEM_CODE}
+          authorization:
+            endpoint: ${YUHENG_MCP_TIANQUAN_JIANSHEN_AUTHORIZATION_ENDPOINT}
+    component:
+      mybatis-plus:
+        ddl:
+          enabled: false
+      rpc:
+        enabled: true
+        transport: h2c
+        provider:
+          enabled: false
+        consumer:
+          enabled: true
+      tianshu:
+        enabled: false
+        si:
+          rpc:
+            enabled: true
+            binding-id: ${YUHENG_MCP_SI_BINDING_ID}
+            binding-version: ${YUHENG_MCP_SI_BINDING_VERSION}
+            default-timeout: ${YUHENG_MCP_SI_DEFAULT_TIMEOUT:2s}
+      yuheng:
+        mcp-engine:
+          runtime:
+            node-id: ${YUHENG_MCP_ENGINE_NODE_ID:${HOSTNAME:stellar-enclosure-mcp-access-service}}
+            service-scope-bindings: []
+            listener:
+              maximum-request-bytes: ${YUHENG_MCP_ENGINE_MAXIMUM_REQUEST_BYTES:2097152}
+            outbound:
+              request-timeout: ${YUHENG_MCP_ENGINE_OUTBOUND_REQUEST_TIMEOUT:5s}
+              maximum-request-bytes: ${YUHENG_MCP_ENGINE_OUTBOUND_MAXIMUM_REQUEST_BYTES:1073741824}
+              maximum-response-bytes: ${YUHENG_MCP_ENGINE_OUTBOUND_MAXIMUM_RESPONSE_BYTES:4194304}
+          publication:
+            caller-app-code: ${YUHENG_MCP_SI_CALLER_APP_CODE}
+            bindings:
+              file: ${YUHENG_MCP_BINDINGS_FILE}
+              sha256: ${YUHENG_MCP_BINDINGS_SHA256}
+            active-catalog:
+              file: ${YUHENG_MCP_CATALOG_FILE}
+              sha256: ${YUHENG_MCP_CATALOG_SHA256}
+            historical-catalogs: []
+          mvc-async:
+            concurrent-streams: ${YUHENG_MCP_CONCURRENT_STREAMS:64}
+            timeout: ${YUHENG_MCP_ASYNC_TIMEOUT:90s}
+        engine:
+          mcp:
+            enabled: ${YUHENG_MCP_ENABLED:true}
+            artifact-root: ${YUHENG_MCP_ARTIFACT_ROOT:${java.io.tmpdir}/egon-cola/yuheng-mcp-artifacts}
+            session-ttl: ${YUHENG_MCP_SESSION_TTL:PT30M}
+            stream-wait: ${YUHENG_MCP_STREAM_WAIT:PT15S}
+            maximum-request-bytes: ${YUHENG_MCP_MAXIMUM_REQUEST_BYTES:16777216}
+            maximum-resource-bytes: ${YUHENG_MCP_MAXIMUM_RESOURCE_BYTES:67108864}
+            maximum-app-artifact-bytes: ${YUHENG_MCP_MAXIMUM_APP_ARTIFACT_BYTES:16777216}
+            maximum-subscriptions-per-client: ${YUHENG_MCP_MAXIMUM_SUBSCRIPTIONS_PER_CLIENT:100}
+            maximum-active-tasks-per-client: ${YUHENG_MCP_MAXIMUM_ACTIVE_TASKS_PER_CLIENT:100}
+            tasks:
+              lease-duration: ${YUHENG_MCP_TASK_LEASE_DURATION:PT30S}
+              poll-interval: ${YUHENG_MCP_TASK_POLL_INTERVAL:PT2S}
+              default-ttl: ${YUHENG_MCP_TASK_DEFAULT_TTL:PT24H}
+              cleanup-interval: ${YUHENG_MCP_TASK_CLEANUP_INTERVAL:PT10M}
+            remote:
+              discovery-timeout: ${YUHENG_MCP_REMOTE_DISCOVERY_TIMEOUT:PT20S}
+              call-timeout: ${YUHENG_MCP_REMOTE_CALL_TIMEOUT:PT60S}
+              health-interval: ${YUHENG_MCP_REMOTE_HEALTH_INTERVAL:PT30S}
+              capability-sync-interval: ${YUHENG_MCP_REMOTE_CAPABILITY_SYNC_INTERVAL:PT5M}
+              circuit-open-duration: ${YUHENG_MCP_REMOTE_CIRCUIT_OPEN_DURATION:PT30S}
+              maximum-concurrent-calls: ${YUHENG_MCP_REMOTE_MAXIMUM_CONCURRENT_CALLS:32}
+              failure-threshold: ${YUHENG_MCP_REMOTE_FAILURE_THRESHOLD:3}
+              token-forwarding: false
+            security:
+              origin-validation: true
+              protected-resource-metadata: true
+              token-forwarding: false
+            audit:
+              enabled: ${YUHENG_MCP_AUDIT_ENABLED:true}
+              body-log-enabled: false
+            redis:
+              enabled: ${YUHENG_MCP_REDIS_ENABLED:true}
+              address: ${YUHENG_MCP_REDIS_ADDRESS:redis://127.0.0.1:6379}
+              database: ${YUHENG_MCP_REDIS_DATABASE:0}
+              password: ${YUHENG_MCP_REDIS_PASSWORD:}
+              key-prefix: ${YUHENG_MCP_REDIS_KEY_PREFIX:yuheng:mcp:}
+              stream-max-length: ${YUHENG_MCP_STREAM_MAX_LENGTH:256}
+
+yuheng:
+  persistence:
+    tenant-id: ${YUHENG_PERSISTENCE_TENANT_ID}
+    identity-tenant-id: ${YUHENG_PERSISTENCE_IDENTITY_TENANT_ID}
+    service-user-id: ${YUHENG_PERSISTENCE_SERVICE_USER_ID}
+    expected-schema-version: ${YUHENG_PERSISTENCE_EXPECTED_SCHEMA_VERSION}
+    expected-schema-sha256: ${YUHENG_PERSISTENCE_EXPECTED_SCHEMA_SHA256}
+    managed-ddl-enabled: false

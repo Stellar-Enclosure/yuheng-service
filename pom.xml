@@ -20,10 +20,9 @@
     <modules>
         <module>stellar-enclosure-yuheng-contract</module>
         <module>stellar-enclosure-yuheng-core</module>
-        <module>stellar-enclosure-yuheng-mcp-core</module>
         <module>stellar-enclosure-yuheng-runtime-core</module>
         <module>stellar-enclosure-yuheng-biz-gateway</module>
-        <module>stellar-enclosure-yuheng-mcp-gateway</module>
+        <module>stellar-enclosure-mcp-access-service</module>
         <module>stellar-enclosure-yuheng-edge-gateway</module>
         <module>stellar-enclosure-yuheng-admin</module>
         <module>stellar-enclosure-yuheng-llm-gateway</module>
@@ -48,11 +47,6 @@
             </dependency>
             <dependency>
                 <groupId>top.egon</groupId>
-                <artifactId>stellar-enclosure-yuheng-mcp-core</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>top.egon</groupId>
                 <artifactId>stellar-enclosure-yuheng-biz-gateway</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -63,7 +57,7 @@
             </dependency>
             <dependency>
                 <groupId>top.egon</groupId>
-                <artifactId>stellar-enclosure-yuheng-mcp-gateway</artifactId>
+                <artifactId>stellar-enclosure-mcp-access-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

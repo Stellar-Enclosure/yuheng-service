@@ -70,8 +70,7 @@ class AiCarrierContractTest {
      */
     private static final Set<String> SHARED_CROSS_PROCESS = Set.of(
             "LlmProtocolEnum", "LlmCapabilityEnum", "LlmModelKindEnum",
-            "LlmDeploymentEnum", "LlmRoutingModeEnum", "LlmCacheModeEnum",
-            "McpPersistentTaskStateEnum", "McpPersistentApprovalStatusEnum");
+            "LlmDeploymentEnum", "LlmRoutingModeEnum", "LlmCacheModeEnum");
 
     private static ValidatorFactory validatorFactory;
 
@@ -130,7 +129,7 @@ class AiCarrierContractTest {
 
     @Test
     void enumCodesAndWireValuesMatchTheFrozenSnapshot() throws Exception {
-        assertEquals(16, FROZEN_WIRE.size(), "frozen enum set is complete");
+        assertEquals(14, FROZEN_WIRE.size(), "frozen enum set is complete");
         for (Map.Entry<String, List<String>> entry : FROZEN_WIRE.entrySet()) {
             Class<?> enumType = Class.forName(entry.getKey());
             assertTrue(EgonEnum.class.isAssignableFrom(enumType),
@@ -190,9 +189,7 @@ class AiCarrierContractTest {
         List<String> drift = new ArrayList<>();
         for (Path gatewayDir : List.of(
                 reactorSibling("stellar-enclosure-yuheng-llm-gateway",
-                        "top/egon/cola/component/yuheng/llm/proxy/domain/enums"),
-                reactorSibling("stellar-enclosure-yuheng-mcp-gateway",
-                        "top/egon/cola/component/yuheng/mcp/engine/mcp/domain/enums"))) {
+                        "top/egon/cola/component/yuheng/llm/proxy/domain/enums"))) {
             List<Path> sources;
             try (Stream<Path> paths = Files.list(gatewayDir)) {
                 sources = paths.filter(path -> path.toString()
@@ -213,6 +210,23 @@ class AiCarrierContractTest {
         }
         assertTrue(drift.isEmpty(),
                 "Cross-process wire drift: " + String.join(" | ", drift));
+    }
+
+    @Test
+    void executionOwnedMcpEnumsRetainThePersistedWireWithoutAnAdminCopy() throws IOException {
+        Map<String, List<String>> frozen = Map.of(
+                "McpPersistentTaskStateEnum", List.of("WORKING/10/WORKING", "INPUT_REQUIRED/20/INPUT_REQUIRED",
+                        "COMPLETED/30/COMPLETED", "FAILED/40/FAILED", "CANCELLED/50/CANCELLED"),
+                "McpPersistentApprovalStatusEnum", List.of("PENDING/10/PENDING", "CONSUMED/20/CONSUMED",
+                        "EXPIRED/30/EXPIRED", "REVOKED/40/REVOKED"));
+        Path execution = reactorSibling("stellar-enclosure-mcp-access-service",
+                "top/egon/cola/component/yuheng/mcp/engine/mcp/domain/enums");
+        for (var entry : frozen.entrySet()) {
+            assertEquals(entry.getValue(), parseWireSnapshot(execution.resolve(entry.getKey() + ".java")),
+                    "Execution ownership must preserve the existing SQL and JSON wire values");
+            assertFalse(Files.exists(adminPackage("mcp").resolve("domain/enums").resolve(entry.getKey() + ".java")),
+                    "The retired Admin persistence body must not reappear");
+        }
     }
 
     @Test
@@ -366,7 +380,7 @@ class AiCarrierContractTest {
                 + "/yuheng/admin/config"));
         collect(sources, reactorSibling("stellar-enclosure-yuheng-llm-gateway",
                 "top/egon/cola/component/yuheng/llm/proxy/domain/enums"));
-        collect(sources, reactorSibling("stellar-enclosure-yuheng-mcp-gateway",
+        collect(sources, reactorSibling("stellar-enclosure-mcp-access-service",
                 "top/egon/cola/component/yuheng/mcp/engine/mcp/domain/enums"));
         assertFalse(sources.isEmpty(), "Step 2 carriers must be discoverable");
         return sources;
@@ -540,15 +554,6 @@ class AiCarrierContractTest {
         frozen.put("top.egon.cola.component.yuheng.admin.llm.domain.enums"
                 + ".LlmCacheModeEnum", List.of(
                 "NONE/10/NONE", "EXACT/20/EXACT", "SEMANTIC/30/SEMANTIC"));
-        frozen.put("top.egon.cola.component.yuheng.admin.mcp.domain.enums"
-                + ".McpPersistentTaskStateEnum", List.of(
-                "WORKING/10/WORKING", "INPUT_REQUIRED/20/INPUT_REQUIRED",
-                "COMPLETED/30/COMPLETED", "FAILED/40/FAILED",
-                "CANCELLED/50/CANCELLED"));
-        frozen.put("top.egon.cola.component.yuheng.admin.mcp.domain.enums"
-                + ".McpPersistentApprovalStatusEnum", List.of(
-                "PENDING/10/PENDING", "CONSUMED/20/CONSUMED",
-                "EXPIRED/30/EXPIRED", "REVOKED/40/REVOKED"));
         return Collections.unmodifiableMap(frozen);
     }
 }
