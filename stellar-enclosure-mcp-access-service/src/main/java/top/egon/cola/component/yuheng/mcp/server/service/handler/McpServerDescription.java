@@ -1,6 +1,9 @@
 package top.egon.cola.component.yuheng.mcp.server.service.handler;
 
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer;
+import top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect;
+import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
+import top.egon.cola.component.yuheng.mcp.server.domain.McpRequestContext;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -80,7 +83,7 @@ final class McpServerDescription {
      * @param context 已协商的服务器和协议版本；negotiated server and protocol version。
      * @return Stable 初始化结果；Stable initialization result。
      */
-    static Map<String, Object> initializeResult(McpRequestContextView context) {
+    static Map<String, Object> initializeResult(McpRequestContext context) {
         McpRuntimeServer server = context.server();
         LinkedHashMap<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", server.serverCode());
@@ -89,7 +92,7 @@ final class McpServerDescription {
         if (server.description() != null) {
             serverInfo.put("description", server.description());
         }
-        LinkedHashMap<String, Object> result = new LinkedHashMap<>(result(context));
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>(result(new McpRequestContextView(server, context.dialect().protocolVersion())));
         result.remove("server");
         // Existing durable tasks and UI resources are Egon extensions, not Stable Tasks negotiation.
         result.put("capabilities", Map.of(
@@ -103,6 +106,13 @@ final class McpServerDescription {
                                 "methods", List.of("tasks/get", "tasks/update", "tasks/cancel")),
                         "top.egon/apps", Map.of("uiResources", true))));
         result.put("serverInfo", Collections.unmodifiableMap(serverInfo));
+        // The configured HTTP handler alone installs this selected immutable catalogue in its internal context.
+        // Client params/attributes and legacy handlers cannot assert publication evidence.
+        Object selected = context.attributes().get(McpGatewayCompiledRulesDTO.class.getName());
+        if (context.dialect() == McpProtocolDialect.STABLE_2025_11_25
+                && selected instanceof McpGatewayCompiledRulesDTO catalogue) {
+            result.put("_meta", Map.of("top.egon/selectedMcpCatalogueSha256", catalogue.fileSha256()));
+        }
         if (server.instructions() != null) {
             result.put("instructions", server.instructions());
         }

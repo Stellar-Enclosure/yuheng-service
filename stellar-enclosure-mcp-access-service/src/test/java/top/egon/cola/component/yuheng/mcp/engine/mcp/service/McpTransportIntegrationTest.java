@@ -88,12 +88,40 @@ public class McpTransportIntegrationTest {
         }
     }
 
+    @Test void stableInitializeReportsOnlyTheActuallySelectedTrustedCatalogueFileDigest() throws Exception {
+        String field="top.egon/selectedMcpCatalogueSha256";
+        for (String version:List.of("3","4")) {
+            try(var fixture=new NativeFixture()) {
+                fixture.token("opaque",false);
+                var base=snapshot("1");
+                var selected=new McpGatewayCompiledRulesDTO(base.ownerTenantId(),version,base.validUntil(),base.contentSha256(),
+                        version.equals("3")?"d".repeat(64):"e".repeat(64),base.content(),base.mcpRules(),base.serverScopes(),base.bindingPins());
+                var store=new SharedMcpTransportStore();
+                var handler=McpEngineHttpHandler.createConfigured(resolver(selected),new McpMethodDispatcher(List.of(new McpInitializeHandler())),
+                        store,store,fixture.authenticator,MAPPER,fixture.clock,Duration.ofMinutes(1),Duration.ofMillis(20),65536);
+                var request=new McpHttpRequest("POST","/mcp/billing",Map.of("content-type","application/json","authorization","Bearer opaque"),
+                        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"_meta\":{\""+field+"\":\"forged-request-value\"}}}",
+                        Map.of(field,"forged-attribute-value",McpGatewayCompiledRulesDTO.class.getName(),"forged-catalogue"));
+                var response=handler.handle(request).block(Duration.ofSeconds(5));
+                assertEquals(200,response.status());
+                var payload=body(response);var result=MAPPER.readTree(payload).path("result");
+                assertEquals("2025-11-25",result.path("protocolVersion").asText());
+                assertEquals(selected.fileSha256(),result.path("_meta").path(field).asText());
+                assertEquals(1,result.path("_meta").size());
+                assertFalse(payload.contains("forged-"));assertFalse(payload.contains("opaque"));
+                assertFalse(result.path("_meta").has("content"));assertFalse(result.path("_meta").has("bindingPins"));
+            }
+        }
+    }
+
     @Test void keepsInitializationAndMissingSessionProtocolShapesInProcess() throws Exception {
         var handler=handler(new SharedMcpTransportStore());
         var initialized=handler.handle(new McpHttpRequest("POST","/mcp/orders",Map.of("content-type","application/json"),
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\"}}",Map.of())).block();
         assertEquals(200,initialized.status());assertNotNull(initialized.header("mcp-session-id"));
-        assertEquals("2025-11-25",MAPPER.readTree(body(initialized)).path("result").path("protocolVersion").asText());
+        var initialization=MAPPER.readTree(body(initialized)).path("result");
+        assertEquals("2025-11-25",initialization.path("protocolVersion").asText());
+        assertFalse(initialization.has("_meta"));
         var missing=handler.handle(new McpHttpRequest("POST","/mcp/orders",Map.of("content-type","application/json","mcp-protocol-version","2025-11-25"),
                 "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\",\"params\":{}}",Map.of())).block();
         assertEquals(400,missing.status());
