@@ -30,9 +30,7 @@ class GatewayAiModuleContractTest {
     );
 
     private static final List<String> PURE_MODULE_DIRECTORIES = List.of(
-            "stellar-enclosure-yuheng-contract",
-            "stellar-enclosure-yuheng-core",
-            "stellar-enclosure-yuheng-runtime-core"
+            "stellar-enclosure-yuheng-contract"
     );
 
     @Test

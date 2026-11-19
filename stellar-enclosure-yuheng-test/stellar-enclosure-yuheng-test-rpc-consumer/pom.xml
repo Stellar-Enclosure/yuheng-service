@@ -23,10 +23,6 @@
         </dependency>
         <dependency>
             <groupId>top.egon</groupId>
-            <artifactId>stellar-enclosure-component-rpc-tianshu-adapter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>top.egon</groupId>
             <artifactId>stellar-enclosure-yuheng-test-rpc-contract</artifactId>
         </dependency>
         <dependency>

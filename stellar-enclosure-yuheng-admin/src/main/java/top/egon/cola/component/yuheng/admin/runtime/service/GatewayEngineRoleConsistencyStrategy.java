@@ -2,7 +2,6 @@ package top.egon.cola.component.yuheng.admin.runtime.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import top.egon.cola.component.tianshu.model.management.DdcManagementConfigClientInstance;
 import top.egon.cola.component.yuheng.contract.runtime.GatewayEngineRoleEnum;
 
@@ -13,12 +12,11 @@ import java.util.Set;
 
 /**
  * 中文说明：仅由明确的节点元数据识别 Engine 角色，不从主机、名称或端口推断。
- * English summary: Applies the required role set independently of release acknowledgement checks.
- * 用法 / Usage: Pass the projection's online-node set; replicas count once for role completeness.
+ * English summary: Interprets role metadata in archived Engine projections.
+ * 用法 / Usage: Pass historical node records; the result is descriptive evidence.
  */
 @Slf4j
 @RequiredArgsConstructor
-@Service("gatewayEngineRoleConsistencyStrategy")
 public class GatewayEngineRoleConsistencyStrategy {
 
     public static final String ROLE_METADATA_KEY = "yuheng.engine.role";

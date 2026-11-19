@@ -59,14 +59,12 @@ class GatewayAdminConfigurationTest {
     }
 
     @Test
-    void legacyRulePublisherAndCleanupAreAbsentFromAdminSpringAssembly() {
-        Class<?> legacyPublisher = top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher.class;
-        Class<?> legacyCleanup = top.egon.cola.component.yuheng.admin.release.controller.scheduled.GatewayRuleChunkGarbageCollector.class;
-        assertThat(GatewayAdminConfiguration.class.getDeclaredMethods())
-                .noneMatch(method -> method.isAnnotationPresent(org.springframework.context.annotation.Bean.class)
-                        && legacyPublisher.equals(method.getReturnType()));
-        assertThat(org.springframework.core.annotation.AnnotatedElementUtils.hasAnnotation(
-                legacyCleanup, org.springframework.stereotype.Component.class)).isFalse();
+    void legacyRulePublisherAndCleanupAreAbsentFromAdminAssembly() {
+        ClassLoader loader = GatewayAdminConfiguration.class.getClassLoader();
+        assertThat(loader.getResource("top/egon/cola/component/yuheng/admin/rule/service/GatewayDdcRulePublisher.class"))
+                .isNull();
+        assertThat(loader.getResource("top/egon/cola/component/yuheng/admin/release/controller/scheduled/GatewayRuleChunkGarbageCollector.class"))
+                .isNull();
     }
 
     @Test

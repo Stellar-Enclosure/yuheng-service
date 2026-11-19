@@ -25,29 +25,29 @@ egon:
     component:
       id:
         enabled: false
-      tianshu:
-        tenant-id: ${TIANSHU_TENANT_ID:}
-        redis:
-          username: ${TIANSHU_REDIS_USERNAME:}
-        enabled: false
-        rpc:
-          target: ${TIANSHU_RPC_TARGET:dns:///127.0.0.1:19080}
-          load-balancing-policy: round_robin
-          tls:
-            development-plaintext: ${TIANSHU_RPC_DEVELOPMENT_PLAINTEXT:true}
-          auth:
-            runtime:
-              access-key: ${TIANSHU_RPC_RUNTIME_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_RUNTIME_SECRET_KEY:}
-            registry:
-              access-key: ${TIANSHU_RPC_REGISTRY_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_REGISTRY_SECRET_KEY:}
-        registry:
-          enabled: false
       rpc:
-        enabled: false
-        consumer:
+        enabled: ${YUHENG_RPC_FIXTURE_ENABLED:false}
+        transport: h2c
+        provider:
           enabled: false
-          yuheng-service-name: egon-yuheng-rpc
-          yuheng-group: default
-          yuheng-version: 1.0.0
+        consumer:
+          enabled: ${YUHENG_RPC_FIXTURE_ENABLED:false}
+          default-timeout-ms: 3000
+          bindings:
+            echo-fixture:
+              version: 1
+              namespace: ${YUHENG_RPC_FIXTURE_NAMESPACE}
+              service: ${YUHENG_RPC_FIXTURE_SERVICE}
+              port: ${YUHENG_RPC_FIXTURE_PORT}
+              methods:
+                - egon.yuheng.test.v1.EchoService/Echo
+            order-fixture:
+              version: 1
+              namespace: ${YUHENG_RPC_FIXTURE_NAMESPACE}
+              service: ${YUHENG_RPC_FIXTURE_SERVICE}
+              port: ${YUHENG_RPC_FIXTURE_PORT}
+              methods:
+                - egon.yuheng.test.v1.OrderService/GetOrder
+                - egon.yuheng.test.v1.OrderService/CreateOrder
+                - egon.yuheng.test.v1.OrderService/SlowCall
+                - egon.yuheng.test.v1.OrderService/Fail

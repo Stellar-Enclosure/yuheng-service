@@ -75,16 +75,18 @@ public final class GatewayHttpRouteCompiler {
         Objects.requireNonNull(binding, "binding");
         validateInput(input, binding);
         GatewayRuntimeRoute route = input.route();
-        String host = hostname(route.host());
-        String method = route.httpMethod();
-        String path = canonicalPath(route.pathPattern());
-        PathMatchType match = matchType(input.canonicalDraft());
-        if (!binding.approvedHostnames().stream().map(this::hostname).toList().contains(host)
+        var canonical = canonicalMatch(route.host(), route.httpMethod(), route.pathPattern(),
+                input.canonicalDraft().get("pathMatchType"));
+        String host = canonical.host();
+        String method = canonical.method();
+        String path = canonical.path();
+        PathMatchType match = canonical.type();
+        if (!binding.approvedHostnames().stream().map(GatewayHttpRouteCompiler::hostname).toList().contains(host)
                 || !binding.approvedMethods().contains(method)) {
             throw invalid("approvedMatch");
         }
         if (match == PathMatchType.PATH_PREFIX && !binding.approvedPathPrefixes().stream()
-                .map(this::canonicalPath).toList().contains(path)) {
+                .map(GatewayHttpRouteCompiler::canonicalPath).toList().contains(path)) {
             throw invalid("approvedPathPrefix");
         }
 
@@ -191,10 +193,8 @@ public final class GatewayHttpRouteCompiler {
                 || !number.toString().equals("0"))) throw invalid("priority");
         Object transport = draft.get("transportPolicy");
         if (transport != null && (!(transport instanceof Map<?, ?> policy)
-                || !LEGACY_TRANSPORT_FIELDS.containsAll(policy.keySet())
-                || policy.entrySet().stream().anyMatch(field -> field.getValue() != null
-                    && (!Set.of("retryEnabled", "bodyLogEnabled").contains(field.getKey())
-                        || !Boolean.FALSE.equals(field.getValue()))))) throw invalid("transportPolicy");
+                || policy.entrySet().stream().anyMatch(field ->
+                        !isCompatibleLegacyTransportField(field.getKey(), field.getValue())))) throw invalid("transportPolicy");
         if (route.transportPolicy() != null) {
             JsonNode policy = json.valueToTree(route.transportPolicy());
             policy.fields().forEachRemaining(field -> {
@@ -238,7 +238,7 @@ public final class GatewayHttpRouteCompiler {
                 || resource.getQuery() != null || resource.getFragment() != null) throw invalid("resourceUri");
         bounded(binding.authorization().version(), 128, "authorizationVersion");
         digest(binding.authorization().contentSha256(), "authorizationDigest");
-        binding.approvedHostnames().forEach(this::hostname);
+        binding.approvedHostnames().forEach(GatewayHttpRouteCompiler::hostname);
         if (!HTTP_METHODS.containsAll(binding.approvedMethods())) throw invalid("approvedMethods");
         for (String prefix : binding.approvedPathPrefixes()) {
             if ("/".equals(canonicalPath(prefix))) throw invalid("unboundedPrefix");
@@ -325,15 +325,27 @@ public final class GatewayHttpRouteCompiler {
         return result;
     }
 
-    private PathMatchType matchType(Map<String, Object> draft) {
-        Object value = draft.get("pathMatchType");
+    /** Normalizes the match used by draft diagnostics, duplicate detection and release compilation. */
+    public static RouteMatchVO canonicalMatch(String host, String method, String path, Object matchType) {
+        if (method == null || !HTTP_METHODS.contains(method)) throw invalid("httpMethod");
+        return new RouteMatchVO(hostname(host), method, canonicalPath(path), matchType(matchType));
+    }
+
+    /** Allows only disabled historical flags and null values of known historical fields. */
+    public static boolean isCompatibleLegacyTransportField(Object name, Object value) {
+        return name instanceof String field && LEGACY_TRANSPORT_FIELDS.contains(field)
+                && (value == null || (("retryEnabled".equals(field) || "bodyLogEnabled".equals(field))
+                        && Boolean.FALSE.equals(value)));
+    }
+
+    private static PathMatchType matchType(Object value) {
         if (value == null) return PathMatchType.EXACT;
         if (!(value instanceof String text)) throw invalid("pathMatchType");
         try { return PathMatchType.valueOf(text); }
         catch (IllegalArgumentException failure) { throw invalid("pathMatchType"); }
     }
 
-    private String hostname(String value) {
+    private static String hostname(String value) {
         bounded(value, 253, "hostname");
         String wildcard = value.startsWith("*.") ? "*." : "";
         String name = wildcard.isEmpty() ? value : value.substring(2);
@@ -345,7 +357,7 @@ public final class GatewayHttpRouteCompiler {
         } catch (IllegalArgumentException failure) { throw invalid("hostname"); }
     }
 
-    private String canonicalPath(String value) {
+    private static String canonicalPath(String value) {
         bounded(value, 1024, "pathValue");
         if (!value.startsWith("/") || value.startsWith("//") || value.contains("//") || value.indexOf('\\') >= 0
                 || value.indexOf('{') >= 0 || value.indexOf('}') >= 0 || value.indexOf('*') >= 0) throw invalid("pathValue");
@@ -409,6 +421,9 @@ public final class GatewayHttpRouteCompiler {
     public interface BindingResolver {
         Optional<PublicationBinding> resolve(long ownerTenantId, long gatewayGroupId, String routeId, String operationId);
     }
+
+    /** Immutable normalized HTTPRoute match, independent of placement and authorization. */
+    public record RouteMatchVO(String host, String method, String path, PathMatchType type) { }
 
     public enum PathMatchType { EXACT, PATH_PREFIX }
 

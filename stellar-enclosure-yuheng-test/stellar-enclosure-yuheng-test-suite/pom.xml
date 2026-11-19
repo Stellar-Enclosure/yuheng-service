@@ -33,11 +33,6 @@
         </dependency>
         <dependency>
             <groupId>top.egon</groupId>
-            <artifactId>stellar-enclosure-yuheng-biz-gateway</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>top.egon</groupId>
             <artifactId>stellar-enclosure-yuheng-admin</artifactId>
             <scope>test</scope>
         </dependency>

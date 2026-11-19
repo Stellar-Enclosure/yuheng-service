@@ -1,345 +1,74 @@
 package top.egon.cola.component.yuheng.admin.routing.service;
 
 import org.junit.jupiter.api.Test;
-import top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
-import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GatewayRouteTransportPolicyValidatorTest {
-
-    private final GatewayRouteTransportPolicyValidator validator =
-            new GatewayRouteTransportPolicyValidator();
+    private final GatewayRouteTransportPolicyValidator validator = new GatewayRouteTransportPolicyValidator();
 
     @Test
-    void reportsMissingHostWithoutApplyingWildcardFallback() {
-        Map<String, Object> content = route("POST", Map.of());
-        content.remove("host");
-        List<top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue> issues =
-                validator.validate(
-                        content,
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.TRANSPARENT
-                );
+    void acceptsExactAndPrefixHttpWithNoApplicationTransportOverrides() {
+        var route = route();
 
-        assertThat(issues).contains(new GatewayTransportValidationIssue(
-                "host",
-                "ROUTE_HOST_REQUIRED",
-                "Host is required"
-        ));
-        assertThat(content.values()).doesNotContain("*");
-    }
+        assertThat(validator.validate(route, GatewayProtocol.HTTP)).isEmpty();
+        route.put("pathMatchType", "PATH_PREFIX");
+        route.put("transportPolicy", Map.of("retryEnabled", false, "bodyLogEnabled", false));
 
-    @Test
-    void reportsEveryUnknownTransportEnumAtItsFieldPath() {
-        Map<String, Object> policy = new LinkedHashMap<>();
-        policy.put("profile", "FUTURE_PROFILE");
-        policy.put("transportProtocol", "TCP");
-        policy.put("requestBodyMode", "BUFFERED");
-        policy.put("responseMode", "CACHED");
-
-        List<String> paths = validator.validate(
-                        route("POST", policy),
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.TRANSPARENT
-                ).stream()
-                .map(top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue::path)
-                .toList();
-
-        assertThat(paths).containsExactly(
-                "transportPolicy.profile",
-                "transportPolicy.transportProtocol",
-                "transportPolicy.requestBodyMode",
-                "transportPolicy.responseMode"
-        );
+        assertThat(validator.validate(route, GatewayProtocol.HTTP)).isEmpty();
     }
 
     @ParameterizedTest
-    @MethodSource("numericRanges")
-    void acceptsDocumentedNumericBoundaries(
-            String field,
-            long minimum,
-            long maximum) {
-        assertThat(validator.validate(
-                route("POST", Map.of(field, minimum)),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).isEmpty();
-        assertThat(validator.validate(
-                route("POST", Map.of(field, maximum)),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).isEmpty();
+    @ValueSource(strings = {"connectTimeoutMs", "transportProtocol", "retryEnabled", "bodyLogEnabled",
+            "tls", "grpcRoute", "profile", "responseMode", "websocketIdleTimeoutMs"})
+    void rejectsLegacyTransportOverridesForAnOtherwiseValidPublicRoute(String field) {
+        var route = route();
+        route.put("transportPolicy", Map.of(field, "connectTimeoutMs".equals(field) ? 1000L : true));
+
+        assertThat(validator.validate(route, GatewayProtocol.HTTP))
+                .containsExactly(new GatewayTransportValidationIssue("transportPolicy." + field, "TRANSPORT_OPTION_RETIRED",
+                        "The Cilium HTTPRoute profile does not accept this application proxy option"));
+    }
+
+    @Test
+    void rejectsNorthboundRpcAndExplicitRoutePriority() {
+        var route = route();
+        route.put("priority", 10);
+
+        assertThat(validator.validate(route, GatewayProtocol.RPC)).extracting(GatewayTransportValidationIssue::code)
+                .containsExactly("ROUTE_PROTOCOL_UNSUPPORTED", "ROUTE_PRIORITY_UNSUPPORTED");
+    }
+
+    @Test
+    void reportsMissingHostAndNonStringMethodWithoutWildcardFallback() {
+        var route = route();
+        route.remove("host");
+        route.put("httpMethod", List.of("GET"));
+
+        assertThat(validator.validate(route, GatewayProtocol.HTTP)).containsExactly(
+                new GatewayTransportValidationIssue("host", "ROUTE_HOST_REQUIRED", "Host is required"),
+                new GatewayTransportValidationIssue("httpMethod", "ROUTE_METHOD_INVALID", "HTTP Method must be a string"));
     }
 
     @ParameterizedTest
-    @MethodSource("numericRanges")
-    void rejectsValuesOutsideDocumentedNumericBoundaries(
-            String field,
-            long minimum,
-            long maximum) {
-        assertThat(validator.validate(
-                route("POST", Map.of(field, minimum - 1)),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).anySatisfy(issue -> {
-            assertThat(issue.path()).isEqualTo("transportPolicy." + field);
-            assertThat(issue.code())
-                    .isEqualTo("TRANSPORT_VALUE_OUT_OF_RANGE");
-        });
-        assertThat(validator.validate(
-                route("POST", Map.of(field, maximum + 1)),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).anySatisfy(issue -> {
-            assertThat(issue.path()).isEqualTo("transportPolicy." + field);
-            assertThat(issue.code())
-                    .isEqualTo("TRANSPORT_VALUE_OUT_OF_RANGE");
-        });
+    @ValueSource(strings = {"/orders/{id}", "/orders/**", "/orders?query=1", "/orders/%2e", "//orders"})
+    void rejectsOldProxyPatternsAndAmbiguousHttpPaths(String path) {
+        var route = route();
+        route.put("pathPattern", path);
+
+        assertThat(validator.validate(route, GatewayProtocol.HTTP)).singleElement()
+                .satisfies(issue -> assertThat(issue.path()).isEqualTo("pathPattern"));
     }
 
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("invalidCombinations")
-    void rejectsProtocolUnsafeTransportCombinations(
-            String description,
-            String method,
-            GatewayProtocol protocol,
-            GatewayResponseMode operationResponseMode,
-            Map<String, Object> policy,
-            String path,
-            String code) {
-        assertThat(validator.validate(
-                route(method, policy),
-                protocol,
-                operationResponseMode
-        )).anySatisfy(issue -> {
-            assertThat(issue.path()).isEqualTo(path);
-            assertThat(issue.code()).isEqualTo(code);
-        });
-    }
-
-    @Test
-    void rejectsNonBooleanPolicyFlagsAtTheirFieldPaths() {
-        assertThat(validator.validate(
-                route("POST", Map.of("retryEnabled", "false")),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).contains(new top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue(
-                "transportPolicy.retryEnabled",
-                "TRANSPORT_BOOLEAN_INVALID",
-                "retryEnabled must be a boolean"
-        ));
-    }
-
-    @Test
-    void rejectsNonStringRouteTextFieldsWithoutStringifyingThem() {
-        Map<String, Object> content = route("POST", Map.of());
-        content.put("host", Map.of("tenant", "x"));
-        content.put("httpMethod", false);
-
-        assertThat(validator.validate(
-                content,
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).contains(
-                new top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue(
-                        "host",
-                        "ROUTE_HOST_INVALID",
-                        "Host must be a string"
-                ),
-                new top.egon.cola.component.yuheng.admin.routing.service.GatewayTransportValidationIssue(
-                        "httpMethod",
-                        "ROUTE_METHOD_INVALID",
-                        "HTTP Method must be a string"
-                )
-        );
-    }
-
-    @Test
-    void acceptsWebSocketForATransparentHttpOperation() {
-        assertThat(validator.validate(
-                route("GET", Map.of(
-                        "profile", "OPENAI_HTTP",
-                        "transportProtocol", "WEBSOCKET"
-                )),
-                GatewayProtocol.HTTP,
-                GatewayResponseMode.TRANSPARENT
-        )).isEmpty();
-    }
-
-    private static Stream<Arguments> numericRanges() {
-        return Stream.of(
-                Arguments.of("maxRequestBodyBytes", 1L, 1_073_741_824L),
-                Arguments.of("connectTimeoutMs", 100L, 60_000L),
-                Arguments.of("responseHeaderTimeoutMs", 1_000L, 600_000L),
-                Arguments.of("streamIdleTimeoutMs", 1_000L, 1_800_000L),
-                Arguments.of("totalTimeoutMs", 1_000L, 7_200_000L),
-                Arguments.of("websocketIdleTimeoutMs", 1_000L, 7_200_000L),
-                Arguments.of("websocketMaxFrameBytes", 1_024L, 67_108_864L)
-        );
-    }
-
-    private static Stream<Arguments> invalidCombinations() {
-        return Stream.of(
-                invalid(
-                        "WebSocket requires GET",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("transportProtocol", "WEBSOCKET"),
-                        "httpMethod",
-                        "WEBSOCKET_GET_REQUIRED"
-                ),
-                invalid(
-                        "RPC rejects WebSocket",
-                        "GET",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("transportProtocol", "WEBSOCKET"),
-                        "transportPolicy.transportProtocol",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "RPC rejects streaming request",
-                        "POST",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("requestBodyMode", "STREAMING"),
-                        "transportPolicy.requestBodyMode",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "RPC rejects auto stream",
-                        "POST",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("responseMode", "AUTO_STREAM"),
-                        "transportPolicy.responseMode",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "RPC rejects SSE",
-                        "POST",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("responseMode", "SSE"),
-                        "transportPolicy.responseMode",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "RPC rejects binary stream",
-                        "POST",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("responseMode", "BINARY_STREAM"),
-                        "transportPolicy.responseMode",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "RPC rejects OpenAI profile defaults",
-                        "POST",
-                        GatewayProtocol.RPC,
-                        GatewayResponseMode.TRANSPARENT,
-                        Map.of("profile", "OPENAI_HTTP"),
-                        "transportPolicy.profile",
-                        "RPC_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects WebSocket",
-                        "GET",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("transportProtocol", "WEBSOCKET"),
-                        "transportPolicy.transportProtocol",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects streaming request",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("requestBodyMode", "STREAMING"),
-                        "transportPolicy.requestBodyMode",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects auto stream",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("responseMode", "AUTO_STREAM"),
-                        "transportPolicy.responseMode",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects SSE aggregation",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("responseMode", "SSE"),
-                        "transportPolicy.responseMode",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects binary aggregation",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("responseMode", "BINARY_STREAM"),
-                        "transportPolicy.responseMode",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                ),
-                invalid(
-                        "wrapped rejects OpenAI profile defaults",
-                        "POST",
-                        GatewayProtocol.HTTP,
-                        GatewayResponseMode.WRAPPED,
-                        Map.of("profile", "OPENAI_HTTP"),
-                        "transportPolicy.profile",
-                        "WRAPPED_TRANSPORT_UNSUPPORTED"
-                )
-        );
-    }
-
-    private static Arguments invalid(
-            String description,
-            String method,
-            GatewayProtocol protocol,
-            GatewayResponseMode operationResponseMode,
-            Map<String, Object> policy,
-            String path,
-            String code) {
-        return Arguments.of(
-                description,
-                method,
-                protocol,
-                operationResponseMode,
-                policy,
-                path,
-                code
-        );
-    }
-
-    private Map<String, Object> route(
-            String method,
-            Map<String, Object> policy) {
-        Map<String, Object> content = new LinkedHashMap<>();
-        content.put("host", "ai.example.com");
-        content.put("httpMethod", method);
-        content.put("pathPattern", "/v1/**");
-        content.put("accessZones", List.of("PUBLIC"));
-        if (!policy.isEmpty()) {
-            content.put("transportPolicy", policy);
-        }
-        return content;
+    private Map<String, Object> route() {
+        return new LinkedHashMap<>(Map.of("host", "api.example.com", "httpMethod", "POST",
+                "pathPattern", "/orders", "accessZones", List.of("PUBLIC"), "priority", 0));
     }
 }

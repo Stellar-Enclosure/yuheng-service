@@ -78,7 +78,6 @@ import top.egon.cola.component.yuheng.admin.routing.domain.po.*;
 import top.egon.cola.component.yuheng.admin.routing.domain.vo.*;
 import top.egon.cola.component.yuheng.admin.routing.repository.*;
 import top.egon.cola.component.yuheng.admin.routing.service.*;
-import top.egon.cola.component.yuheng.admin.rule.domain.dto.*;
 import top.egon.cola.component.yuheng.admin.rule.domain.vo.*;
 import top.egon.cola.component.yuheng.admin.rule.service.*;
 import top.egon.cola.component.yuheng.admin.runtime.controller.*;

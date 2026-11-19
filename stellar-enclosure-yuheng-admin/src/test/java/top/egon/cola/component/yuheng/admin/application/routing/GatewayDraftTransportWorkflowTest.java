@@ -187,7 +187,7 @@ class GatewayDraftTransportWorkflowTest {
                 ))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false))
-                .andExpect(jsonPath("$.errors[0].code").value("YUHENG_EXPOSURE_COMPILE_INVALID"));
+                .andExpect(jsonPath("$.errors[0].code").value("TRANSPORT_OPTION_RETIRED"));
     }
 
     @Test

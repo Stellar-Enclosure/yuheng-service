@@ -19,7 +19,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-import top.egon.cola.component.yuheng.admin.config.GatewayAdminProperties;
 import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminOpenApiProperties;
 import top.egon.cola.component.yuheng.admin.credential.service.AesGcmGatewaySecretProtector;
 import top.egon.cola.component.yuheng.admin.credential.service.GatewaySecretProtector;
@@ -60,7 +59,6 @@ import java.util.Set;
 @Configuration(value = "gatewayAdminConfiguration", proxyBeanMethods = false)
 @EnableScheduling
 @EnableConfigurationProperties({
-        GatewayAdminProperties.class,
         GatewayAdminOpenApiProperties.class
 })
 public class GatewayAdminConfiguration {

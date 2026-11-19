@@ -84,7 +84,7 @@ class PermissionProducerCoverageTest {
                 }
             }
         }
-        assertThat(apiKeys).hasSize(71)
+        assertThat(apiKeys).hasSize(67)
                 .contains("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
         Set<String> protocolKeys = new TreeSet<>();
         for (Method method : NativeProtocolPermissionMetadata.class.getDeclaredMethods()) {

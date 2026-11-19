@@ -433,8 +433,8 @@ class GatewayDraftServiceTest {
                 ),
                 new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftValidationIssueVO(
                         "routes.route-1.transportPolicy.connectTimeoutMs",
-                        "TRANSPORT_VALUE_OUT_OF_RANGE",
-                        "connectTimeoutMs must be an integer from 100 to 60000"
+                        "TRANSPORT_OPTION_RETIRED",
+                        "The Cilium HTTPRoute profile does not accept this application proxy option"
                 )
         );
     }

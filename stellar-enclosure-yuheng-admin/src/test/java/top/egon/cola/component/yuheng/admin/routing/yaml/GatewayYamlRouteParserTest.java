@@ -18,17 +18,17 @@ class GatewayYamlRouteParserTest {
                   predicates:
                     - Host=API.EXAMPLE.COM
                     - Method=post
-                    - Path=/api/biz/orders/{id}
+                    - Path=/api/biz/orders
                   access-zones: [PUBLIC]
-                  priority: 20
+                  path-match-type: PATH_PREFIX
                 """));
 
         assertThat(document.gatewayGroup()).isEqualTo("group-1");
         assertThat(document.routes()).hasSize(1);
         assertThat(document.routes().getFirst().content()).isEqualTo(Map.of(
                 "host", "api.example.com", "httpMethod", "POST",
-                "pathPattern", "/api/biz/orders/{id}",
-                "accessZones", List.of("PUBLIC"), "priority", 20));
+                "pathPattern", "/api/biz/orders", "pathMatchType", "PATH_PREFIX",
+                "accessZones", List.of("PUBLIC"), "priority", 0));
     }
 
     @Test
@@ -36,7 +36,7 @@ class GatewayYamlRouteParserTest {
         assertThatThrownBy(() -> parser.parse(yaml("""
                 - id: orders
                   operation-id: operation-1
-                  predicates: [Host=api.example.com, Method=GET, 'Path=/orders/{id}']
+                  predicates: [Host=api.example.com, Method=GET, Path=/orders]
                   access-zones: [PUBLIC]
                   filters: [StripPrefix=1]
                 """))).isInstanceOf(IllegalArgumentException.class)
@@ -44,11 +44,11 @@ class GatewayYamlRouteParserTest {
         assertThatThrownBy(() -> parser.parse(yaml("""
                 - id: one
                   operation-id: operation-1
-                  predicates: [Host=api.example.com, Method=GET, 'Path=/orders/{id}']
+                  predicates: [Host=api.example.com, Method=GET, Path=/orders]
                   access-zones: [PUBLIC]
                 - id: two
                   operation-id: operation-1
-                  predicates: [Host=api.example.com, Method=GET, 'Path=/orders/{key}']
+                  predicates: [Host=api.example.com, Method=GET, Path=/%6Frders]
                   access-zones: [PUBLIC]
                 """))).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("ambiguous route");
@@ -71,6 +71,19 @@ class GatewayYamlRouteParserTest {
                   access-zones: [PUBLIC]
                 """))).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("unsupported route predicate");
+    }
+
+    @Test
+    void rejectsLegacyProxyTransportOptionsInNewImports() {
+        assertThatThrownBy(() -> parser.parse(yaml("""
+                - id: old-transport
+                  operation-id: operation-1
+                  predicates: [Host=api.example.com, Method=GET, Path=/orders]
+                  access-zones: [PUBLIC]
+                  transport-policy:
+                    responseMode: SSE
+                """))).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("transportPolicy.responseMode");
     }
 
     private String yaml(String routes) {

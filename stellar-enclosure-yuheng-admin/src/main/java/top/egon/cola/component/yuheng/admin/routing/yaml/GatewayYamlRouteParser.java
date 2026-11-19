@@ -10,13 +10,11 @@ import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.error.YAMLException;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.RouteMatchVO;
 import top.egon.cola.component.yuheng.admin.routing.service.GatewayRouteDraftMapper;
+import top.egon.cola.component.yuheng.admin.routing.service.GatewayRouteTransportPolicyValidator;
 import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
-import top.egon.cola.component.yuheng.core.provider.ProviderProtocolType;
-import top.egon.cola.component.yuheng.core.provider.ProviderServiceKey;
-import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
-import top.egon.cola.component.yuheng.core.route.HttpRouteCompiler;
-import top.egon.cola.component.yuheng.core.route.RuntimeHttpRoute;
 
 /** Parses a bounded YAML document into the existing route draft representation. */
 public final class GatewayYamlRouteParser {
@@ -26,10 +24,8 @@ public final class GatewayYamlRouteParser {
             "maxRequestBodyBytes", "connectTimeoutMs", "responseHeaderTimeoutMs",
             "streamIdleTimeoutMs", "totalTimeoutMs", "websocketIdleTimeoutMs",
             "websocketMaxFrameBytes", "bodyLogEnabled", "retryEnabled");
-    private static final ProviderServiceKey VALIDATION_SERVICE = new ProviderServiceKey(
-            "validation", "validation", "validation", "validation",
-            ProviderProtocolType.HTTP, "validation", "default", "v1", "http");
     private final GatewayRouteDraftMapper mapper = new GatewayRouteDraftMapper();
+    private final GatewayRouteTransportPolicyValidator validator = new GatewayRouteTransportPolicyValidator();
 
     public Document parse(String source) {
         if (source == null || source.isBlank()
@@ -64,7 +60,7 @@ public final class GatewayYamlRouteParser {
         for (Object entry : input) {
             Map<String, Object> route = map(entry, "route", Set.of(
                     "id", "operation-id", "predicates", "access-zones",
-                    "priority", "enabled", "transport-policy"));
+                    "priority", "enabled", "path-match-type", "transport-policy"));
             String id = text(route.get("id"), "id");
             if (!ids.add(id)) {
                 throw new IllegalArgumentException("duplicate route id: " + id);
@@ -92,6 +88,9 @@ public final class GatewayYamlRouteParser {
                 throw new IllegalArgumentException("priority must be a 32-bit integer");
             }
             content.put("priority", priority);
+            if (route.containsKey("path-match-type")) {
+                content.put("pathMatchType", text(route.get("path-match-type"), "path-match-type"));
+            }
             Object enabled = route.getOrDefault("enabled", true);
             if (!(enabled instanceof Boolean)) {
                 throw new IllegalArgumentException("enabled must be a boolean");
@@ -101,33 +100,31 @@ public final class GatewayYamlRouteParser {
                         "transport-policy", TRANSPORT_FIELDS));
             }
             Map<String, Object> canonical = mapper.canonicalize(content);
-            mapper.transportPolicy(canonical);
+            var issues = validator.validate(canonical, null);
+            if (!issues.isEmpty()) {
+                throw new IllegalArgumentException("invalid route " + id + ": " + issues.getFirst().path());
+            }
             routes.add(new Route(id, operationId, canonical, (boolean) enabled));
         }
-        validateRoutes(group, routes);
+        validateRoutes(routes);
         return new Document(group, List.copyOf(routes));
     }
 
-    public void validateRoutes(String group, List<Route> routes) {
-        List<RuntimeHttpRoute> compiled = new ArrayList<>();
+    public void validateRoutes(List<Route> routes) {
+        Set<RouteMatchVO> publicMatches = new LinkedHashSet<>();
         for (Route route : routes) {
-            if (!route.enabled()) {
+            Map<String, Object> content = mapper.canonicalize(route.content());
+            if (!route.enabled() || !(content.get("accessZones") instanceof List<?> zones)
+                    || !zones.contains(AccessZone.PUBLIC.name())) {
                 continue;
             }
-            Map<String, Object> content = mapper.canonicalize(route.content());
-            if (!(content.get("accessZones") instanceof List<?> zones)) {
-                throw new IllegalArgumentException("route accessZones must be a list: " + route.id());
+            var match = GatewayHttpRouteCompiler.canonicalMatch(
+                    text(content.get("host"), "host"), text(content.get("httpMethod"), "method"),
+                    text(content.get("pathPattern"), "path"), content.get("pathMatchType"));
+            if (!publicMatches.add(match)) {
+                throw new IllegalArgumentException("ambiguous route: " + route.id());
             }
-            compiled.add(new RuntimeHttpRoute(route.id(), route.operationId(), group,
-                    zones.stream().map(value -> AccessZone.valueOf(text(value, "access-zone")))
-                            .collect(java.util.stream.Collectors.toSet()),
-                    text(content.get("host"), "host"),
-                    Set.of(text(content.get("httpMethod"), "method")),
-                    text(content.get("pathPattern"), "path"), true, VALIDATION_SERVICE,
-                    Set.of(), ((Number) content.get("priority")).intValue(),
-                    GatewayResponseMode.TRANSPARENT, Map.of()));
         }
-        new HttpRouteCompiler().compile(compiled);
     }
 
     private static Map<String, Object> map(Object value, String name, Set<String> allowed) {

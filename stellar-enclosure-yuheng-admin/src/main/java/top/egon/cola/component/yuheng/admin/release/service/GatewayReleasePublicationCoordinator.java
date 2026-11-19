@@ -7,8 +7,6 @@ import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
 import top.egon.cola.component.outbox.api.OutboxMessage;
 import top.egon.cola.component.outbox.api.TenantScopedOutboxKey;
 import top.egon.cola.component.outbox.api.TransactionalOutbox;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminDdcProperties;
 import top.egon.cola.component.yuheng.admin.exposure.converter.GatewayUrlExposureViewConverter;
 import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
 import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
@@ -16,13 +14,9 @@ import top.egon.cola.component.yuheng.admin.exposure.domain.event.ExposureDesire
 import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
 import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
-import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayPublicationOutcomeVO;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseVO.ClusterTargetVO;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseVO.ExposureOutcomeVO;
-import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
-import top.egon.cola.component.yuheng.admin.rule.domain.vo.CompiledGatewayRelease;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -54,24 +48,6 @@ public class GatewayReleasePublicationCoordinator {
         this.converter = Objects.requireNonNull(converter, "converter");
         this.json = Objects.requireNonNull(json, "json");
         this.clock = Objects.requireNonNull(clock, "clock");
-    }
-
-    /** Source-compatible archive constructor; supplied old publishers are never retained or invoked. */
-    public GatewayReleasePublicationCoordinator(GatewayReleasePublicationRepository journal, GatewayReleaseRepository releases,
-            DdcManagementClient client, GatewayDdcRulePublisher publisher, Clock clock, Duration timeout,
-            GatewayAdminDdcProperties properties) {
-        this.releases = Objects.requireNonNull(releases, "releases");
-        this.exposures = null; this.outbox = null; this.converter = null; this.json = null;
-        this.clock = Objects.requireNonNull(clock, "clock");
-    }
-
-    /** The obsolete scheduled job cannot recover an old engine path, including after process restart. */
-    public GatewayPublicationOutcomeVO resume(String releaseId, int attemptNo) {
-        throw new IllegalStateException(LEGACY_READ_ONLY);
-    }
-
-    public GatewayPublicationOutcomeVO execute(String releaseId, int attemptNo, CompiledGatewayRelease compiled, String actorId) {
-        throw new IllegalStateException(LEGACY_READ_ONLY);
     }
 
     /** Caller owns the same selected writable LOCAL transaction as release and control-row acceptance. */

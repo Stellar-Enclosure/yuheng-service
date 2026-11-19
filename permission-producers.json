@@ -12,19 +12,9 @@
       "artifactFile": "stellar-enclosure-model-access-service-exec.jar"
     },
     {
-      "producerId": "yuheng-biz-java",
-      "module": "stellar-enclosure-yuheng-biz-gateway",
-      "artifactFile": "stellar-enclosure-yuheng-biz-gateway-exec.jar"
-    },
-    {
       "producerId": "yuheng-mcp-java",
       "module": "stellar-enclosure-mcp-access-service",
       "artifactFile": "stellar-enclosure-mcp-access-service-exec.jar"
-    },
-    {
-      "producerId": "yuheng-edge-java",
-      "module": "stellar-enclosure-yuheng-edge-gateway",
-      "artifactFile": "stellar-enclosure-yuheng-edge-gateway-0.0.1-exec.jar"
     }
   ]
 }

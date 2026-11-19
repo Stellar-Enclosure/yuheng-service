@@ -68,7 +68,7 @@ class GatewayReleaseReconcilerTest {
 
         assertThat(draft.getBasedOnReleaseId()).isEqualTo("51");
         verify(drafts).save(draft);
-        verify(coordinator, never()).resume("51", 2);
+        verify(coordinator).recoverNative(OWNER, "51", 2);
     }
 
     @Test
@@ -92,7 +92,7 @@ class GatewayReleaseReconcilerTest {
         verify(drafts, never()).save(any(GatewayDraftBO.class));
         verify(coordinator, never()).recoverNative(OWNER, "52", 3);
         verify(coordinator, never()).recoverNative(OWNER, "53", 0);
-        verify(coordinator, never()).resume("50", 1);
+        verify(coordinator).recoverNative(OWNER, "50", 1);
     }
 
     @Test

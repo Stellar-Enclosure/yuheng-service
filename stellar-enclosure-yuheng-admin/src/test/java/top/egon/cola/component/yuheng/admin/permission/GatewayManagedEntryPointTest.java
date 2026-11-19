@@ -89,7 +89,7 @@ class GatewayManagedEntryPointTest {
                 count++;
             }
         }
-        assertThat(count).isEqualTo(71); verifyNoInteractions(loader);
+        assertThat(count).isEqualTo(67); verifyNoInteractions(loader);
     }
 
     @Test

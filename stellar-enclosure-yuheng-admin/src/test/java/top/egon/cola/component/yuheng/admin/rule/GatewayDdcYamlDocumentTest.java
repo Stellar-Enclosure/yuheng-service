@@ -1,66 +1,33 @@
 package top.egon.cola.component.yuheng.admin.rule.service;
 
 import org.junit.jupiter.api.Test;
-import top.egon.cola.component.tianshu.environment.DdcDynamicPropertySource;
-import top.egon.cola.component.tianshu.format.DdcYamlConfigFormatStrategy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GatewayDdcYamlDocumentTest {
-
-    private final GatewayDdcYamlDocument document =
-            new GatewayDdcYamlDocument();
+    private final GatewayDdcYamlDocument document = new GatewayDdcYamlDocument();
 
     @Test
-    void updatesOneRuleLeafAndPreservesOtherBusinessConfiguration()
-            throws Exception {
-        String updated = document.putLeaf("""
+    void readsArchivedActivationAndChunksFromNestedAndDottedKeys() {
+        String content = """
                 feature:
                   checkout: true
-                yuheng:
-                  rules:
-                    active: old
-                """, GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY, "new");
-
-        DdcDynamicPropertySource source = loader().load(
-                DdcYamlConfigFormatStrategy.DEFAULT_RESOURCE_NAME,
-                updated,
-                1L
-        );
-        assertThat(source.getProperty("feature.checkout")).isEqualTo(true);
-        assertThat(source.getProperty("yuheng.rules.active"))
-                .isEqualTo("new");
-    }
-
-    @Test
-    void supportsDottedSpringBootKeysAndRemovesOnlyTheRequestedChunk()
-            throws Exception {
-        String withChunk = document.putLeaf("""
                 yuheng.rules:
                   active: activation
-                """, "yuheng.rules.chunk.release-1.0", "chunk-0");
+                  chunk.release-1:
+                    "0": chunk-0
+                  chunk.release-1.1: chunk-1
+                """;
 
-        top.egon.cola.component.yuheng.admin.rule.service.GatewayYamlRemoval removal = document.removeLeaf(
-                withChunk,
-                "yuheng.rules.chunk.release-1.0"
-        );
-
-        assertThat(removal.removed()).isTrue();
-        assertThat(removal.content()).doesNotContain("release-1");
-        DdcDynamicPropertySource source = loader().load(
-                DdcYamlConfigFormatStrategy.DEFAULT_RESOURCE_NAME,
-                removal.content(),
-                2L
-        );
-        assertThat(source.getProperty("yuheng.rules.active"))
-                .isEqualTo("activation");
-        assertThat(source.getProperty("yuheng.rules.chunk.release-1.0"))
-                .isNull();
+        assertThat(document.leafValue(content, GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY)).hasValue("activation");
+        assertThat(document.leafValue(content, "yuheng.rules.chunk.release-1.0")).hasValue("chunk-0");
+        assertThat(document.leafValue(content, "yuheng.rules.chunk.release-1.1")).hasValue("chunk-1");
+        assertThat(document.leafValue(content, "yuheng.rules.chunk.release-1.2")).isEmpty();
     }
 
     @Test
-    void readsFrozenLeafAndRejectsAmbiguousOrUnsupportedPaths() {
+    void rejectsAmbiguousAndUnsupportedProperties() {
         String content = """
                 yuheng.rules.active: direct
                 yuheng:
@@ -68,32 +35,25 @@ class GatewayDdcYamlDocumentTest {
                     active: nested
                 """;
 
-        assertThatThrownBy(() -> document.leafValue(
-                content,
-                GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("ambiguous");
-        assertThatThrownBy(() -> document.putLeaf(
-                "feature: true\n",
-                "feature.enabled",
-                "true"
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("unsupported");
+        assertThatThrownBy(() -> document.leafValue(content, GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ambiguous");
+        assertThatThrownBy(() -> document.leafValue("feature: true\n", "feature.enabled"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unsupported");
+    }
+
+    @Test
+    void rejectsUnsupportedRootsAndNonStringValues() {
+        for (String yaml : new String[]{"[]", "yuheng.rules.active: null", "yuheng.rules.active: true"}) {
+            assertThatThrownBy(() -> document.leafValue(yaml, GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 
     @Test
     void readsGatewayYamlDocumentsLargerThanSnakeYamlDefaultLimit() {
         String largeValue = "x".repeat(3_100_000);
-        String content = GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY
-                + ": " + largeValue + "\n";
+        String content = GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY + ": " + largeValue + "\n";
 
-        assertThat(document.leafValue(
-                content,
-                GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY
-        )).hasValue(largeValue);
-    }
-
-    private DdcYamlConfigFormatStrategy loader() {
-        return new DdcYamlConfigFormatStrategy();
+        assertThat(document.leafValue(content, GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY)).hasValue(largeValue);
     }
 }

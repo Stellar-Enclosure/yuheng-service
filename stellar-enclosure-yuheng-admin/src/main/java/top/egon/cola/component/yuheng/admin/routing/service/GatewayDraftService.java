@@ -39,7 +39,6 @@ import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdmin
 import top.egon.cola.component.yuheng.admin.shared.repository.IdempotencyRepository;
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy;
-import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
 import top.egon.cola.platform.tianquan.jianshen.starter.permission.PermissionExecutionGuard;
 
 import java.time.Clock;
@@ -486,8 +485,7 @@ public class GatewayDraftService {
                 throw new IllegalArgumentException("PUBLIC route references an internal-only operation");
             }
             var issues = transportValidator.validate(route.content(),
-                    GatewayProtocol.valueOf(operation.getProtocol()),
-                    operationResponseMode(route.operationId()));
+                    GatewayProtocol.valueOf(operation.getProtocol()));
             if (!issues.isEmpty()) {
                 throw new IllegalArgumentException("invalid route " + route.id() + ": "
                         + issues.getFirst().code() + " " + issues.getFirst().message());
@@ -508,7 +506,7 @@ public class GatewayDraftService {
             }
             result.put(route.id(), route);
         }
-        yamlRoutes.validateRoutes(groupId, List.copyOf(result.values()));
+        yamlRoutes.validateRoutes(List.copyOf(result.values()));
         java.util.Collections.sort(created);
         java.util.Collections.sort(updated);
         java.util.Collections.sort(deleted);
@@ -757,14 +755,7 @@ public class GatewayDraftService {
             GatewayProtocol protocol = operation == null
                     ? null
                     : GatewayProtocol.valueOf(operation.getProtocol());
-            GatewayResponseMode responseMode = operation == null
-                    ? null
-                    : operationResponseMode(operation.getId());
-            transportValidator.validate(
-                    canonicalContent,
-                    protocol,
-                    responseMode
-            ).forEach(issue -> errors.add(new GatewayDraftValidationIssueVO(
+            transportValidator.validate(canonicalContent, protocol).forEach(issue -> errors.add(new GatewayDraftValidationIssueVO(
                     "routes." + route.getRouteId() + "." + issue.path(),
                     issue.code(),
                     issue.message()
@@ -1082,26 +1073,6 @@ public class GatewayDraftService {
                 values.spliterator(),
                 false
         ).anyMatch(value -> "PUBLIC".equalsIgnoreCase(value.toString()));
-    }
-
-    /**
-     * 中文说明：执行 操作响应Mode 操作；该方法是 {@code GatewayDraftService} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the operation response mode operation; this method is the invocation entry point on {@code GatewayDraftService} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayDraftService.operationResponseMode(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param operationId 参数 操作Id；parameter operation id。
-     * @return 返回 操作响应Mode 的处理结果；returns the result of the operation.
-     */
-    private GatewayResponseMode operationResponseMode(String operationId) {
-        return catalog.loadDefinitions(operationId)
-                .stream()
-                .findFirst()
-                .map(definition -> definition.getAttributes().getOrDefault(
-                        "responseMode",
-                        "TRANSPARENT"
-                ).toString())
-                .map(GatewayResponseMode::valueOf)
-                .orElse(GatewayResponseMode.TRANSPARENT);
     }
 
     /**

@@ -7,23 +7,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminDdcProperties;
 import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
 import top.egon.cola.component.yuheng.admin.exposure.domain.event.ExposureDesiredStateChangedEvent;
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.PublicationBinding;
 import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
-import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
-import top.egon.cola.component.yuheng.admin.rule.domain.vo.CompiledGatewayRelease;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,18 +44,19 @@ class GatewayReleasePublicationCoordinatorTest {
     @AfterEach void clear() { MDC.clear(); }
 
     @Test
-    void legacyArtifactCannotExecuteAnOldDdcPublicationPath() {
-        var journal = mock(GatewayReleasePublicationRepository.class);
-        var releases = mock(GatewayReleaseRepository.class);
-        var client = mock(DdcManagementClient.class);
-        var publisher = mock(GatewayDdcRulePublisher.class);
-        var legacy = new GatewayReleasePublicationCoordinator(journal, releases, client, publisher,
-                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofSeconds(30), new GatewayAdminDdcProperties());
-        assertThatThrownBy(() -> legacy.execute("810001", 1, mock(CompiledGatewayRelease.class), "admin"))
-                .isInstanceOf(IllegalStateException.class).hasMessage(GatewayReleasePublicationCoordinator.LEGACY_READ_ONLY);
-        assertThatThrownBy(() -> legacy.resume("810001", 1))
-                .isInstanceOf(IllegalStateException.class).hasMessage(GatewayReleasePublicationCoordinator.LEGACY_READ_ONLY);
-        verifyNoInteractions(journal, releases, client, publisher);
+    void archivedReleaseCannotBeCompletedOrRecoveredAsNativePublication() {
+        String releaseId = "810001";
+        when(f.releases.loadNative(releaseId)).thenReturn(Optional.empty());
+
+        f.tx.executeWithoutResult(status -> {
+            assertThatThrownBy(() -> f.coordinator.completeNative(OWNER, releaseId, 1))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage(GatewayReleasePublicationCoordinator.LEGACY_READ_ONLY);
+            assertThat(f.coordinator.recoverNative(OWNER, releaseId, 1)).isEmpty();
+        });
+
+        verifyNoInteractions(f.exposures, f.outbox);
+        verify(f.releases, never()).completeCurrentNativeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any());
     }
 
     @Test

@@ -96,15 +96,13 @@ public class GatewayUrlExposurePublisherConfiguration {
 
     @Bean("gatewayUrlExposureWriterGuard")
     SmartInitializingSingleton gatewayUrlExposureWriterGuard(@Qualifier("gatewayUrlExposureRole") RoleEnum role,
-            ObjectProvider<Writer> writers, ObjectProvider<OutboxMpStorageProperties> storage,
-            ObjectProvider<top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher> oldPublishers) {
+            ObjectProvider<Writer> writers, ObjectProvider<OutboxMpStorageProperties> storage) {
         return () -> {
             long count = writers.stream().count();
             if (count != (role == RoleEnum.PUBLISHER ? 1 : 0)) throw invalid("WRITER_AMBIGUOUS");
             if (role == RoleEnum.PUBLISHER) {
                 var selected = storage.getIfUnique();
                 if (selected == null || selected.isMigrationMode()) throw invalid("STORAGE_INVALID");
-                if (oldPublishers.stream().findAny().isPresent()) throw invalid("LEGACY_PUBLISHER_FORBIDDEN");
             }
         };
     }
