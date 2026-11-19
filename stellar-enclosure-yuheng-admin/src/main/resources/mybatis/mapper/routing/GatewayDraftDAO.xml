@@ -18,6 +18,9 @@
         <result column="change_summary" property="changeSummary"/>
     </resultMap>
     <sql id="columns">id, tenant_id, create_user_id, create_time, update_user_id, update_time, deleted_at, version, gateway_group_id, revision, based_on_release_id, status, change_summary</sql>
+    <select id="selectForPublication" resultMap="GatewayDraftResultMap">
+        SELECT <include refid="columns"/> FROM gateway_draft WHERE tenant_id = #{tenantId} AND gateway_group_id = #{groupId} AND deleted_at IS NULL FOR UPDATE
+    </select>
     <select id="selectActiveById" resultMap="GatewayDraftResultMap">
         SELECT <include refid="columns"/> FROM gateway_draft WHERE id = #{id} AND deleted_at IS NULL
     </select>

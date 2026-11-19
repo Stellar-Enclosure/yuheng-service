@@ -1,8 +1,12 @@
 package top.egon.cola.component.yuheng.admin.routing.service;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
@@ -13,6 +17,7 @@ import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposu
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.ExposureInput;
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.ResourceReference;
+import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpApiMappingContentBO;
 import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
 import top.egon.cola.component.yuheng.admin.routing.domain.dto.GatewayDraftMutationControlDTO;
@@ -35,6 +40,7 @@ import top.egon.cola.component.yuheng.admin.shared.repository.IdempotencyReposit
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy;
 import top.egon.cola.component.yuheng.core.route.GatewayResponseMode;
+import top.egon.cola.platform.tianquan.jianshen.starter.permission.PermissionExecutionGuard;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -43,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -57,7 +64,9 @@ import top.egon.cola.component.yuheng.admin.shared.domain.bo.IdempotencyBO;
  *
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
-@Service
+@Slf4j
+@Service("gatewayDraftService")
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE, onConstructor_ = @Autowired)
 public class GatewayDraftService {
 
     private static final String YAML_SOURCE_FIELD = "yuhengRouteSource";
@@ -79,6 +88,7 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("mpGatewayDraftMetadataRepository")
     private final GatewayDraftJpaRepository drafts;
 
     /**
@@ -87,6 +97,7 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("mpGatewayDraftRepository")
     private final GatewayDraftRepository store;
 
     /**
@@ -95,6 +106,7 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("mpGatewayCatalogRepository")
     private final GatewayCatalogRepository catalog;
 
     /**
@@ -103,6 +115,7 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("idempotencyRepository")
     private final IdempotencyRepository idempotency;
 
     /**
@@ -111,6 +124,7 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("gatewayAuditLogRepository")
     private final GatewayAuditLogRepository audits;
 
     /**
@@ -146,10 +160,16 @@ public class GatewayDraftService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayDraftService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayDraftService}; do not couple callers to its representation when the owning type exposes an API.
      */
+    @Qualifier("gatewayProjectionClock")
     private final Clock clock;
+    @Qualifier("gatewayHttpRouteCompiler")
     private final GatewayHttpRouteCompiler exposureCompiler;
+    @Qualifier("gatewayHttpRouteBindingResolver")
     private final ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> exposureBindings;
+    @Qualifier("mpGatewayUrlExposureRepository")
     private final GatewayUrlExposureRepository exposures;
+    @Qualifier("permissionExecutionGuard")
+    private final ObjectProvider<PermissionExecutionGuard> mcpAuthorization;
 
     /**
      * 中文说明：创建 {@code GatewayDraftService} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
@@ -197,25 +217,16 @@ public class GatewayDraftService {
         this(drafts, store, catalog, idempotency, audits, clock, null, null, null);
     }
 
-    @Autowired
     GatewayDraftService(GatewayDraftJpaRepository drafts,
             GatewayDraftRepository store,
             GatewayCatalogRepository catalog,
             IdempotencyRepository idempotency,
             GatewayAuditLogRepository audits,
-            @Qualifier("gatewayProjectionClock") Clock clock,
-            @Qualifier("gatewayHttpRouteCompiler") GatewayHttpRouteCompiler exposureCompiler,
-            @Qualifier("gatewayHttpRouteBindingResolver") ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> exposureBindings,
-            @Qualifier("mpGatewayUrlExposureRepository") GatewayUrlExposureRepository exposures) {
-        this.drafts = drafts;
-        this.store = store;
-        this.catalog = catalog;
-        this.idempotency = idempotency;
-        this.audits = audits;
-        this.clock = clock;
-        this.exposureCompiler = exposureCompiler;
-        this.exposureBindings = exposureBindings;
-        this.exposures = exposures;
+            Clock clock,
+            GatewayHttpRouteCompiler exposureCompiler,
+            ObjectProvider<GatewayHttpRouteCompiler.BindingResolver> exposureBindings,
+            GatewayUrlExposureRepository exposures) {
+        this(drafts, store, catalog, idempotency, audits, clock, exposureCompiler, exposureBindings, exposures, null);
     }
 
     /**
@@ -558,6 +569,13 @@ public class GatewayDraftService {
             GatewayPolicyMutationDTO command,
             AdminActor actor,
             RequestAuditContext request) {
+        String id = required(policyId, "policyId");
+        String policyType = required(command.policyType(), "policyType").toUpperCase(Locale.ROOT);
+        String policyScope = required(command.policyScope(), "policyScope").toUpperCase(Locale.ROOT);
+        boolean mapping = McpApiMappingContentBO.POLICY_TYPE.equals(policyType);
+        if (mapping) {
+            requireMcpWrite("yuheng.api.mcpToolAdmin.putOverride");
+        }
         String digest = digest(Map.of(
                 "action", "PUT_POLICY",
                 "policyId", policyId,
@@ -575,20 +593,19 @@ public class GatewayDraftService {
                 gatewayGroupId,
                 command.expectedRevision()
         );
+        if (!mapping && isStoredMcpMapping(gatewayGroupId, id)) {
+            requireMcpWrite("yuheng.api.mcpToolAdmin.putOverride");
+            throw new IllegalArgumentException("YUHENG_MCP_API_MAPPING_POLICY_TYPE_IMMUTABLE");
+        }
+        Map<String, Object> content = command.content();
+        if (mapping) {
+            content = validatedMapping(gatewayGroupId, policyScope, content).content();
+        }
         Instant now = clock.instant();
-        store.upsertPolicy(new top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO(
-                gatewayGroupId,
-                required(policyId, "policyId"),
-                required(command.policyType(), "policyType")
-                        .toUpperCase(),
-                required(command.policyScope(), "policyScope")
-                        .toUpperCase(),
-                Collections.unmodifiableMap(
-                        new LinkedHashMap<>(command.content())
-                ),
-                command.enabled(),
-                now,
-                actor.actorId()
+        store.upsertPolicy(new GatewayPolicyDraftBO(
+                gatewayGroupId, id, policyType, policyScope,
+                Collections.unmodifiableMap(new LinkedHashMap<>(content)),
+                command.enabled(), now, actor.actorId()
         ));
         return finish(
                 draft,
@@ -640,6 +657,9 @@ public class GatewayDraftService {
                 gatewayGroupId,
                 control.expectedRevision()
         );
+        if (isStoredMcpMapping(gatewayGroupId, policyId)) {
+            requireMcpWrite("yuheng.api.mcpToolAdmin.deleteOverride");
+        }
         store.deletePolicy(gatewayGroupId, policyId);
         return finish(
                 draft,
@@ -668,12 +688,66 @@ public class GatewayDraftService {
         return validateDraft(get(gatewayGroupId), gatewayGroupId);
     }
 
+    private boolean isStoredMcpMapping(String gatewayGroupId, String policyId) {
+        return store.policies(gatewayGroupId).stream().anyMatch(policy ->
+                policyId.equals(policy.getPolicyId()) && McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType()));
+    }
+
+    private void requireMcpWrite(String managedToolResource) {
+        PermissionExecutionGuard authorization = mcpAuthorization == null ? null : mcpAuthorization.getIfAvailable();
+        if (authorization == null) {
+            log.debug("MCP draft mutation rejected because the permission guard is unavailable");
+            throw new AccessDeniedException("YUHENG_MCP_WRITE_AUTHORIZATION_REQUIRED");
+        }
+        authorization.requireExecution(managedToolResource);
+    }
+
+    private McpApiMappingContentBO validatedMapping(
+            String gatewayGroupId, String policyScope, Map<String, Object> content) {
+        if (!McpApiMappingContentBO.POLICY_SCOPE.equals(policyScope)) {
+            throw new IllegalArgumentException(McpApiMappingContentBO.INVALID);
+        }
+        McpApiMappingContentBO mapping = McpApiMappingContentBO.fromContent(content);
+        var source = mapping.sourceOperation();
+        boolean registered = catalog.loadCurrentOperationDefinitions(gatewayGroupId).stream().anyMatch(current -> {
+            var operation = current.operation();
+            var definition = current.definition();
+            return source.operationId().equals(operation.getId())
+                    && source.operationId().equals(definition.getOperationId())
+                    && source.operationKey().equals(operation.getOperationKey())
+                    && Objects.equals(operation.getCurrentDefinitionId(), definition.getId())
+                    && source.definitionDigest().equals(definition.getDefinitionSha256())
+                    && Set.of("OPENAPI31", "RPC_DESCRIPTOR").contains(operation.getSourceType())
+                    && Set.of("ACTIVE", "DEPRECATED").contains(operation.getLifecycleStatus())
+                    && Set.of("HTTP", "RPC").contains(operation.getProtocol())
+                    && !("HTTP".equals(operation.getProtocol()) && Boolean.TRUE.equals(definition.getAttributes().get("streaming")))
+                    && definition.getAttributes().get("mcpExposure") instanceof Map<?, ?> exposure
+                    && Boolean.TRUE.equals(exposure.get("registerMcp"))
+                    && mapping.siServer().resourceKey().equals(exposure.get("mcpServerCode"));
+        });
+        if (!registered) {
+            throw new IllegalArgumentException("YUHENG_MCP_API_MAPPING_SOURCE_UNAVAILABLE");
+        }
+        return mapping;
+    }
+
     private GatewayDraftValidationReportVO validateDraft(GatewayDraftVO draft, String gatewayGroupId) {
         List<GatewayDraftValidationIssueVO> errors = new ArrayList<>();
         List<GatewayDraftValidationIssueVO> warnings = new ArrayList<>();
         List<GatewayRuntimePolicy> policies = draft.policies().stream().filter(GatewayPolicyDraftBO::isEnabled)
+                .filter(policy -> !McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType()))
                 .map(policy -> new GatewayRuntimePolicy(policy.getPolicyId(), policy.getPolicyType(),
                         policy.getPolicyScope(), policy.getContent())).toList();
+        for (GatewayPolicyDraftBO policy : draft.policies()) {
+            if (McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType())) {
+                try {
+                    validatedMapping(gatewayGroupId, policy.getPolicyScope(), policy.getContent());
+                } catch (IllegalArgumentException invalid) {
+                    errors.add(new GatewayDraftValidationIssueVO("policies." + policy.getPolicyId() + ".content",
+                            invalid.getMessage(), "An MCP mapping requires a current registered operation and exact source digest"));
+                }
+            }
+        }
         for (top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO route : draft.routes()) {
             Map<String, Object> canonicalContent = routeMapper.canonicalize(
                     route.getContent()

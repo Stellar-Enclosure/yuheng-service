@@ -146,10 +146,22 @@ public class LlmModelCommandDTO {
     private List<LlmRouteBindingDTO> routes;
 
     /** 路由选择模式，可选，缺省为 PRIORITY_WEIGHT / optional routing mode, defaults to PRIORITY_WEIGHT. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.routingMode", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.routingMode",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @Schema(nullable = true)
     private LlmRoutingModeEnum routingMode;
 
     /** 网关缓存与前缀优化策略，可选 / optional gateway cache and prompt optimization policy. */
+    @PermissionResource(key = "yuheng.field.LlmModelCommandDTO.cachePolicy", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.cachePolicy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_WRITE)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            write = @PermissionGroup(codes = GatewayPermissionCodes.LLM_WRITE))
     @Schema(nullable = true)
     @Valid
     private LlmCachePolicyDTO cachePolicy;

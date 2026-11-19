@@ -196,7 +196,7 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
         if (content.isEmpty()) return Optional.empty();
         var row = content.orElseThrow();
         JsonNode snapshot = row.getCanonicalSnapshot();
-        boolean nativeFormat = snapshot != null && snapshot.has("exposurePublication")
+        boolean nativeFormat = snapshot != null && (snapshot.has("exposurePublication") || snapshot.has("mcpPublication"))
                 || nativeSchema(row.getActivationContent()) || nativeSchema(row.getChunkManifest());
         if (!nativeFormat) return Optional.empty();
         try {

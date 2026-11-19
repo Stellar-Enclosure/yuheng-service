@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.admin.release.service;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExpo
 import top.egon.cola.component.yuheng.admin.exposure.domain.event.ExposureDesiredStateChangedEvent;
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.PublicationBinding;
 import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseStatus;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
@@ -32,6 +34,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -151,6 +155,113 @@ class GatewayReleasePublicationCoordinatorTest {
         rows.getLast().setObservedGeneration(1L).setObservedState("OPEN").setReconcileStatus("SYNCED").setLastErrorCode(null);
         f.tx.executeWithoutResult(status -> f.coordinator.completeNative(OWNER, release.releaseId(), 1));
         assertThat(f.heads.get(release.releaseId()).getStatus()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+    }
+
+    @Test
+    void persistedMcpOnlyPublicationCompletesWithoutCiliumWakeupsOrRuntimeConsumptionEvidence() {
+        var artifact = mcpArtifact(false);
+        f.messages.clear();
+        clearInvocations(f.exposures, f.outbox, f.releases);
+
+        f.tx.executeWithoutResult(status -> f.coordinator.enqueueCurrent(OWNER, artifact.releaseId(), 1, artifact));
+        var observed = f.coordinator.observeNative(OWNER, artifact);
+
+        assertThat(observed.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(observed.partialApplied()).isFalse();
+        assertThat(observed.exposureOutcomes()).isEmpty();
+        assertThat(observed.clusterTargets()).isEmpty();
+        assertThat(f.messages).isEmpty();
+        verifyNoInteractions(f.exposures, f.outbox);
+        verify(f.releases, never()).completeCurrentNativeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any());
+        assertThat(f.heads.get(artifact.releaseId()).getStatus()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
+
+        var completed = f.tx.execute(status -> f.coordinator.completeNative(OWNER, artifact.releaseId(), 1));
+        assertThat(completed.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        verify(f.releases).completeCurrentNativeAttempt(artifact.releaseId(), 1, GatewayReleaseStatus.SUCCESS, false, NOW);
+        assertThat(f.heads.get(artifact.releaseId()).getStatus()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+    }
+
+    @Test
+    void mcpPublicationMustMatchThePersistedArtifactExactlyBeforeItCanSucceed() {
+        var artifact = mcpArtifact(false);
+        f.artifacts.clear();
+        assertThatThrownBy(() -> f.coordinator.observeNative(OWNER, artifact))
+                .isInstanceOf(IllegalStateException.class).hasMessage("YUHENG_RELEASE_NATIVE_BINDING_INVALID");
+
+        var snapshot = (ObjectNode) artifact.canonicalSnapshot();
+        var mappings = artifact.mcpPublication().path("mappings").deepCopy();
+        ((ObjectNode) mappings.get(0).path("tool")).put("enabled", false);
+        snapshot.set("mcpPublication", GatewayCiliumReleaseArtifact.mcpPublication(mappings));
+        var changed = new GatewayCiliumReleaseArtifact(snapshot, artifact.activationContent(), artifact.chunkManifest());
+        f.artifacts.put(artifact.releaseId(), changed);
+        assertThatThrownBy(() -> f.coordinator.observeNative(OWNER, artifact))
+                .isInstanceOf(IllegalStateException.class).hasMessage("YUHENG_RELEASE_NATIVE_BINDING_INVALID");
+        assertThat(f.coordinator.observeNative(OWNER, changed).status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        verify(f.releases, never()).completeCurrentNativeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any());
+    }
+
+    @Test
+    void mixedPublicationWaitsForItsRealCiliumRoutesAndPreservesTheirFailure() {
+        var artifact = mcpArtifact(true);
+        var pending = f.coordinator.observeNative(OWNER, artifact);
+        assertThat(pending.status()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
+        assertThat(pending.exposureOutcomes()).hasSize(1);
+        assertThat(pending.clusterTargets()).hasSize(1).allMatch(target -> !target.converged());
+
+        f.onlyRow().setReconcileStatus("FAILED").setLastErrorCode("DATAPLANE_EVIDENCE_INCOMPLETE");
+        assertThat(f.coordinator.observeNative(OWNER, artifact).status()).isEqualTo(GatewayReleaseStatus.FAILED);
+        f.onlyRow().setObservedGeneration(1L).setObservedState("OPEN").setReconcileStatus("SYNCED").setLastErrorCode(null);
+        var complete = f.coordinator.observeNative(OWNER, artifact);
+        assertThat(complete.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(complete.exposureOutcomes()).hasSize(1).allMatch(outcome -> "APPLIED".equals(outcome.result()));
+    }
+
+    @Test
+    void mcpOnlyRecoveryHonorsTheCurrentAttemptCasAndDoesNotWriteOutsideATransaction() {
+        var artifact = mcpArtifact(false);
+        assertThatThrownBy(() -> f.coordinator.completeNative(OWNER, artifact.releaseId(), 1))
+                .isInstanceOf(IllegalStateException.class).hasMessage("YUHENG_RELEASE_NATIVE_BINDING_INVALID");
+        doReturn(false).when(f.releases).completeCurrentNativeAttempt(artifact.releaseId(), 1, GatewayReleaseStatus.SUCCESS, false, NOW);
+        var stale = f.tx.execute(status -> f.coordinator.recoverNative(OWNER, artifact.releaseId(), 1));
+        assertThat(stale).isEmpty();
+        assertThat(f.heads.get(artifact.releaseId()).getStatus()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
+
+        var current = f.tx.execute(status -> f.coordinator.recoverNative(OWNER, artifact.releaseId(), 2));
+        assertThat(current).isPresent().get().extracting(GatewayReleasePublicationCoordinator.NativeOutcome::status)
+                .isEqualTo(GatewayReleaseStatus.SUCCESS);
+        verify(f.releases).completeCurrentNativeAttempt(artifact.releaseId(), 2, GatewayReleaseStatus.SUCCESS, false, NOW);
+        assertThat(f.heads.get(artifact.releaseId()).getStatus()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        f.artifacts.clear();
+        var missing = f.tx.execute(status -> f.coordinator.recoverNative(OWNER, artifact.releaseId(), 2));
+        assertThat(missing).isEmpty();
+    }
+
+    private GatewayCiliumReleaseArtifact mcpArtifact(boolean mixed) {
+        var release = f.create();
+        var original = f.artifacts.get(release.releaseId());
+        var snapshot = (ObjectNode) original.canonicalSnapshot();
+        var activation = (ObjectNode) original.activationContent();
+        var manifest = (ObjectNode) original.chunkManifest();
+        if (!mixed) {
+            snapshot.remove("exposurePublication");
+            activation.putArray("exposures");
+            manifest.putArray("resources");
+            manifest.putArray("dependencies");
+        }
+        var mapping = f.json.createObjectNode().put("toolId", "a".repeat(64)).put("dependencyClosureDigest", "c".repeat(64));
+        mapping.putObject("sourceOperation").put("operationId", "9001").put("operationKey", "orders.read")
+                .put("definitionDigest", "d".repeat(64));
+        mapping.putObject("siServer").put("resourceId", "9101").put("versionId", "9102").put("versionNo", "1")
+                .put("digestSha256", "b".repeat(64)).put("bizCode", "business").put("namespaceCode", "orders")
+                .put("envCode", "prod").put("resourceKey", "order-tools");
+        var tool = mapping.putObject("tool").put("toolId", "a".repeat(64)).put("operationId", "9001")
+                .put("serverCode", "order-tools").put("name", "readOrders").put("sourceType", "LOCAL_OPERATION")
+                .put("operationProtocol", "HTTP").put("riskLevel", "LOW").put("idempotent", true).put("enabled", true);
+        tool.putArray("requiredPermissions").add("orders:read");
+        snapshot.set("mcpPublication", GatewayCiliumReleaseArtifact.mcpPublication(f.json.createArrayNode().add(mapping)));
+        var artifact = new GatewayCiliumReleaseArtifact(snapshot, activation, manifest);
+        f.artifacts.put(release.releaseId(), artifact);
+        return artifact;
     }
 
     @Test

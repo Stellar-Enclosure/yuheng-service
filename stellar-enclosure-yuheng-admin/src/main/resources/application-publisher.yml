@@ -32,8 +32,6 @@ yuheng:
       token-file: ${YUHENG_PUBLISHER_TOKEN_FILE}
       request-timeout: ${YUHENG_PUBLISHER_REQUEST_TIMEOUT:5s}
       max-response-bytes: ${YUHENG_PUBLISHER_MAX_RESPONSE_BYTES:1048576}
-    tianshu:
-      enabled: false
     openapi:
       enabled: false
       allow-development-http: ${YUHENG_ADMIN_OPENAPI_ALLOW_DEVELOPMENT_HTTP:false}

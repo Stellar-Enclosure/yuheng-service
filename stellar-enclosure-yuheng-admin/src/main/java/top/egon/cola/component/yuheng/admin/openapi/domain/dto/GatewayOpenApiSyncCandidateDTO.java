@@ -7,10 +7,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.groups.Default;
-import top.egon.cola.component.tianshu.model.management.DdcInstanceStatus;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceInstance;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceKey;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceSnapshot;
 import top.egon.cola.component.yuheng.contract.reporting.openapi.GatewayOpenApiGroupManifestDTO;
 
 import java.net.URI;
@@ -18,10 +14,10 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Trusted Provider target derived from a Tianshu instance and its group manifest.
+ * Exact approved document target; approval validity is not workload-health evidence.
  *
- * <p>中文：只允许由受信 Tianshu 服务实例、Manifest 和已解析 applicationId
- * 组装；调用方不能直接提交任意 URL。</p>
+ * <p>中文：生产候选由固定 CI/部署批准清单产生，Service 地址、完整组集合和原始文档摘要逐项核对。
+ * 审批有效期不是实例租约，也不代表 Kubernetes 健康状态。</p>
  */
 public record GatewayOpenApiSyncCandidateDTO(
         @NotBlank(groups = {Default.class, GatewayOpenApiIngestionGroup.class})
@@ -74,7 +70,8 @@ public record GatewayOpenApiSyncCandidateDTO(
         Instant observedAt,
         @NotNull(groups = {Default.class, GatewayOpenApiIngestionGroup.class})
         Instant expiresAt,
-        boolean developmentPlaintext
+        boolean developmentPlaintext,
+        boolean approvedInternalHttp
 ) {
 
     /**
@@ -113,7 +110,7 @@ public record GatewayOpenApiSyncCandidateDTO(
                     "port must be between 1 and 65535"
             );
         }
-        if (!secure && !developmentPlaintext) {
+        if (!secure && !developmentPlaintext && !approvedInternalHttp) {
             throw new IllegalArgumentException(
                     "OpenAPI provider target must use HTTPS"
             );
@@ -122,6 +119,10 @@ public record GatewayOpenApiSyncCandidateDTO(
             throw new IllegalArgumentException(
                     "developmentPlaintext requires an insecure target"
             );
+        }
+        if (approvedInternalHttp && (secure || developmentPlaintext
+                || !host.matches("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.svc\\.cluster\\.local"))) {
+            throw new IllegalArgumentException("approvedInternalHttp requires an exact internal Service target");
         }
         pathTemplate = required(pathTemplate, "pathTemplate", 512);
         if (!GatewayOpenApiGroupManifestDTO.PATH_TEMPLATE.equals(
@@ -179,117 +180,17 @@ public record GatewayOpenApiSyncCandidateDTO(
                 resourceUri,
                 observedAt,
                 expiresAt,
-                false
+                false, false
         );
     }
 
-    /**
-     * Builds a candidate only from a coherent Tianshu service snapshot, instance
-     * and published group manifest.
-     *
-     * @param applicationId resolved physical Gateway application id
-     * @param snapshot Tianshu service snapshot
-     * @param instance healthy candidate instance
-     * @param manifest validated published group manifest
-     * @param group group selected from the manifest
-     * @return trusted normalized candidate
-     */
-    public static GatewayOpenApiSyncCandidateDTO from(
-            String applicationId,
-            DdcManagementServiceSnapshot snapshot,
-            DdcManagementServiceInstance instance,
-            GatewayOpenApiGroupManifestDTO manifest,
-            String group) {
-        return from(
-                applicationId,
-                snapshot,
-                instance,
-                manifest,
-                group,
-                false
-        );
-    }
-
-    /**
-     * Builds a candidate with an explicit local-development HTTP exception.
-     * The exception is only materialized when the caller has already enabled
-     * the local plaintext policy; the default overload remains HTTPS-only.
-     *
-     * @param applicationId resolved physical Gateway application id
-     * @param snapshot Tianshu service snapshot
-     * @param instance healthy candidate instance
-     * @param manifest validated published group manifest
-     * @param group group selected from the manifest
-     * @param allowDevelopmentHttp explicit local plaintext policy
-     * @return trusted normalized candidate
-     */
-    public static GatewayOpenApiSyncCandidateDTO from(
-            String applicationId,
-            DdcManagementServiceSnapshot snapshot,
-            DdcManagementServiceInstance instance,
-            GatewayOpenApiGroupManifestDTO manifest,
-            String group,
-            boolean allowDevelopmentHttp) {
-        Objects.requireNonNull(snapshot, "snapshot");
-        Objects.requireNonNull(instance, "instance");
-        Objects.requireNonNull(manifest, "manifest");
-        String normalizedGroup = required(group, "group", 64);
-        if (!manifest.groups().contains(normalizedGroup)) {
-            throw new IllegalArgumentException(
-                    "group is not published in the manifest"
-            );
-        }
-        DdcManagementServiceKey service = Objects.requireNonNull(
-                snapshot.serviceKey(),
-                "snapshot.serviceKey"
-        );
-        boolean secureHttp = "https".equalsIgnoreCase(service.protocol())
-                && instance.secure();
-        boolean developmentHttp = allowDevelopmentHttp
-                && "http".equalsIgnoreCase(service.protocol())
-                && !instance.secure();
-        if (!"HTTP_PROVIDER".equals(service.serviceKind())
-                || (!secureHttp && !developmentHttp)) {
-            throw new IllegalArgumentException(
-                    "Tianshu service is not an HTTP provider"
-            );
-        }
-        Instant observedAt = Objects.requireNonNull(
-                snapshot.observedAt(),
-                "snapshot.observedAt"
-        );
-        if (!snapshot.instances().contains(instance)) {
-            throw new IllegalArgumentException(
-                    "Tianshu instance is not part of the supplied snapshot"
-            );
-        }
-        if (instance.normalizedStatus() != DdcInstanceStatus.ONLINE
-                || instance.expireAt() == null
-                || !instance.expireAt().isAfter(observedAt)) {
-            throw new IllegalArgumentException(
-                    "Tianshu instance is not healthy and unexpired"
-            );
-        }
-        return new GatewayOpenApiSyncCandidateDTO(
-                applicationId,
-                service.bizCode(),
-                service.appCode(),
-                manifest.buildId(),
-                manifest.artifactVersion(),
-                normalizedGroup,
-                service.serviceName(),
-                service.group(),
-                service.version(),
-                instance.instanceId(),
-                instance.host(),
-                instance.port(),
-                instance.secure(),
-                manifest.pathTemplate(),
-                URI.create(manifest.resourceUri()),
-                observedAt,
-                instance.expireAt(),
-                developmentHttp
-        );
+    /** Source-compatible local/HTTPS fixture constructor; deployment approvals use the explicit final flag. */
+    public GatewayOpenApiSyncCandidateDTO(String applicationId,String bizCode,String applicationCode,String buildId,
+            String artifactVersion,String openapiGroup,String providerServiceName,String providerGroup,String providerVersion,
+            String instanceId,String host,int port,boolean secure,String pathTemplate,URI resourceUri,Instant observedAt,
+            Instant expiresAt,boolean developmentPlaintext) {
+        this(applicationId,bizCode,applicationCode,buildId,artifactVersion,openapiGroup,providerServiceName,providerGroup,
+                providerVersion,instanceId,host,port,secure,pathTemplate,resourceUri,observedAt,expiresAt,developmentPlaintext,false);
     }
 
     private static String required(String value, String field, int max) {

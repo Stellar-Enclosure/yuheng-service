@@ -3,7 +3,6 @@ package top.egon.cola.component.yuheng.admin.openapi.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -40,7 +39,6 @@ import java.util.Objects;
         name = "yuheng.admin.openapi.enabled",
         havingValue = "true"
 )
-@RequiredArgsConstructor
 public class GatewayProviderOpenApiClient {
 
     public static final String OPENAPI_READ_SCOPE = "yuheng.openapi.read";
@@ -66,6 +64,24 @@ public class GatewayProviderOpenApiClient {
     @Qualifier("gatewayOpenApiMaximumDocumentBytes")
     private final int maximumDocumentBytes;
 
+    private final top.egon.cola.component.yuheng.admin.openapi.service.GatewayOpenApiSourceInventory sources;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GatewayProviderOpenApiClient(@Qualifier("gatewayOpenApiTokenSupplier") GatewayOpenApiTokenSupplier tokenSupplier,
+            @Qualifier("gatewayOpenApiDnsPolicy") GatewayOpenApiDnsPolicy dnsPolicy,
+            @Qualifier("gatewayOpenApiHttpClient") HttpClient httpClient,
+            @Qualifier("gatewayOpenApiObjectMapper") ObjectMapper objectMapper,@Qualifier("gatewayOpenApiClock") Clock clock,
+            @Qualifier("gatewayOpenApiReadTimeout") Duration readTimeout,@Qualifier("gatewayOpenApiMaximumDocumentBytes") int maximumDocumentBytes,
+            @Qualifier("gatewayOpenApiSourceInventory") top.egon.cola.component.yuheng.admin.openapi.service.GatewayOpenApiSourceInventory sources) {
+        this.tokenSupplier=tokenSupplier;this.dnsPolicy=dnsPolicy;this.httpClient=httpClient;this.objectMapper=objectMapper;
+        this.clock=clock;this.readTimeout=readTimeout;this.maximumDocumentBytes=maximumDocumentBytes;this.sources=sources;
+        if(sources!=null && httpClient.followRedirects()!=HttpClient.Redirect.NEVER)throw new IllegalArgumentException("OpenAPI redirects must be disabled");
+    }
+    public GatewayProviderOpenApiClient(GatewayOpenApiTokenSupplier tokenSupplier,GatewayOpenApiDnsPolicy dnsPolicy,
+            HttpClient httpClient,ObjectMapper objectMapper,Clock clock,Duration readTimeout,int maximumDocumentBytes) {
+        this(tokenSupplier,dnsPolicy,httpClient,objectMapper,clock,readTimeout,maximumDocumentBytes,null);
+    }
+
     /**
      * Fetches and parses one manifest-selected Group document.
      *
@@ -76,6 +92,8 @@ public class GatewayProviderOpenApiClient {
             @Valid GatewayOpenApiSyncCandidateDTO candidate) {
         Objects.requireNonNull(candidate, "candidate");
         try {
+            if(sources!=null) sources.authorize(candidate);
+            else if(candidate.approvedInternalHttp()) throw new GatewayOpenApiFetchException("YUHENG_OPENAPI_SOURCE_NOT_APPROVED",false,"OpenAPI source approval is unavailable");
             dnsPolicy.resolveAndValidate(candidate.host());
             URI target = targetUri(candidate);
             String token = requiredToken(tokenSupplier.tokenFor(
@@ -190,7 +208,7 @@ public class GatewayProviderOpenApiClient {
         );
         String scheme = candidate.secure()
                 ? "https"
-                : candidate.developmentPlaintext()
+                : (candidate.developmentPlaintext() || candidate.approvedInternalHttp())
                 ? "http"
                 : null;
         if (scheme == null) {
@@ -205,7 +223,7 @@ public class GatewayProviderOpenApiClient {
                     scheme + "://" + host + ":" + candidate.port() + path
             );
             if (!("https".equalsIgnoreCase(target.getScheme())
-                    || (candidate.developmentPlaintext()
+                    || ((candidate.developmentPlaintext() || candidate.approvedInternalHttp())
                     && "http".equalsIgnoreCase(target.getScheme())))
                     || target.getRawQuery() != null
                     || target.getRawFragment() != null

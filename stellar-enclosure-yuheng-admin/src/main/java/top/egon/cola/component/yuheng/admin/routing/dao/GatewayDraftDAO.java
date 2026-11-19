@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.admin.routing.dao;
 
+import org.apache.ibatis.annotations.Param;
 import top.egon.cola.component.common.mybatis.extension.EgonColaMapper;
 import top.egon.cola.component.yuheng.admin.routing.domain.po.GatewayDraftRecordPO;
 
@@ -9,4 +10,6 @@ import top.egon.cola.component.yuheng.admin.routing.domain.po.GatewayDraftRecord
  * 用法 / Usage: 仅声明 Spec §11.2 访问路径所需的具名类型化查询，通用 CRUD 一律经对应持久化仓储调用。
  */
 public interface GatewayDraftDAO extends EgonColaMapper<GatewayDraftRecordPO> {
+    /** Selects and locks only the explicit tenant's active draft head. No interceptor bypass is permitted. */
+    GatewayDraftRecordPO selectForPublication(@Param("tenantId") long tenantId, @Param("groupId") long groupId);
 }

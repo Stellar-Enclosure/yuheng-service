@@ -35,6 +35,6 @@ public class GatewayFieldCatalogController {
     public ResponseEntity<ResultRecord<FieldCatalogSnapshot>> current(HttpServletRequest request) {
         return ResponseEntity.ok().header("Cache-Control","no-store").body(ResultRecord.success(fields.currentForHttp(request,KEY,
                 adapters.getObject().getMessageConverters(),routes.getObject().getHandlerMethods().values(),
-                java.util.Set.of("top.egon.cola.component.yuheng.admin."),java.util.Set.of(top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadCommandDTO.class))));
+                java.util.Set.of("top.egon.cola.component.yuheng.admin."),java.util.Set.of())));
     }
 }

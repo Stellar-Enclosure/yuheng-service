@@ -66,7 +66,7 @@ class GatewayManagedEntryPointTest {
             @Override public boolean matches(Method method, Class<?> targetClass) { return manager.supports(method, targetClass); }
         }, manager);
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
-        var env = new org.springframework.core.env.StandardEnvironment();
+        var env = new org.springframework.web.context.support.StandardServletEnvironment();
         env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("coverage", Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true")));
         scanner.setEnvironment(env); scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
         int count = 0;
@@ -89,7 +89,7 @@ class GatewayManagedEntryPointTest {
                 count++;
             }
         }
-        assertThat(count).isEqualTo(92); verifyNoInteractions(loader);
+        assertThat(count).isEqualTo(69); verifyNoInteractions(loader);
     }
 
     @Test
@@ -226,34 +226,24 @@ class GatewayManagedEntryPointTest {
                 beans.getBeanProvider(org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.class),
                 beans.getBeanProvider(org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping.class));
         var request = new org.springframework.mock.web.MockHttpServletRequest("GET", "/api/v1/authorization/field-catalog");
-        request.addParameter("keys", "yuheng.field.GatewayGroupCreateRequestDTO.displayName", "yuheng.field.GatewayGroupVO.id", "yuheng.field.LlmRouteBindingDTO.channelKey", "yuheng.field.McpArtifactUploadCommandDTO.artifact");
+        request.addParameter("keys", "yuheng.field.GatewayGroupCreateRequestDTO.displayName", "yuheng.field.GatewayGroupVO.id", "yuheng.field.LlmRouteBindingDTO.channelKey");
         assertThatThrownBy(() -> controller.current(request)).isInstanceOf(AuthenticationCredentialsNotFoundException.class);
         top.egon.cola.platform.tianquan.shoubing.starter.security.VerifiedUserTokenCarrier.set(request, "verified-fixture");
         var response = controller.current(request); assertThat(response.getHeaders().getCacheControl()).isEqualTo("no-store");
         assertThat(response.getBody().data().fields().get("yuheng.field.GatewayGroupCreateRequestDTO.displayName").inputBinding()).isTrue();
         assertThat(response.getBody().data().fields().get("yuheng.field.GatewayGroupVO.id").inputBinding()).isFalse();
         assertThat(response.getBody().data().fields().get("yuheng.field.LlmRouteBindingDTO.channelKey").inputBinding()).isTrue();
-        assertThat(response.getBody().data().fields().get("yuheng.field.McpArtifactUploadCommandDTO.artifact").inputBinding()).isTrue();
         request.addParameter("tenantId", "foreign"); assertThatThrownBy(() -> controller.current(request)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void multipartUploadGuardsFieldsBeforeReadingBytesAndRejectsUnknownParts() throws Exception {
-        var manifest=manifest(); var guard=new PermissionFieldBindingGuard(registry(manifest),new CurrentRbac3User(),()->null,scopes());
-        var service=mock(top.egon.cola.component.yuheng.admin.mcp.service.McpControlPlaneService.class);
-        var controller=new top.egon.cola.component.yuheng.admin.mcp.controller.McpAppAdminController(service,guard);
-        var file=mock(org.springframework.web.multipart.MultipartFile.class);
-        authenticate(manifest,Set.of(GatewayPermissionCodes.MCP_READ),Set.of(GatewayPermissionCodes.MCP_WRITE));
-        assertThatThrownBy(()->controller.upload("group","app","1","App","ui://app","text/html","default-src 'none'",
-                Set.of("render"),Set.of(),0,0,"create",file,"intent",null)).hasStackTraceContaining("FIELD_ACCESS_DENIED");
-        verifyNoInteractions(file,service);
-        var request=new org.springframework.mock.web.MockMultipartHttpServletRequest();
-        request.addPart(new org.springframework.mock.web.MockPart("ownerActorId",new byte[]{1}));
-        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(new org.springframework.web.context.request.ServletRequestAttributes(request));
-        authenticate(manifest,Set.of(GatewayPermissionCodes.MCP_WRITE),Set.of(GatewayPermissionCodes.MCP_WRITE));
-        assertThatThrownBy(()->controller.upload("group","app","1","App","ui://app","text/html","default-src 'none'",
-                Set.of("render"),Set.of(),0,0,"create",file,"intent",null)).hasStackTraceContaining("FIELD_BINDING_UNDECLARED");
-        verifyNoInteractions(file,service);
+    void retiredNativeArtifactUploadHasNoPermissionOrControllerEntryPoint() throws Exception {
+        assertThat(manifest().resources()).noneMatch(resource ->
+                resource.key().startsWith("yuheng.api.mcpAppAdmin.")
+                        || resource.key().startsWith("yuheng.field.McpArtifactUploadCommandDTO."));
+        assertThatThrownBy(() -> Class.forName(
+                "top.egon.cola.component.yuheng.admin.mcp.controller.McpAppAdminController"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 
     @Test

@@ -3,6 +3,15 @@ package top.egon.cola.component.yuheng.admin.mcp.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
+import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpApiMappingContentBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
+import top.egon.cola.component.yuheng.admin.catalog.domain.vo.GatewayCurrentOperationDefinitionVO;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +67,8 @@ import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpRemoteToolDraftBO;
  *
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
-@Service
+@Slf4j
+@Service("mcpReleaseContentFactory")
 public class McpReleaseContentFactory {
 
     /**
@@ -151,6 +161,8 @@ public class McpReleaseContentFactory {
      */
     private final ObjectMapper objectMapper;
 
+    private final ObjectProvider<McpPublishedSiResolver> publishedSiResolver;
+
     /**
      * 中文说明：创建 {@code McpReleaseContentFactory} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
      * English summary: Creates an instance of {@code McpReleaseContentFactory} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
@@ -178,6 +190,23 @@ public class McpReleaseContentFactory {
             GatewayCatalogRepository catalog,
             McpValidationService validation,
             ObjectMapper objectMapper) {
+        this(servers, capabilities, managedOverrides, remoteTools, remote, artifacts,
+                drafts, catalog, validation, objectMapper, null);
+    }
+
+    @Autowired
+    public McpReleaseContentFactory(
+            @Qualifier("mcpServerRepository") McpServerRepository servers,
+            @Qualifier("mpMcpCapabilityDraftRepository") McpCapabilityDraftRepository capabilities,
+            @Qualifier("mpMcpManagedToolOverrideRepository") McpManagedToolOverrideRepository managedOverrides,
+            @Qualifier("mpMcpRemoteToolDraftRepository") McpRemoteToolDraftRepository remoteTools,
+            @Qualifier("mpMcpRemoteProviderRepository") McpRemoteProviderRepository remote,
+            @Qualifier("mpMcpArtifactMetadataRepository") McpArtifactMetadataRepository artifacts,
+            @Qualifier("mpGatewayDraftMetadataRepository") GatewayDraftJpaRepository drafts,
+            @Qualifier("mpGatewayCatalogRepository") GatewayCatalogRepository catalog,
+            @Qualifier("mcpValidationService") McpValidationService validation,
+            @Qualifier("jacksonObjectMapper") ObjectMapper objectMapper,
+            @Qualifier("mcpPublishedSiResolver") ObjectProvider<McpPublishedSiResolver> publishedSiResolver) {
         this.servers = servers;
         this.capabilities = capabilities;
         this.managedOverrides = managedOverrides;
@@ -188,6 +217,175 @@ public class McpReleaseContentFactory {
         this.catalog = catalog;
         this.validation = validation;
         this.objectMapper = objectMapper.copy();
+        this.publishedSiResolver = publishedSiResolver;
+    }
+
+    /** Compiles an independently hashed mapping section without consulting local native Server rows. */
+    public JsonNode compileMappingSection(long owner, GatewayDraftVO draft) {
+        if (owner <= 0 || draft == null || draft.gatewayGroupId() == null || draft.policies() == null) {
+            throw new IllegalArgumentException(McpApiMappingContentBO.INVALID);
+        }
+        ArrayNode mappings = objectMapper.createArrayNode();
+        for (var policy : draft.policies()) {
+            if (!McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType())) continue;
+            if (!Objects.equals(policy.getGatewayGroupId(), draft.gatewayGroupId())
+                    || !McpApiMappingContentBO.POLICY_SCOPE.equals(policy.getPolicyScope())) {
+                throw new IllegalArgumentException(McpApiMappingContentBO.INVALID);
+            }
+            var intent = McpApiMappingContentBO.fromContent(policy.getContent());
+            var current = mappingSource(draft.gatewayGroupId(), intent.sourceOperation(),
+                    intent.siServer().resourceKey(), true);
+            String closure = resolveMappingClosure(owner, intent.siServer());
+            var tool = mappingTool(current.operation(), current.definition(), intent.siServer().resourceKey(),
+                    intent.additionalPermissions(), intent.minimumRiskLevel(),
+                    policy.isEnabled() && !intent.disabled());
+            var entry = objectMapper.createObjectNode().put("toolId", tool.toolId());
+            entry.set("sourceOperation", objectMapper.valueToTree(intent.content().get("sourceOperation")));
+            entry.set("siServer", objectMapper.valueToTree(intent.content().get("siServer")));
+            entry.put("dependencyClosureDigest", closure);
+            entry.set("tool", objectMapper.valueToTree(tool));
+            mappings.add(entry);
+        }
+        return mappings.isEmpty() ? null : GatewayCiliumReleaseArtifact.mcpPublication(mappings);
+    }
+
+    /** Rechecks current authorization around the exact frozen projection; never rewrites its bytes. */
+    public void revalidateMappingSection(long owner, String gatewayGroupId, JsonNode frozenSection) {
+        if (owner <= 0 || gatewayGroupId == null || gatewayGroupId.isBlank()) {
+            throw new IllegalArgumentException(McpApiMappingContentBO.INVALID);
+        }
+        if (frozenSection == null) return;
+        JsonNode normalized = GatewayCiliumReleaseArtifact.mcpPublication(frozenSection.path("mappings"));
+        if (!normalized.equals(frozenSection)) throw mappingSourceUnavailable();
+        for (JsonNode entry : frozenSection.path("mappings")) {
+            var identity = objectMapper.createObjectNode();
+            identity.set("sourceOperation", entry.path("sourceOperation"));
+            identity.set("siServer", entry.path("siServer"));
+            identity.putArray("additionalPermissions");
+            identity.put("disabled", false);
+            var intent = McpApiMappingContentBO.fromContent(objectMapper.convertValue(identity,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }));
+            var current = mappingSource(gatewayGroupId, intent.sourceOperation(),
+                    intent.siServer().resourceKey(), false);
+            var originals = catalog.loadDefinitions(intent.sourceOperation().operationId()).stream()
+                    .filter(definition -> Objects.equals(definition.getOperationId(), intent.sourceOperation().operationId())
+                            && Objects.equals(definition.getDefinitionSha256(), intent.sourceOperation().definitionDigest()))
+                    .toList();
+            if (originals.isEmpty()) throw mappingSourceUnavailable();
+            McpRuntimeTool original = mappingTool(current.operation(), originals.getFirst(),
+                    intent.siServer().resourceKey(), Set.of(), null, true);
+            for (var definition : originals) {
+                if (!original.equals(mappingTool(current.operation(), definition,
+                        intent.siServer().resourceKey(), Set.of(), null, true))) throw mappingSourceUnavailable();
+            }
+            McpRuntimeTool latest = mappingTool(current.operation(), current.definition(),
+                    intent.siServer().resourceKey(), Set.of(), null, true);
+            JsonNode frozen = entry.path("tool");
+            JsonNode expected = objectMapper.valueToTree(original);
+            for (String field : List.of("toolId", "operationId", "serverCode", "name", "description",
+                    "sourceType", "operationProtocol", "remoteMountId", "annotations", "idempotent")) {
+                if (!Objects.equals(frozen.get(field), expected.get(field))) throw mappingSourceUnavailable();
+            }
+            for (String field : List.of("inputSchema", "outputSchema")) {
+                if (!sameMappingSchema(frozen.get(field), expected.get(field))) throw mappingSourceUnavailable();
+            }
+            Set<String> permissions = new java.util.HashSet<>();
+            frozen.path("requiredPermissions").forEach(permission -> permissions.add(permission.textValue()));
+            if (!permissions.containsAll(original.requiredPermissions()) || !permissions.containsAll(latest.requiredPermissions())
+                    || risk(frozen.path("riskLevel").textValue()) < risk(original.riskLevel())
+                    || risk(frozen.path("riskLevel").textValue()) < risk(latest.riskLevel())
+                    || !Objects.equals(original.name(), latest.name()) || original.idempotent() != latest.idempotent()) {
+                throw mappingSourceUnavailable();
+            }
+            String closure = resolveMappingClosure(owner, intent.siServer());
+            if (!closure.equals(entry.path("dependencyClosureDigest").textValue())) throw mappingSourceUnavailable();
+        }
+    }
+
+    private GatewayCurrentOperationDefinitionVO mappingSource(String gatewayGroupId,
+            McpApiMappingContentBO.SourceOperationVO source, String serverCode, boolean exactCurrentDigest) {
+        var matches = catalog.loadCurrentOperationDefinitions(gatewayGroupId).stream()
+                .filter(current -> Objects.equals(current.operation().getId(), source.operationId())
+                        && Objects.equals(current.operation().getOperationKey(), source.operationKey())).toList();
+        if (matches.size() != 1) throw mappingSourceUnavailable();
+        var current = matches.getFirst();
+        var operation = current.operation();
+        var definition = current.definition();
+        if (!Objects.equals(operation.getCurrentDefinitionId(), definition.getId())
+                || !Objects.equals(operation.getId(), definition.getOperationId())
+                || (exactCurrentDigest && !source.definitionDigest().equals(definition.getDefinitionSha256()))
+                || !Set.of("OPENAPI31", "RPC_DESCRIPTOR").contains(operation.getSourceType())
+                || !Set.of("ACTIVE", "DEPRECATED").contains(operation.getLifecycleStatus())
+                || !Set.of("HTTP", "RPC").contains(operation.getProtocol())) throw mappingSourceUnavailable();
+        mappingExposure(definition, serverCode);
+        return current;
+    }
+
+    private Map<String, Object> mappingExposure(GatewayOperationDefinitionBO definition, String serverCode) {
+        if (definition.getAttributes() == null
+                || !(definition.getAttributes().get("mcpExposure") instanceof Map<?, ?> raw)) throw mappingSourceUnavailable();
+        Map<String, Object> exposure = objectMap(raw);
+        if (!Boolean.TRUE.equals(exposure.get("registerMcp"))
+                || !Objects.equals(serverCode, mappingText(exposure, "mcpServerCode"))) throw mappingSourceUnavailable();
+        return exposure;
+    }
+
+    private McpRuntimeTool mappingTool(GatewayOperationBO operation, GatewayOperationDefinitionBO definition,
+            String serverCode, Set<String> additions, String minimumRisk, boolean enabled) {
+        Map<String, Object> exposure = mappingExposure(definition, serverCode);
+        if (("HTTP".equals(operation.getProtocol()) && Boolean.TRUE.equals(definition.getAttributes().get("streaming")))
+                || ("RPC".equals(operation.getProtocol()) && definition.getAttributes().get("rpcType") != null
+                    && !"UNARY".equals(definition.getAttributes().get("rpcType")))) throw mappingSourceUnavailable();
+        Set<String> permissions = new java.util.TreeSet<>(additions);
+        Object declared = exposure.get("requiredPermissions");
+        if (declared != null) {
+            if (!(declared instanceof Collection<?> values)) throw mappingSourceUnavailable();
+            for (Object value : values) {
+                if (!(value instanceof String text) || text.isBlank()) throw mappingSourceUnavailable();
+                permissions.add(text);
+            }
+        }
+        if (permissions.stream().anyMatch(permission -> !permission.matches("^[a-z][a-z0-9._-]*(?::[A-Za-z0-9._*-]+)+$"))) {
+            throw mappingSourceUnavailable();
+        }
+        Object idempotent = exposure.get("idempotent");
+        if (idempotent != null && !(idempotent instanceof Boolean)) throw mappingSourceUnavailable();
+        String codeRisk = exposure.get("riskLevel") == null ? "LOW" : mappingText(exposure, "riskLevel");
+        return new McpRuntimeTool(managedToolId(serverCode, operation.getOperationKey()), serverCode,
+                mappingText(exposure, "mcpName"), description(definition), "LOCAL_OPERATION", operation.getId(),
+                operation.getProtocol(), null, inputSchema(operation.getProtocol(), definition.getRequestSchema()),
+                schema(definition.getResponseSchema()), Map.of(), permissions, maximumRisk(codeRisk, minimumRisk),
+                Boolean.TRUE.equals(idempotent), enabled);
+    }
+
+    private String resolveMappingClosure(long owner, McpApiMappingContentBO.SiServerVersionVO server) {
+        McpPublishedSiResolver resolver = publishedSiResolver == null ? null : publishedSiResolver.getIfAvailable();
+        if (resolver == null) {
+            throw new McpValidationException("YUHENG_MCP_API_MAPPING_SI_UNAVAILABLE", "mapping.siServer",
+                    "An approved published SI reader is required for MCP mappings");
+        }
+        String closure = resolver.resolveClosure(owner, server);
+        if (closure == null || !closure.matches("[0-9a-f]{64}")) throw mappingSourceUnavailable();
+        return closure;
+    }
+
+    private boolean sameMappingSchema(JsonNode frozen, JsonNode original) {
+        if (frozen == null || frozen.isNull()) return original == null || original.isNull();
+        if (original == null || !frozen.isTextual() || !original.isTextual()) return false;
+        try { return objectMapper.readTree(frozen.textValue()).equals(objectMapper.readTree(original.textValue())); }
+        catch (JsonProcessingException invalid) { return false; }
+    }
+
+    private String mappingText(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        if (!(value instanceof String text) || text.isBlank() || !text.equals(text.strip())
+                || text.length() > 1024 || text.codePoints().anyMatch(Character::isISOControl)) throw mappingSourceUnavailable();
+        return text;
+    }
+
+    private McpValidationException mappingSourceUnavailable() {
+        return new McpValidationException("YUHENG_MCP_API_MAPPING_SOURCE_UNAVAILABLE", "mcpPublication",
+                "The fixed mapping source or its current approval is unavailable");
     }
 
     /**

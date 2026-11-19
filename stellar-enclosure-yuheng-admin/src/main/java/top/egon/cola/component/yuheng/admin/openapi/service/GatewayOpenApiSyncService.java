@@ -7,17 +7,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceCatalog;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceInstance;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceKey;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceQuery;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceSnapshot;
 import top.egon.cola.component.yuheng.admin.application.domain.bo.GatewayApplicationBO;
 import top.egon.cola.component.yuheng.admin.application.repository.GatewayApplicationRepository;
 import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminOpenApiProperties;
@@ -56,25 +49,20 @@ import java.util.stream.Collectors;
 /**
  * Durable OpenAPI synchronization application service.
  *
- * <p>中文：该 Facade 只编排 Tianshu 发现、revision CAS、网络外快照、完整
+ * <p>中文：该 Facade 只编排已批准来源、revision CAS、网络外快照、完整
  * Group 聚合和恢复；HTTP 安全校验、OpenAPI 规则以及 Definition 写入继续
  * 由各自的技术边界负责。任何一个 Group 失败都不会提交半套 Definition。</p>
  */
 @Slf4j
 @Validated
 @Service("gatewayOpenApiSyncService")
-@ConditionalOnBean(DdcManagementClient.class)
 @ConditionalOnProperty(
         name = "yuheng.admin.openapi.enabled",
         havingValue = "true"
 )
 public class GatewayOpenApiSyncService {
 
-    private static final String OPENAPI_SOURCE = "OPENAPI31";
-
-    private static final String OPENAPI_ENABLED = "true";
-
-    private final DdcManagementClient ddc;
+    private final GatewayOpenApiSourceInventory sources;
 
     private final GatewayApplicationRepository applications;
 
@@ -99,7 +87,7 @@ public class GatewayOpenApiSyncService {
     /** Creates the Spring-managed synchronization service. */
 
     @Autowired
-    public GatewayOpenApiSyncService(DdcManagementClient ddc,
+    public GatewayOpenApiSyncService(GatewayOpenApiSourceInventory sources,
             GatewayApplicationRepository applications,
             GatewayOpenApiSyncRepository syncStates,
             GatewayOpenApiSnapshotRepository snapshots,
@@ -110,7 +98,7 @@ public class GatewayOpenApiSyncService {
             @Qualifier("gatewayOpenApiObjectMapper")
             ObjectMapper objectMapper,
             MeterRegistry meters) {
-        this(ddc,
+        this(sources,
                 applications,
                 syncStates,
                 snapshots,
@@ -124,7 +112,7 @@ public class GatewayOpenApiSyncService {
     }
 
     /** Constructor used by deterministic focused tests. */
-    public GatewayOpenApiSyncService(DdcManagementClient ddc,
+    public GatewayOpenApiSyncService(GatewayOpenApiSourceInventory sources,
             GatewayApplicationRepository applications,
             GatewayOpenApiSyncRepository syncStates,
             GatewayOpenApiSnapshotRepository snapshots,
@@ -134,7 +122,7 @@ public class GatewayOpenApiSyncService {
             GatewayAdminOpenApiProperties properties,
             MeterRegistry meters,
             Clock clock) {
-        this(ddc,
+        this(sources,
                 applications,
                 syncStates,
                 snapshots,
@@ -147,7 +135,7 @@ public class GatewayOpenApiSyncService {
                 clock);
     }
 
-    private GatewayOpenApiSyncService(DdcManagementClient ddc,
+    private GatewayOpenApiSyncService(GatewayOpenApiSourceInventory sources,
             GatewayApplicationRepository applications,
             GatewayOpenApiSyncRepository syncStates,
             GatewayOpenApiSnapshotRepository snapshots,
@@ -158,7 +146,7 @@ public class GatewayOpenApiSyncService {
             ObjectMapper objectMapper,
             MeterRegistry meters,
             Clock clock) {
-        this.ddc = Objects.requireNonNull(ddc, "tianshu");
+        this.sources = Objects.requireNonNull(sources, "sources");
         this.applications = Objects.requireNonNull(
                 applications,
                 "applications"
@@ -192,7 +180,7 @@ public class GatewayOpenApiSyncService {
         recoverExpiredClaims(now);
         Discovery discovery = discover(now);
         if (discovery.aborted()) {
-            count("SKIPPED", "TIANSHU_STALE");
+            count("SKIPPED", "SOURCE_APPROVAL_UNAVAILABLE");
             return 0;
         }
 
@@ -259,6 +247,7 @@ public class GatewayOpenApiSyncService {
     public void synchronize(GatewayOpenApiSyncCandidateDTO candidate) {
         Objects.requireNonNull(candidate, "candidate");
         properties.validate();
+        sources.authorize(candidate);
         Instant now = clock.instant();
         GatewayOpenApiSyncKeyDTO key = new GatewayOpenApiSyncKeyDTO(
                 candidate.applicationId(),
@@ -270,7 +259,7 @@ public class GatewayOpenApiSyncService {
             return;
         }
         GroupContext context = application(candidate.applicationId())
-                .map(app -> GroupContext.single(app, candidate))
+                .map(app -> new GroupContext(app,sources.manifest(candidate),Map.of(candidate.openapiGroup(),List.of(candidate))))
                 .orElse(null);
         if (context == null) {
             count("SKIPPED", "APPLICATION_NOT_FOUND");
@@ -291,111 +280,15 @@ public class GatewayOpenApiSyncService {
     }
 
     private Discovery discover(Instant now) {
-        Map<GroupKey, GroupContext> contexts = new LinkedHashMap<>();
-        Map<BuildKey, GroupContext> byBuild = new LinkedHashMap<>();
-        boolean aborted = false;
-        for (GatewayApplicationBO application
-                : applications.findAllByDeletedFalseOrderByCreatedAtDesc()) {
-            boolean applicationAborted = false;
-            DdcManagementServiceCatalog catalog;
-            try {
-                catalog = ddc.getServiceKeys(new DdcManagementServiceQuery(
-                        application.getBizCode(),
-                        application.getNamespace(),
-                        application.getEnv(),
-                        application.getApplicationCode(),
-                        "HTTP_PROVIDER",
-                        properties.isAllowDevelopmentHttp()
-                                ? null
-                                : "https",
-                        null,
-                        null,
-                        null
-                ));
-            } catch (RuntimeException unavailable) {
-                log.warn(
-                        "OpenAPI Tianshu discovery unavailable app={}",
-                        application.getId()
-                );
-                aborted = true;
-                applicationAborted = true;
-                continue;
-            }
-            if (catalog == null || !fresh(catalog.observedAt(), now)) {
-                log.warn(
-                        "OpenAPI Tianshu discovery is stale app={}",
-                        application.getId()
-                );
-                aborted = true;
-                applicationAborted = true;
-                continue;
-            }
-            List<Observation> observations = new ArrayList<>();
-            for (DdcManagementServiceKey service
-                    : catalog.services() == null
-                    ? List.<DdcManagementServiceKey>of()
-                    : catalog.services()) {
-                DdcManagementServiceSnapshot snapshot;
-                try {
-                    snapshot = ddc.getInstances(new DdcManagementServiceQuery(
-                            service.bizCode(),
-                            application.getNamespace(),
-                            service.env(),
-                            service.appCode(),
-                            service.serviceKind(),
-                            service.protocol(),
-                            service.serviceName(),
-                            service.group(),
-                            service.version()
-                    ));
-                } catch (RuntimeException unavailable) {
-                    log.warn(
-                            "OpenAPI Tianshu instance observation unavailable "
-                                    + "app={} service={}",
-                            application.getId(),
-                            service.serviceName()
-                    );
-                    aborted = true;
-                    applicationAborted = true;
-                    continue;
-                }
-                if (snapshot == null || !fresh(snapshot.observedAt(), now)) {
-                    aborted = true;
-                    applicationAborted = true;
-                    continue;
-                }
-                for (DdcManagementServiceInstance instance
-                        : snapshot.instances() == null
-                        ? List.<DdcManagementServiceInstance>of()
-                        : snapshot.instances()) {
-                    Optional<GatewayOpenApiGroupManifestDTO> manifest =
-                            manifest(instance);
-                    if (manifest.isEmpty()) {
-                        continue;
-                    }
-                    List<GatewayOpenApiSyncCandidateDTO> candidates =
-                            candidates(
-                                    application,
-                                    snapshot,
-                                    instance,
-                                    manifest.get()
-                            );
-                    if (!candidates.isEmpty()) {
-                        observations.add(new Observation(
-                                service,
-                                snapshot,
-                                manifest.get(),
-                                candidates
-                        ));
-                    }
-                }
-            }
-            if (applicationAborted) {
-                continue;
-            }
-            buildContexts(application, observations, contexts, byBuild, now);
+        Map<GroupKey,GroupContext> contexts=new LinkedHashMap<>();Map<BuildKey,GroupContext> byBuild=new LinkedHashMap<>();
+        boolean aborted=false;
+        for(GatewayApplicationBO application:applications.findAllByDeletedFalseOrderByCreatedAtDesc()) {
+            List<Observation> observations=new ArrayList<>();
+            try {for(var approved:sources.sources(application)) observations.add(new Observation(approved.manifest(),approved.candidates()));}
+            catch(RuntimeException unavailable){aborted=true;continue;}
+            buildContexts(application,observations,contexts,byBuild,now);
         }
-        return new Discovery(aborted, contexts, byBuild);
+        return new Discovery(aborted,contexts,byBuild);
     }
 
     private void buildContexts(
@@ -484,7 +377,9 @@ public class GatewayOpenApiSyncService {
         for (int index = 0; index < attempts; index++) {
             GatewayOpenApiSyncCandidateDTO candidate = candidates.get(index);
             try {
+                sources.authorize(candidate);
                 document = client.fetch(candidate);
+                sources.verifyDocument(candidate,document);
                 selected = candidate;
                 break;
             } catch (GatewayOpenApiFetchException failure) {
@@ -651,6 +546,7 @@ public class GatewayOpenApiSyncService {
         );
         GatewayInterfaceDefinitionReportResult result;
         try {
+            for(ClaimedWork value:work) sources.verifyDocument(value.candidate(),value.document());
             result = coordinator.aggregateAndIngest(
                     aggregate,
                     reportApplication(context.application())
@@ -958,62 +854,6 @@ public class GatewayOpenApiSyncService {
         }
     }
 
-    private List<GatewayOpenApiSyncCandidateDTO> candidates(
-            GatewayApplicationBO application,
-            DdcManagementServiceSnapshot snapshot,
-            DdcManagementServiceInstance instance,
-            GatewayOpenApiGroupManifestDTO manifest) {
-        List<GatewayOpenApiSyncCandidateDTO> result = new ArrayList<>();
-        for (String group : manifest.groups()) {
-            try {
-                result.add(GatewayOpenApiSyncCandidateDTO.from(
-                        application.getId(),
-                        snapshot,
-                        instance,
-                        manifest,
-                        group,
-                        properties.isAllowDevelopmentHttp()
-                ));
-            } catch (RuntimeException invalid) {
-                log.warn(
-                        "OpenAPI candidate rejected app={} group={} instance={}",
-                        application.getId(),
-                        group,
-                        instance.instanceId()
-                );
-            }
-        }
-        return result;
-    }
-
-    private Optional<GatewayOpenApiGroupManifestDTO> manifest(
-            DdcManagementServiceInstance instance) {
-        Map<String, String> metadata = instance.metadata();
-        if (!OPENAPI_SOURCE.equals(metadata.get("yuheng.definition-source"))
-                || !OPENAPI_ENABLED.equalsIgnoreCase(
-                metadata.get("yuheng.openapi.enabled")
-        )) {
-            return Optional.empty();
-        }
-        String groups = metadata.get("yuheng.openapi.groups");
-        String pathTemplate = metadata.get("yuheng.openapi.path-template");
-        String spec = metadata.get("yuheng.openapi.spec");
-        if (!"3.1".equals(spec) || groups == null || pathTemplate == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(new GatewayOpenApiGroupManifestDTO(
-                    List.of(groups.split(",", -1)),
-                    pathTemplate,
-                    metadata.get("yuheng.openapi.resource-uri"),
-                    metadata.get("yuheng.artifact-version"),
-                    metadata.get("yuheng.build-id")
-            ));
-        } catch (RuntimeException invalid) {
-            return Optional.empty();
-        }
-    }
-
     private Optional<GatewayApplicationBO> application(String id) {
         return applications.findByIdAndDeletedFalse(id);
     }
@@ -1114,8 +954,6 @@ public class GatewayOpenApiSyncService {
     }
 
     private record Observation(
-            DdcManagementServiceKey service,
-            DdcManagementServiceSnapshot snapshot,
             GatewayOpenApiGroupManifestDTO manifest,
             List<GatewayOpenApiSyncCandidateDTO> candidates) {
     }
@@ -1153,24 +991,6 @@ public class GatewayOpenApiSyncService {
                             Map.Entry::getKey,
                             entry -> List.copyOf(entry.getValue())
                     )
-            );
-        }
-
-        private static GroupContext single(
-                GatewayApplicationBO application,
-                GatewayOpenApiSyncCandidateDTO candidate) {
-            GatewayOpenApiGroupManifestDTO manifest =
-                    new GatewayOpenApiGroupManifestDTO(
-                            List.of(candidate.openapiGroup()),
-                            candidate.pathTemplate(),
-                            candidate.resourceUri().toString(),
-                            candidate.artifactVersion(),
-                            candidate.buildId()
-                    );
-            return new GroupContext(
-                    application,
-                    manifest,
-                    Map.of(candidate.openapiGroup(), List.of(candidate))
             );
         }
 

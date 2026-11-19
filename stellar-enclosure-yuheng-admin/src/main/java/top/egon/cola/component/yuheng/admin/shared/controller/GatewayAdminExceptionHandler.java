@@ -21,7 +21,6 @@ import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayAdmin
 import top.egon.cola.component.yuheng.admin.shared.domain.exception.GatewayOpenApiSourceNotAvailableException;
 import top.egon.cola.component.yuheng.admin.shared.domain.vo.GatewayAdminErrorVO;
 import top.egon.cola.component.yuheng.admin.shared.domain.vo.GatewayAdminFieldErrorVO;
-import top.egon.cola.component.yuheng.core.mcp.app.McpAppArtifactStore;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
 
 import java.time.Instant;
@@ -85,50 +84,6 @@ public class GatewayAdminExceptionHandler {
                 List.of(new GatewayAdminFieldErrorVO(error.getRequestPartName(), "REQUIRED", "must be provided")),
                 Instant.now()
         ));
-    }
-
-    /**
-     * 中文说明：执行 制品Conflict 操作；该方法是 {@code GatewayAdminExceptionHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the artifact conflict operation; this method is the invocation entry point on {@code GatewayAdminExceptionHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminExceptionHandler.artifactConflict(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param error 参数 error；parameter error。
-     * @return 返回 制品Conflict 的处理结果；returns the result of the operation.
-     */
-    @ExceptionHandler(McpAppArtifactStore.ArtifactConflictException.class)
-    public ResponseEntity<GatewayAdminErrorVO> artifactConflict(
-            McpAppArtifactStore.ArtifactConflictException error) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                new GatewayAdminErrorVO(
-                        "YUHENG_MCP_ARTIFACT_IMMUTABLE",
-                        error.getMessage(),
-                        null,
-                        List.of(),
-                        Instant.now()
-                )
-        );
-    }
-
-    /**
-     * 中文说明：执行 制品Rejected 操作；该方法是 {@code GatewayAdminExceptionHandler} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the artifact rejected operation; this method is the invocation entry point on {@code GatewayAdminExceptionHandler} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminExceptionHandler.artifactRejected(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param error 参数 error；parameter error。
-     * @return 返回 制品Rejected 的处理结果；returns the result of the operation.
-     */
-    @ExceptionHandler(McpAppArtifactStore.ArtifactRejectedException.class)
-    public ResponseEntity<GatewayAdminErrorVO> artifactRejected(
-            McpAppArtifactStore.ArtifactRejectedException error) {
-        return ResponseEntity.unprocessableEntity().body(
-                new GatewayAdminErrorVO(
-                        "YUHENG_MCP_ARTIFACT_REJECTED",
-                        error.getMessage(),
-                        null,
-                        List.of(),
-                        Instant.now()
-                )
-        );
     }
 
     /**

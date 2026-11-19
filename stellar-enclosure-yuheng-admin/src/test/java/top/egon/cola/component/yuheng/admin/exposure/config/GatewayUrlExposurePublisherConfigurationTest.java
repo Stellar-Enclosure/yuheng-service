@@ -132,11 +132,14 @@ class GatewayUrlExposurePublisherConfigurationTest {
     }
 
     @Test
-    void otherwiseValidPublisherRejectsExtraWriterAndAnOverriddenLegacyJobSwitch() throws Exception {
+    void otherwiseValidPublisherRejectsExtraWritersAndAdminOnlyConfiguration() throws Exception {
         publisher().withBean("rogueWriter", GatewayUrlExposureOutboxDeliveryHandler.Writer.class, () -> ignored -> DeliveryResult.success())
                 .run(context -> assertThat(context).hasFailed());
-        publisher().withPropertyValues("yuheng.admin.openapi.enabled=true").run(context -> assertThat(context).hasFailed());
-        publisher().withPropertyValues("yuheng.admin.tianshu.enabled=true").run(context -> assertThat(context).hasFailed());
+        for (String property : List.of("yuheng.admin.openapi.enabled", "yuheng.admin.logical-catalog.enabled",
+                "yuheng.admin.mcp.si-reader.enabled", "egon.cola.component.tianshu.si.rpc.enabled")) {
+            publisher().withPropertyValues(property + "=true")
+                    .run(context -> assertThat(context.getStartupFailure()).hasRootCauseMessage("YUHENG_EXPOSURE_PUBLISHER_ROLE_INVALID"));
+        }
     }
 
     @Test

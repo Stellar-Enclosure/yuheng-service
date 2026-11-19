@@ -11,7 +11,6 @@ spring:
   config:
     import:
       - optional:file:${UNIFIED_XINGYUAN_RUNTIME_DIR:target/local-unified-xingyuan}/env/stellar-enclosure-yuheng-admin.properties
-      - optional:tianshu:application.yml
   autoconfigure:
     exclude:
       - org.redisson.spring.starter.RedissonAutoConfigurationV4
@@ -57,6 +56,9 @@ management:
 
 yuheng:
   admin:
+    mcp:
+      si-reader:
+        enabled: ${YUHENG_MCP_SI_READER_ENABLED:false}
     exposure:
       role: ADMIN
       api-server: ${YUHENG_PUBLISHER_API_SERVER:}
@@ -69,16 +71,8 @@ yuheng:
         address: ${YUHENG_ADMIN_CACHE_REDIS_ADDRESS}
         database: ${YUHENG_ADMIN_CACHE_REDIS_DATABASE:0}
         password-file: ${YUHENG_ADMIN_CACHE_REDIS_PASSWORD_FILE:}
-    mcp:
-      artifact-root: ${YUHENG_MCP_ARTIFACT_ROOT:${java.io.tmpdir}/egon-cola/yuheng-mcp-artifacts}
     transport-security:
       mode: MTLS
-    tianshu:
-      enabled: false
-      api-rpc-biz-code: ${YUHENG_ADMIN_TIANSHU_API_RPC_BIZ_CODE:infra}
-      api-rpc-app-code: ${YUHENG_ADMIN_TIANSHU_API_RPC_APP_CODE:ge}
-      mcp-biz-code: ${YUHENG_ADMIN_TIANSHU_MCP_BIZ_CODE:infra}
-      mcp-app-code: ${YUHENG_ADMIN_TIANSHU_MCP_APP_CODE:gme}
     openapi:
       enabled: ${YUHENG_ADMIN_OPENAPI_ENABLED:false}
       allow-development-http: ${YUHENG_ADMIN_OPENAPI_ALLOW_DEVELOPMENT_HTTP:false}
@@ -227,58 +221,12 @@ egon:
         tenant-id:
           ignored-tables: [egon_cola_outbox_message]
       rpc:
-        tls:
-          enabled: ${TIANQUAN_SHOUBING_ADMISSION_RPC_TLS_ENABLED:false}
-          development-plaintext: ${TIANQUAN_SHOUBING_ADMISSION_RPC_DEVELOPMENT_PLAINTEXT:${TIANSHU_RPC_DEVELOPMENT_PLAINTEXT:false}}
-          certificate-chain-path: ${TIANQUAN_SHOUBING_ADMISSION_RPC_CERTIFICATE_CHAIN_PATH:}
-          private-key-path: ${TIANQUAN_SHOUBING_ADMISSION_RPC_PRIVATE_KEY_PATH:}
-          trust-certificate-collection-path: ${TIANQUAN_SHOUBING_ADMISSION_RPC_TRUST_CERTIFICATE_COLLECTION_PATH:}
+        transport: h2c
       tianshu:
-        tenant-id: ${TIANSHU_TENANT_ID:}
-        enabled: ${TIANSHU_ENABLED:false}
-        biz-code: ${YUHENG_ADMIN_RESOURCE_BIZ_CODE:xingyuan}
-        env: ${DEPLOYMENT_ENV}
-        app-code: ${YUHENG_ADMIN_RESOURCE_APP_CODE:stellar-enclosure-yuheng-admin}
-        max-config-bytes: ${TIANSHU_MAX_CONFIG_BYTES:1048576}
-        rpc:
-          target: ${TIANSHU_RPC_TARGET:dns:///tianshu-admin:19080}
-          load-balancing-policy: round_robin
-          tls:
-            enabled: ${TIANSHU_RPC_TLS_ENABLED:true}
-            development-plaintext: ${TIANSHU_RPC_DEVELOPMENT_PLAINTEXT:false}
-          auth:
-            runtime:
-              access-key: ${TIANSHU_RPC_RUNTIME_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_RUNTIME_SECRET_KEY:}
-            registry:
-              access-key: ${TIANSHU_RPC_REGISTRY_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_REGISTRY_SECRET_KEY:}
-            management:
-              access-key: ${TIANSHU_RPC_MANAGEMENT_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_MANAGEMENT_SECRET_KEY:}
-        redis:
-          username: ${TIANSHU_REDIS_USERNAME:}
-          enabled: true
-          mode: ${TIANSHU_REDIS_MODE:SINGLE}
-          host: ${TIANSHU_REDIS_HOST:127.0.0.1}
-          port: ${TIANSHU_REDIS_PORT:6379}
-          password: ${TIANSHU_REDIS_PASSWORD:}
-          database: ${TIANSHU_REDIS_DATABASE:0}
-        registry:
-          enabled: ${TIANSHU_REGISTRY_ENABLED:false}
-          http:
-            enabled: ${YUHENG_ADMIN_TIANSHU_REGISTRATION_ENABLED:false}
-            service-name: stellar-enclosure-yuheng-admin
-            version: ${YUHENG_ADMIN_VERSION:0.0.1}
-            protocol: http
-            advertised-host: ${YUHENG_ADMIN_TIANSHU_ADVERTISED_HOST:127.0.0.1}
-            port: ${YUHENG_ADMIN_TIANSHU_ADVERTISED_PORT:0}
-            metadata:
-              yuheng.component: admin
+        enabled: false
       yuheng:
         openapi:
           enabled: ${YUHENG_ADMIN_HTTP_OPENAPI_ENABLED:false}
-          publish-to-tianshu: ${YUHENG_ADMIN_HTTP_OPENAPI_PUBLISH_TO_TIANSHU:true}
           published-groups:
             - stellar-enclosure-yuheng-admin
           biz-code: ${YUHENG_ADMIN_RESOURCE_BIZ_CODE:xingyuan}

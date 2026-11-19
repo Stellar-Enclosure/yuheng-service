@@ -1365,6 +1365,20 @@ class GatewayPublicationMpTest {
     }
 
     @Test
+    void damagedMcpPublicationCannotBeTreatedAsALegacyRelease() {
+        var head = releaseHead(RELEASE_ID, GatewayReleaseStatus.READY, RELEASE_CREATED_AT, 0L);
+        when(releaseDAO.selectActiveById(any(Serializable.class))).thenReturn(head);
+        var row = releaseContent(RELEASE_ID);
+        var snapshot = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        snapshot.putObject("mcpPublication").put("schemaVersion", "mcp-api-mapping-v1");
+        row.setCanonicalSnapshot(snapshot);
+        when(releaseContentDAO.selectOne(any(), anyBoolean())).thenReturn(row);
+
+        assertThatThrownBy(() -> releases.loadNative(Long.toString(RELEASE_ID)))
+                .hasMessage("YUHENG_NATIVE_RELEASE_CORRUPT").hasNoCause();
+    }
+
+    @Test
     void nativeDocumentsAreDefensiveAndJsonbNumericFormattingDoesNotChangeTheArtifactDigest() {
         var artifact = nativeArtifact();
         var canonical = (com.fasterxml.jackson.databind.node.ObjectNode) artifact.canonicalSnapshot();
@@ -3151,5 +3165,93 @@ class GatewayPublicationMpTest {
                 .updateTime(RELEASE_CREATED_AT)
                 .version(7L)
                 .build();
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "yuheng.outbox.test.postgres.url", matches = ".+")
+    void nativePublicationDraftLockSerializesOneGroupWithoutBlockingAnotherGroup() throws Exception {
+        top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.withManagedOutbox(application -> {
+            assertThat(application).hasNotFailed();
+            var factory = application.getBean(org.apache.ibatis.session.SqlSessionFactory.class);
+            var configuration = factory.getConfiguration();
+            var resource = new org.springframework.core.io.ClassPathResource("mybatis/mapper/routing/GatewayDraftDAO.xml");
+            try (var stream = resource.getInputStream()) {
+                new org.apache.ibatis.builder.xml.XMLMapperBuilder(stream, configuration,
+                        resource.toString(), configuration.getSqlFragments()).parse();
+            }
+            var sessions = new org.mybatis.spring.SqlSessionTemplate(factory);
+            var properties = application.getBean(EgonColaMybatisPlusProperties.class);
+            var target = new top.egon.cola.component.yuheng.admin.routing.repository.impl.MpGatewayDraftMetadataRepository(
+                    new GatewayDraftPersistenceRepository(sessions.getMapper(GatewayDraftDAO.class), properties),
+                    new top.egon.cola.component.yuheng.admin.routing.converter.GatewayDraftPersistenceConverter());
+            var advice = new org.springframework.transaction.interceptor.TransactionInterceptor(
+                    application.getBean("gatewayTransactionManager", org.springframework.transaction.PlatformTransactionManager.class),
+                    new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource());
+            advice.setBeanFactory(application.getBeanFactory());
+            var proxy = new org.springframework.aop.framework.ProxyFactory(target);
+            proxy.addAdvice(advice);
+            var repository = (top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository) proxy.getProxy();
+            var context = application.getBean(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent.class);
+            var transaction = application.getBean("gatewayExposureTransactionTemplate", org.springframework.transaction.support.TransactionTemplate.class);
+            var logical = new org.springframework.jdbc.core.JdbcTemplate(application.getBean("dataSource", javax.sql.DataSource.class));
+            var physical = new org.springframework.jdbc.core.JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_URL),
+                    System.getProperty(top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.ATOMIC_USER), ""));
+            context.call(null, () -> transaction.execute(status -> {
+                for (long group : new long[]{99101L, 99102L}) {
+                    logical.update("""
+                            INSERT INTO gateway_group(id,tenant_id,create_user_id,create_time,update_user_id,update_time,
+                                gateway_group_code,display_name,env,namespace)
+                            VALUES (?,7001,'scheduled-test-service',CURRENT_TIMESTAMP,'scheduled-test-service',CURRENT_TIMESTAMP,
+                                ?,'Draft row lock acceptance','isolated','acceptance')
+                            """, group, "draft-lock-" + group);
+                    repository.save(new top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO(
+                            Long.toString(group), "scheduled-test-service", Instant.now()));
+                }
+                return null;
+            }));
+            var waiter = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<Long>>();
+            var entered = new java.util.concurrent.CountDownLatch(1);
+            var firstPid = new java.util.concurrent.atomic.AtomicInteger();
+            var waitingPid = new java.util.concurrent.atomic.AtomicInteger();
+            try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+                context.call(null, () -> transaction.execute(status -> {
+                    firstPid.set(logical.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                    var locked = repository.lockForPublication("99101").orElseThrow();
+                    assertThat(locked.getRevision()).isZero();
+                    locked.touch("accepted under publication lock", "scheduled-test-service", Instant.now());
+                    assertThat(repository.save(locked).getRevision()).isEqualTo(1L);
+                    waiter.set(workers.submit(() -> context.call(null, () -> transaction.execute(other -> {
+                        waitingPid.set(logical.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        entered.countDown();
+                        return repository.lockForPublication("99101").orElseThrow().getRevision();
+                    }))));
+                    var independent = workers.submit(() -> context.call(null, () -> transaction.execute(other ->
+                            repository.lockForPublication("99102").orElseThrow().getRevision())));
+                    org.assertj.core.api.Assertions.assertThatCode(() -> {
+                        assertThat(independent.get(5, java.util.concurrent.TimeUnit.SECONDS)).isZero();
+                        assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                        boolean blocked = false;
+                        while (System.nanoTime() < deadline && !blocked) {
+                            blocked = physical.queryForObject("""
+                                    SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
+                                        WHERE pid=? AND wait_event_type='Lock' AND query ILIKE '%FOR UPDATE%')
+                                    """, Boolean.class, waitingPid.get());
+                            if (!blocked) Thread.sleep(20);
+                        }
+                        assertThat(blocked).as("the second logical transaction is waiting on the real PostgreSQL row lock").isTrue();
+                        assertThat(waitingPid.get()).isPositive().isNotEqualTo(firstPid.get());
+                        assertThat(waiter.get().isDone()).isFalse();
+                    }).doesNotThrowAnyException();
+                    return null;
+                }));
+                assertThat(waiter.get().get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(1L);
+            }
+            assertThat(physical.queryForObject("SELECT revision FROM public.gateway_draft_t0 WHERE tenant_id=7001 AND gateway_group_id=99101",
+                    Long.class)).isEqualTo(1L);
+            assertThat(physical.queryForObject("SELECT revision FROM public.gateway_draft_t0 WHERE tenant_id=7001 AND gateway_group_id=99102",
+                    Long.class)).isZero();
+        });
     }
 }

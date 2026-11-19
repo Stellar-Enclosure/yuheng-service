@@ -22,6 +22,7 @@ import top.egon.cola.component.outbox.autoconfigure.TransactionalOutboxPropertie
 import top.egon.cola.component.outbox.dispatch.OutboxDispatcher;
 import top.egon.cola.component.outbox.event.OutboxCommittedEvent;
 import top.egon.cola.component.outbox.event.OutboxCommittedEventListener;
+import top.egon.cola.component.rpc.tianshu.autoconfigure.DdcRpcProperties;
 import top.egon.cola.component.yuheng.admin.config.GatewayExposurePublicationConfiguration;
 import top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent;
 import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository;
@@ -36,7 +37,9 @@ import top.egon.cola.component.yuheng.admin.exposure.service.GatewayUrlExposureO
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayUrlExposureReconciler;
 import top.egon.cola.component.yuheng.admin.exposure.support.outbox.GatewayUrlExposureOutboxDeliveryHandler;
 import top.egon.cola.component.yuheng.admin.exposure.support.outbox.GatewayUrlExposureOutboxDeliveryHandler.Writer;
+import top.egon.cola.component.yuheng.admin.mcp.config.McpNativeSiReaderConfiguration;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
+import top.egon.cola.component.yuheng.admin.scope.config.GatewayScopeBindingConfiguration;
 
 import java.net.URI;
 import java.nio.file.Path;
@@ -74,7 +77,9 @@ public class GatewayUrlExposurePublisherConfiguration {
                     || application instanceof WebApplicationContext || !outbox.getPolling().isEnabled()
                     || !Boolean.FALSE.equals(environment.getProperty("egon.cola.component.rpc.enabled", Boolean.class))
                     || !Boolean.FALSE.equals(environment.getProperty("egon.cola.component.tianshu.enabled", Boolean.class))
-                    || !Boolean.FALSE.equals(environment.getProperty("yuheng.admin.tianshu.enabled", Boolean.class))
+                    || environment.getProperty(GatewayScopeBindingConfiguration.PREFIX + ".enabled", Boolean.class, false)
+                    || environment.getProperty(McpNativeSiReaderConfiguration.PREFIX + ".enabled", Boolean.class, false)
+                    || environment.getProperty(DdcRpcProperties.PREFIX + ".enabled", Boolean.class, false)
                     || environment.getProperty("yuheng.admin.openapi.enabled", Boolean.class, false)
                     || environment.getProperty("yuheng.admin.observability.kafka.enabled", Boolean.class, false)
                     || environment.getProperty("egon.cola.component.yuheng.openapi.enabled", Boolean.class, false)

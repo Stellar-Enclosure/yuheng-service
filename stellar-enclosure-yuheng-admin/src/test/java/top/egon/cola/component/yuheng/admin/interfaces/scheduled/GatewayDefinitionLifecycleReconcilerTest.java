@@ -1,312 +1,71 @@
 package top.egon.cola.component.yuheng.admin.reporting.controller.scheduled;
-
 import static top.egon.cola.component.yuheng.admin.config.GatewayPersistenceTestSupport.persistenceContext;
-
-import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeAll;
 import org.springframework.transaction.support.TransactionTemplate;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService;
-import top.egon.cola.component.yuheng.admin.reporting.repository.GatewayDefinitionLifecycleRepository;
+import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 import top.egon.cola.component.yuheng.admin.application.domain.bo.GatewayApplicationBO;
 import top.egon.cola.component.yuheng.admin.application.repository.GatewayApplicationRepository;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
+import top.egon.cola.component.yuheng.admin.reporting.repository.GatewayDefinitionLifecycleRepository;
 import top.egon.cola.component.yuheng.admin.reporting.domain.vo.GatewayReconcileResultVO;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.Duration;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import top.egon.cola.component.yuheng.admin.reporting.controller.scheduled.GatewayDefinitionLifecycleReconciler.*;
+import java.time.*;
+import java.util.*;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 
 class GatewayDefinitionLifecycleReconcilerTest {
-
-    @BeforeAll
-    static void bindTheProcessWideEngine() {
-        SnowflakeIdGenerator.initialize(0L, Duration.ofMillis(5));
+    private static final Instant NOW=Instant.parse("2026-08-26T03:00:00Z");
+    @BeforeAll static void ids(){SnowflakeIdGenerator.initialize(0L,Duration.ofMillis(5));}
+    private final GatewayApplicationRepository apps=mock(GatewayApplicationRepository.class);
+    private final GatewayDefinitionLifecycleRepository lifecycle=mock(GatewayDefinitionLifecycleRepository.class);
+    private final GatewayAuditLogRepository audits=mock(GatewayAuditLogRepository.class);
+    private final TransactionTemplate tx=mock(TransactionTemplate.class);
+    @Test void absentKubernetesEvidenceNeverMutatesOfflineOrClaimsSuccess() throws Exception {
+        reconciler(null).reconcile();verifyNoInteractions(lifecycle,audits,tx);
     }
-
-    @Test
-    void reconcilesOnlyOnlineProviderDefinitionSetsAndAuditsChanges() throws Exception {
-        Instant now = Instant.parse("2026-07-25T08:00:00Z");
-        GatewayApplicationRepository applications =
-                mock(GatewayApplicationRepository.class);
-        GatewayProjectionService projections =
-                mock(GatewayProjectionService.class);
-        GatewayDefinitionLifecycleRepository lifecycle =
-                mock(GatewayDefinitionLifecycleRepository.class);
-        GatewayAuditLogRepository audits =
-                mock(GatewayAuditLogRepository.class);
-        TransactionTemplate transactions = mock(TransactionTemplate.class);
-        doAnswer(invocation -> {
-            java.util.function.Consumer<org.springframework.transaction
-                    .TransactionStatus> callback = invocation.getArgument(0);
-            callback.accept(null);
-            return null;
-        }).when(transactions).executeWithoutResult(any());
-        when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
-                .thenReturn(List.of(new GatewayApplicationBO(
-                        "application-1",
-                        "test-biz",
-                        "orders",
-                        "Orders",
-                        "test",
-                        "yuheng",
-                        null,
-                        "admin",
-                        now
-                )));
-        when(projections.instances(
-                "test-biz", "orders", "test", "yuheng"
-        )).thenReturn(
-                new top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProjectionEnvelopeVO<>(
-                        List.of(provider(
-                                "provider-1",
-                                "definition-1",
-                                "ONLINE",
-                                now.plusSeconds(30)
-                        )),
-                        now,
-                        "TIANSHU_SERVICE_REGISTRY",
-                        false,
-                        null
-                )
-        );
-        when(lifecycle.reconcile(eq(java.util.Set.of("definition-1")), eq(now)))
-                .thenReturn(new top.egon.cola.component.yuheng.admin.reporting.domain.vo
-                        .GatewayReconcileResultVO(1, 1, 2, 1));
-        GatewayDefinitionLifecycleReconciler reconciler =
-                new GatewayDefinitionLifecycleReconciler(
-                        mock(DdcManagementClient.class),
-                        applications,
-                        projections,
-                        lifecycle,
-                        audits,
-                        transactions,
-                        Clock.fixed(now, ZoneOffset.UTC),
-                        persistenceContext());
-
-        reconciler.reconcile();
-
-        verify(lifecycle).reconcile(
-                java.util.Set.of("definition-1"),
-                now
-        );
-        verify(audits).save(any());
+    @Test void incompleteStaleExpiredForeignOrWrongScopeEvidenceNeverMutatesOffline() throws Exception {
+        var reader=mock(NativeObservationReader.class);var reconciler=reconciler(reader);
+        when(apps.findAllByDeletedFalseOrderByCreatedAtDesc()).thenReturn(List.of(app()));
+        for(int kind=0;kind<5;kind++){
+            final int variant=kind;
+            when(reader.current(eq(7001L),any())).thenAnswer(call->{var scope=call.getArgument(1,top.egon.cola.component.yuheng.admin.reporting.domain.dto.GatewayDefinitionLifecycleScopeDTO.class);
+                return Optional.of(new NativeObservationVO(variant==3?7002:7001,variant==4?new top.egon.cola.component.yuheng.admin.reporting.domain.dto.GatewayDefinitionLifecycleScopeDTO("other","orders","prod","logical"):scope,
+                        variant!=0,variant!=1,NOW.minusSeconds(1),variant==2?NOW:NOW.plusSeconds(30),Set.of()));});
+            reconciler.reconcile();
+        }
+        verifyNoInteractions(lifecycle,audits,tx);
     }
-
-    @Test
-    void staleProviderProjectionCannotRetireDefinitions() throws Exception {
-        Instant now = Instant.parse("2026-07-25T08:00:00Z");
-        GatewayApplicationRepository applications =
-                mock(GatewayApplicationRepository.class);
-        GatewayProjectionService projections =
-                mock(GatewayProjectionService.class);
-        GatewayDefinitionLifecycleRepository lifecycle =
-                mock(GatewayDefinitionLifecycleRepository.class);
-        when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
-                .thenReturn(List.of(new GatewayApplicationBO(
-                        "application-1",
-                        "test-biz",
-                        "orders",
-                        "Orders",
-                        "test",
-                        "yuheng",
-                        null,
-                        "admin",
-                        now
-                )));
-        when(projections.instances(
-                "test-biz", "orders", "test", "yuheng"
-        )).thenReturn(
-                new top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProjectionEnvelopeVO<>(
-                        List.of(),
-                        now.minusSeconds(30),
-                        "TIANSHU_SERVICE_REGISTRY",
-                        true,
-                        "unavailable"
-                )
-        );
-        GatewayDefinitionLifecycleReconciler reconciler =
-                new GatewayDefinitionLifecycleReconciler(
-                        mock(DdcManagementClient.class),
-                        applications,
-                        projections,
-                        lifecycle,
-                        mock(GatewayAuditLogRepository.class),
-                        mock(TransactionTemplate.class),
-                        Clock.fixed(now, ZoneOffset.UTC),
-                        persistenceContext());
-
-        reconciler.reconcile();
-
-        verify(lifecycle, never()).reconcile(any(), any());
+    @Test void completeFreshEvidenceReconcilesOnlyItsActiveSetsAndAuditsChanges() throws Exception {
+        var reader=mock(NativeObservationReader.class);var reconciler=reconciler(reader);prepare(reader,Set.of("active"));
+        when(lifecycle.activeOpenApiDefinitionSetIds()).thenReturn(Set.of());
+        when(lifecycle.reconcile(Set.of("active"),NOW)).thenReturn(new GatewayReconcileResultVO(1,1,1,1));
+        runTransactions();reconciler.reconcile();verify(lifecycle).reconcile(Set.of("active"),NOW);verify(audits).save(any());
     }
-
-    @Test
-    void reconcilesEmptyActiveSetWhenLastProviderDisappears() throws Exception {
-        Instant now = Instant.parse("2026-07-25T08:00:00Z");
-        GatewayApplicationRepository applications =
-                mock(GatewayApplicationRepository.class);
-        GatewayProjectionService projections =
-                mock(GatewayProjectionService.class);
-        GatewayDefinitionLifecycleRepository lifecycle =
-                mock(GatewayDefinitionLifecycleRepository.class);
-        TransactionTemplate transactions = mock(TransactionTemplate.class);
-        doAnswer(invocation -> {
-            java.util.function.Consumer<org.springframework.transaction
-                    .TransactionStatus> callback = invocation.getArgument(0);
-            callback.accept(null);
-            return null;
-        }).when(transactions).executeWithoutResult(any());
-        when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
-                .thenReturn(List.of(new GatewayApplicationBO(
-                        "application-1",
-                        "test-biz",
-                        "orders",
-                        "Orders",
-                        "test",
-                        "yuheng",
-                        null,
-                        "admin",
-                        now
-                )));
-        when(projections.instances(
-                "test-biz", "orders", "test", "yuheng"
-        )).thenReturn(
-                new top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProjectionEnvelopeVO<>(
-                        List.of(),
-                        now,
-                        "TIANSHU_SERVICE_REGISTRY",
-                        false,
-                        null
-                )
-        );
-        when(lifecycle.reconcile(Set.of(), now)).thenReturn(
-                new top.egon.cola.component.yuheng.admin.reporting.domain.vo.GatewayReconcileResultVO(
-                        0,
-                        1,
-                        0,
-                        2
-                )
-        );
-        GatewayDefinitionLifecycleReconciler reconciler =
-                new GatewayDefinitionLifecycleReconciler(
-                        mock(DdcManagementClient.class),
-                        applications,
-                        projections,
-                        lifecycle,
-                        mock(GatewayAuditLogRepository.class),
-                        transactions,
-                        Clock.fixed(now, ZoneOffset.UTC),
-                        persistenceContext());
-
-        reconciler.reconcile();
-
-        verify(lifecycle).reconcile(Set.of(), now);
+    @Test void completeEvidenceCanConfirmLastProviderDisappeared() throws Exception {
+        var reader=mock(NativeObservationReader.class);var reconciler=reconciler(reader);prepare(reader,Set.of());
+        when(lifecycle.activeOpenApiDefinitionSetIds()).thenReturn(Set.of());
+        when(lifecycle.reconcile(Set.of(),NOW)).thenReturn(new GatewayReconcileResultVO(0,1,0,1));
+        runTransactions();reconciler.reconcile();verify(lifecycle).reconcile(Set.of(),NOW);
     }
-
-    @Test
-    void unionsValidOpenApiAggregateSetsWithDdcProviderSets() throws Exception {
-        Instant now = Instant.parse("2026-07-25T08:00:00Z");
-        GatewayApplicationRepository applications =
-                mock(GatewayApplicationRepository.class);
-        GatewayProjectionService projections = mock(GatewayProjectionService.class);
-        GatewayDefinitionLifecycleRepository lifecycle =
-                mock(GatewayDefinitionLifecycleRepository.class);
-        TransactionTemplate transactions = mock(TransactionTemplate.class);
-        doAnswer(invocation -> {
-            java.util.function.Consumer<org.springframework.transaction
-                    .TransactionStatus> callback = invocation.getArgument(0);
-            callback.accept(null);
-            return null;
-        }).when(transactions).executeWithoutResult(any());
-        when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
-                .thenReturn(List.of(new GatewayApplicationBO(
-                        "application-1",
-                        "test-biz",
-                        "orders",
-                        "Orders",
-                        "test",
-                        "yuheng",
-                        null,
-                        "admin",
-                        now
-                )));
-        when(projections.instances(
-                "test-biz", "orders", "test", "yuheng"
-        )).thenReturn(new top.egon.cola.component.yuheng.admin.runtime.domain.vo
-                .GatewayProjectionEnvelopeVO<>(
-                List.of(provider(
-                        "provider-1",
-                        "rpc-set",
-                        "ONLINE",
-                        now.plusSeconds(30)
-                )),
-                now,
-                "TIANSHU_SERVICE_REGISTRY",
-                false,
-                null
-        ));
-        when(lifecycle.activeOpenApiDefinitionSetIds()).thenReturn(
-                Set.of("openapi-set")
-        );
-        when(lifecycle.reconcile(
-                Set.of("rpc-set", "openapi-set"),
-                now
-        )).thenReturn(new GatewayReconcileResultVO(0, 0, 0, 0));
-
-        GatewayDefinitionLifecycleReconciler reconciler =
-                new GatewayDefinitionLifecycleReconciler(
-                        mock(DdcManagementClient.class),
-                        applications,
-                        projections,
-                        lifecycle,
-                        mock(GatewayAuditLogRepository.class),
-                        transactions,
-                        Clock.fixed(now, ZoneOffset.UTC),
-                        persistenceContext());
-
-        reconciler.reconcile();
-
-        verify(lifecycle).reconcile(
-                Set.of("rpc-set", "openapi-set"),
-                now
-        );
+    @Test void independentlyValidOpenApiCatalogSetsRemainInTheUnion() throws Exception {
+        var reader=mock(NativeObservationReader.class);var reconciler=reconciler(reader);prepare(reader,Set.of("native-set"));
+        when(lifecycle.activeOpenApiDefinitionSetIds()).thenReturn(Set.of("openapi-set"));
+        when(lifecycle.reconcile(Set.of("native-set","openapi-set"),NOW)).thenReturn(new GatewayReconcileResultVO(0,0,0,0));
+        runTransactions();reconciler.reconcile();verify(lifecycle).reconcile(Set.of("native-set","openapi-set"),NOW);verifyNoInteractions(audits);
     }
-
-    private top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO provider(
-            String instanceId,
-            String definitionSetId,
-            String status,
-            Instant expireAt) {
-        return new top.egon.cola.component.yuheng.admin.runtime.domain.vo.GatewayProviderInstanceVO(
-                "HTTP_PROVIDER:HTTP:orders:default:1.0.0",
-                "HTTP",
-                "orders",
-                "default",
-                "1.0.0",
-                instanceId,
-                "lease-" + instanceId,
-                "127.0.0.1",
-                18080,
-                null,
-                "zone-a",
-                100,
-                Map.of("yuheng.definition-set-id", definitionSetId),
-                definitionSetId,
-                status,
-                expireAt,
-                expireAt.minusSeconds(30)
-        );
+    @Test void missingOneScopeOfTheInstallationPreventsGlobalOfflineInference() throws Exception {
+        var reader=mock(NativeObservationReader.class);var reconciler=reconciler(reader);prepare(reader,Set.of());
+        var another=app();another.setNamespace("another-logical");when(apps.findAllByDeletedFalseOrderByCreatedAtDesc()).thenReturn(List.of(app(),another));
+        when(reader.current(eq(7001L),argThat(scope->"another-logical".equals(scope.namespace())))).thenReturn(Optional.empty());
+        reconciler.reconcile();verifyNoInteractions(lifecycle,audits,tx);
     }
+    private GatewayDefinitionLifecycleReconciler reconciler(NativeObservationReader reader){return new GatewayDefinitionLifecycleReconciler(reader,apps,lifecycle,audits,tx,Clock.fixed(NOW,ZoneOffset.UTC),persistenceContext());}
+    private void prepare(NativeObservationReader reader,Set<String> ids){
+        when(apps.findAllByDeletedFalseOrderByCreatedAtDesc()).thenReturn(List.of(app()));
+        when(reader.current(eq(7001L),any())).thenAnswer(call->Optional.of(new NativeObservationVO(7001,call.getArgument(1),true,true,NOW.minusSeconds(1),NOW.plusSeconds(30),ids)));
+    }
+    private void runTransactions(){doAnswer(call->{java.util.function.Consumer<org.springframework.transaction.TransactionStatus> action=call.getArgument(0);action.accept(null);return null;}).when(tx).executeWithoutResult(any());}
+    private static GatewayApplicationBO app(){return new GatewayApplicationBO("application-1","platform","orders","Orders","prod","logical",null,"admin",NOW);}
 }

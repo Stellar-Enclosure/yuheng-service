@@ -2,9 +2,7 @@ package top.egon.cola.component.yuheng.admin.scope.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.tianshu.error.management.DdcManagementClientException;
-import top.egon.cola.component.tianshu.model.management.DdcManagementScopeBinding;
+import top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO;
 import top.egon.cola.component.yuheng.admin.application.domain.bo.GatewayApplicationBO;
 import top.egon.cola.component.yuheng.admin.application.repository.GatewayApplicationRepository;
 
@@ -20,7 +18,7 @@ import static org.mockito.Mockito.when;
 
 class GatewayScopeServiceTest {
 
-    private DdcManagementClient client;
+    private GatewayScopeBindingReader client;
 
     private GatewayApplicationRepository applications;
 
@@ -28,14 +26,14 @@ class GatewayScopeServiceTest {
 
     @BeforeEach
     void setUp() {
-        client = mock(DdcManagementClient.class);
+        client = mock(GatewayScopeBindingReader.class);
         applications = mock(GatewayApplicationRepository.class);
         service = new GatewayScopeService(client, applications);
     }
 
     @Test
     void mapsTwoNamespaceBindingsToOneGatewayApplication() {
-        when(client.getScopeBindings(any())).thenReturn(List.of(
+        when(client.bindings(any())).thenReturn(List.of(
                 binding("binding-default", "default", true),
                 binding("binding-ops", "ops", true)
         ));
@@ -55,23 +53,19 @@ class GatewayScopeServiceTest {
 
     @Test
     void reportsDdcFailureInsteadOfReturningStaticScopes() {
-        when(client.getScopeBindings(any()))
-                .thenThrow(new DdcManagementClientException(
-                        "TIANSHU_MANAGEMENT_IO_ERROR",
-                        "offline",
-                        null
-                ));
+        when(client.bindings(any()))
+                .thenThrow(new IllegalStateException("offline"));
 
         assertThatThrownBy(service::list)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Tianshu scope catalog");
     }
 
-    private DdcManagementScopeBinding binding(
+    private BindingVO binding(
             String bindingId,
             String namespace,
             boolean enabled) {
-        return new DdcManagementScopeBinding(
+        return new BindingVO(
                 bindingId,
                 "retail",
                 namespace,

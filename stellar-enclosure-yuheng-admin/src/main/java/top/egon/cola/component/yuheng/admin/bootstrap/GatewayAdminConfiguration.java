@@ -11,7 +11,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,12 +19,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
 import top.egon.cola.component.yuheng.admin.config.GatewayAdminProperties;
 import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminOpenApiProperties;
 import top.egon.cola.component.yuheng.admin.credential.service.AesGcmGatewaySecretProtector;
 import top.egon.cola.component.yuheng.admin.credential.service.GatewaySecretProtector;
-import top.egon.cola.component.yuheng.admin.mcp.repository.filesystem.FileSystemMcpAppArtifactRepository;
 import top.egon.cola.component.yuheng.admin.observability.controller.message.GatewayCallEventCodec;
 import top.egon.cola.component.yuheng.admin.observability.controller.message.GatewayCallEventConsumerHandler;
 import top.egon.cola.component.yuheng.admin.observability.controller.message.GatewayKafkaCallEventConsumer;
@@ -43,21 +40,11 @@ import top.egon.cola.component.yuheng.admin.exposure.service.GatewayUrlExposureS
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.service.GatewayReleasePublicationCoordinator;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher;
 import top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService;
 import top.egon.cola.component.yuheng.admin.openapi.client.GatewayOpenApiDnsPolicy;
-import top.egon.cola.component.yuheng.admin.openapi.client.GatewayOpenApiTokenSupplier;
 import top.egon.cola.component.yuheng.admin.openapi.validation.GatewayOpenApiValidationLimits;
-import top.egon.cola.component.yuheng.mcp.app.domain.McpAppSecurityValidator;
-import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientFactory;
-import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientHandle;
-import top.egon.cola.platform.tianquan.shoubing.starter.autoconfigure.IdpStarterProperties;
-import top.egon.cola.platform.tianquan.shoubing.starter.client.IdpServiceOAuth2Client;
-import top.egon.cola.platform.tianquan.shoubing.starter.client.IdpServiceTokenRequest;
-import top.egon.cola.platform.tianquan.shoubing.contract.ServiceTokenContext;
 
 import java.net.http.HttpClient;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Set;
@@ -181,128 +168,6 @@ public class GatewayAdminConfiguration {
             GatewayAdminOpenApiProperties properties) {
         properties.validate();
         return new GatewayOpenApiDnsPolicy(properties.getAllowedCidrs());
-    }
-
-    /**
-     * Bridges provider reads to the existing Tianquan-Shoubing SERVICE-token facade. If
-     * OAuth is not configured, the boundary fails closed and exposes no
-     * credential or target details.
-     */
-    @Bean(name = "gatewayOpenApiTokenSupplier")
-    @ConditionalOnProperty(
-            name = "yuheng.admin.openapi.enabled",
-            havingValue = "true"
-    )
-    GatewayOpenApiTokenSupplier gatewayOpenApiTokenSupplier(
-            ObjectProvider<IdpServiceOAuth2Client> oauth,
-            ObjectProvider<IdpStarterProperties> idpProperties,
-            GatewayAdminOpenApiProperties properties) {
-        properties.validate();
-        IdpServiceOAuth2Client client = oauth.getIfAvailable();
-        IdpStarterProperties settings = idpProperties.getIfAvailable();
-        if (client == null || settings == null) {
-            return (resourceUri, scope) -> {
-                throw new top.egon.cola.component.yuheng.admin.openapi.client
-                        .GatewayOpenApiFetchException(
-                        "YUHENG_OPENAPI_OAUTH_NOT_CONFIGURED",
-                        false,
-                        "OpenAPI service token authorization is not configured"
-                );
-            };
-        }
-        settings.getServiceClient().validate();
-        return (resourceUri, scope) -> client.authorize(
-                new IdpServiceTokenRequest(
-                        settings.getServiceClient().getRegistrationId(),
-                        settings.getServiceClient().getAppId(),
-                        resourceUri,
-                        ServiceTokenContext.PLATFORM,
-                        null,
-                        Set.of(scope)
-                )
-        ).getTokenValue();
-    }
-
-    /**
-     * 中文说明：执行 MCPApp制品存储 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the mcp app artifact store operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.mcpAppArtifactStore(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param artifactRoot 参数 制品Root；parameter artifact root。
-     * @return 返回 MCPApp制品存储 的处理结果；returns the result of the operation.
-     */
-    @Bean
-    FileSystemMcpAppArtifactRepository mcpAppArtifactStore(
-            @Value(
-                    "${yuheng.admin.mcp.artifact-root:"
-                            + "${java.io.tmpdir}/egon-cola/"
-                            + "yuheng-mcp-artifacts}"
-            ) String artifactRoot) {
-        return new FileSystemMcpAppArtifactRepository(Path.of(artifactRoot));
-    }
-
-    /**
-     * 中文说明：执行 MCPApp安全校验器 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the mcp app security validator operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.mcpAppSecurityValidator(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 MCPApp安全校验器 的处理结果；returns the result of the operation.
-     */
-    @Bean
-    McpAppSecurityValidator mcpAppSecurityValidator() {
-        return new McpAppSecurityValidator();
-    }
-
-    /**
-     * 中文说明：执行 网关DdcManagement客户端Handle 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the gateway ddc management client handle operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.gatewayDdcManagementClientHandle(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param factory 参数 工厂；parameter factory。
-     * @return 返回 网关DdcManagement客户端Handle 的处理结果；returns the result of the operation.
-     */
-    @Bean(destroyMethod = "close")
-    @ConditionalOnProperty(
-            name = "yuheng.admin.tianshu.enabled",
-            havingValue = "true"
-    )
-    DdcRpcClientHandle<DdcManagementClient>
-            gatewayDdcManagementClientHandle(DdcRpcClientFactory factory) {
-        return factory.managementClient();
-    }
-
-    /**
-     * 中文说明：执行 ddcManagement客户端 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the ddc management client operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.ddcManagementClient(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param handle 参数 handle；parameter handle。
-     * @return 返回 ddcManagement客户端 的处理结果；returns the result of the operation.
-     */
-    @Bean
-    @ConditionalOnProperty(
-            name = "yuheng.admin.tianshu.enabled",
-            havingValue = "true"
-    )
-    DdcManagementClient ddcManagementClient(
-            @Qualifier("gatewayDdcManagementClientHandle")
-            DdcRpcClientHandle<DdcManagementClient> handle) {
-        return handle.client();
-    }
-
-    /**
-     * 中文说明：执行 网关Ddc规则发布器 操作；该方法是 {@code GatewayAdminConfiguration} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the gateway ddc rule publisher operation; this method is the invocation entry point on {@code GatewayAdminConfiguration} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code GatewayAdminConfiguration.gatewayDdcRulePublisher(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param client 参数 客户端；parameter client。
-     * @return 返回 网关Ddc规则发布器 的处理结果；returns the result of the operation.
-     */
-    @Bean
-    @ConditionalOnBean(DdcManagementClient.class)
-    GatewayDdcRulePublisher gatewayDdcRulePublisher(
-            DdcManagementClient client) {
-        return new GatewayDdcRulePublisher(client);
     }
 
     /** The Admin coordinator accepts durable intents; Kubernetes writes run in the separate writer. */

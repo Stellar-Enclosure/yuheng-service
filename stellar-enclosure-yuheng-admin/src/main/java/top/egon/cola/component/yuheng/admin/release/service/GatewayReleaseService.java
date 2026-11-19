@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -24,6 +26,8 @@ import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCom
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.*;
 import top.egon.cola.component.yuheng.admin.group.domain.bo.GatewayGroupBO;
 import top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository;
+import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpApiMappingContentBO;
+import top.egon.cola.component.yuheng.admin.mcp.domain.enums.McpPersistentRiskLevelEnum;
 import top.egon.cola.component.yuheng.admin.mcp.service.McpReleaseContentFactory;
 import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
@@ -52,6 +56,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,37 +67,39 @@ import java.util.Set;
 
 /** Accepts immutable native releases and current control CAS in one LOCAL transaction, with no network writes. */
 @Validated
+@Slf4j
 @Service("gatewayReleaseService")
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class GatewayReleaseService {
+    @Qualifier("mpGatewayGroupRepository")
     private final GatewayGroupRepository groups;
+    @Qualifier("mpGatewayDraftMetadataRepository")
     private final GatewayDraftJpaRepository drafts;
+    @Qualifier("gatewayDraftService")
     private final GatewayDraftService draftService;
+    @Qualifier("mpGatewayCatalogRepository")
     private final GatewayCatalogRepository catalog;
+    @Qualifier("mpGatewayReleaseRepository")
     private final GatewayReleaseRepository releases;
+    @Qualifier("gatewayAuditLogRepository")
     private final GatewayAuditLogRepository audits;
+    @Qualifier("gatewayExposureTransactionTemplate")
     private final TransactionTemplate transactions;
+    @Qualifier("mpGatewayUrlExposureRepository")
     private final GatewayUrlExposureRepository exposures;
+    @Qualifier("gatewayReleasePublicationCoordinator")
     private final GatewayReleasePublicationCoordinator publications;
+    @Qualifier("gatewayHttpRouteCompiler")
     private final GatewayHttpRouteCompiler compiler;
+    @Qualifier("gatewayHttpRouteBindingResolver")
     private final ObjectProvider<BindingResolver> bindings;
+    @Qualifier("mcpReleaseContentFactory")
+    private final ObjectProvider<McpReleaseContentFactory> mcp;
+    @Qualifier("jacksonObjectMapper")
     private final ObjectMapper json;
+    @Qualifier("gatewayProjectionClock")
     private final Clock clock;
     private final GatewayRouteDraftMapper routeMapper = new GatewayRouteDraftMapper();
-
-    @Autowired
-    public GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts,
-            GatewayDraftService draftService, GatewayCatalogRepository catalog,
-            @Qualifier("mpGatewayReleaseRepository") GatewayReleaseRepository releases,
-            GatewayAuditLogRepository audits, @Qualifier("gatewayExposureTransactionTemplate") TransactionTemplate transactions,
-            @Qualifier("mpGatewayUrlExposureRepository") GatewayUrlExposureRepository exposures,
-            GatewayReleasePublicationCoordinator publications,
-            @Qualifier("gatewayHttpRouteCompiler") GatewayHttpRouteCompiler compiler,
-            @Qualifier("gatewayHttpRouteBindingResolver") ObjectProvider<BindingResolver> bindings,
-            @Qualifier("jacksonObjectMapper") ObjectMapper json, @Qualifier("gatewayProjectionClock") Clock clock) {
-        this.groups = groups; this.drafts = drafts; this.draftService = draftService; this.catalog = catalog;
-        this.releases = releases; this.audits = audits; this.transactions = transactions; this.exposures = exposures;
-        this.publications = publications; this.compiler = compiler; this.bindings = bindings; this.json = json; this.clock = clock;
-    }
 
     /** Historical source-compatible assembly: archive reads remain available; native writes cannot use old publishers. */
     public GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts,
@@ -103,7 +112,7 @@ public class GatewayReleaseService {
     GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts, GatewayDraftService draftService,
             GatewayCatalogRepository catalog, GatewayReleaseRepository releases, GatewayAuditLogRepository audits,
             TransactionTemplate transactions, GatewayReleasePublicationCoordinator publications, Clock clock) {
-        this(groups, drafts, draftService, catalog, releases, audits, transactions, null, publications, null, null, null, clock);
+        this(groups, drafts, draftService, catalog, releases, audits, transactions, null, publications, null, null, null, null, clock);
     }
 
     GatewayReleaseService(GatewayGroupRepository groups, GatewayDraftJpaRepository drafts, GatewayDraftService draftService,
@@ -125,16 +134,30 @@ public class GatewayReleaseService {
         authorize(actor);
         long owner = owner();
         transactions.executeWithoutResult(status -> {
-            GatewayReleaseBO release = required(releaseId);
+            GatewayReleaseBO initial = required(releaseId);
             GatewayCiliumReleaseArtifact artifact = nativeArtifact(releaseId);
             requireNativeAssembly();
+            GatewayDraftBO locked = null;
+            if (artifact.hasMcpPublication()) {
+                requireEnabledGroup(initial.getGatewayGroupId());
+                locked = lockPublicationDraft(initial.getGatewayGroupId());
+                requireNoPublicationInFlight(initial.getGatewayGroupId());
+            }
+            // A concurrent attempt may have committed while we waited for the draft lock.
+            GatewayReleaseBO release = locked == null ? initial : required(releaseId);
             if (!Set.of(GatewayReleaseStatus.FAILED, GatewayReleaseStatus.TIMEOUT, GatewayReleaseStatus.UNKNOWN)
                     .contains(release.getStatus())) throw new IllegalStateException("YUHENG_ADMIN_RELEASE_NOT_RETRYABLE");
+            if (locked != null) {
+                if (!Objects.equals(locked.getBasedOnReleaseId(), release.getBasedOnReleaseId())
+                        && !Objects.equals(locked.getBasedOnReleaseId(), releaseId)) throw mcpReplayRejected();
+                revalidateMcpReplay(owner, release, artifact, locked);
+            }
             int attempt = releases.nextAttempt(releaseId, clock.instant());
             releases.beginAttempt(releaseId, attempt, clock.instant());
             publications.enqueueCurrent(owner, releaseId, attempt, artifact);
             if (completedWithEvidence(owner, releaseId, attempt)) {
-                drafts.findById(release.getGatewayGroupId()).ifPresent(draft -> advanceDraftBasis(draft, release, clock.instant()));
+                if (locked != null) advanceDraftBasis(locked, release, clock.instant());
+                else drafts.findById(release.getGatewayGroupId()).ifPresent(draft -> advanceDraftBasis(draft, release, clock.instant()));
             }
             audit(actor, request, release.getGatewayGroupId(), releaseId, "RETRY", release.getDraftRevision());
         });
@@ -154,7 +177,7 @@ public class GatewayReleaseService {
             GatewayDraftVO frozen = json.convertValue(artifact.canonicalSnapshot().path("sourceContent"), GatewayDraftVO.class);
             if (frozen == null || !gatewayGroupId.equals(frozen.gatewayGroupId())) throw invalid();
             return accept(owner, gatewayGroupId, command.expectedDraftRevision(), command.changeReason(),
-                    source.getId(), new RollbackSource(frozen, artifact), actor, request);
+                    source.getId(), new RollbackSource(frozen, artifact, source), actor, request);
         });
         return get(id);
     }
@@ -174,24 +197,33 @@ public class GatewayReleaseService {
     private String accept(long owner, String groupId, long expectedRevision, String reason, String rollbackOf,
                           RollbackSource source, AdminActor actor, RequestAuditContext request) {
         requireNativeAssembly();
-        GatewayGroupBO group = groups.findByIdAndDeletedFalse(groupId)
-                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway group is unavailable"));
-        if (!group.isEnabled()) throw new IllegalStateException("YUHENG_ADMIN_YUHENG_GROUP_DISABLED");
-        if (releases.hasReleaseInProgress(groupId)) throw new IllegalStateException("YUHENG_ADMIN_RELEASE_IN_PROGRESS");
-        GatewayDraftBO currentDraft = drafts.findById(groupId)
-                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway draft is unavailable"));
+        GatewayGroupBO group = requireEnabledGroup(groupId);
+        GatewayDraftBO currentDraft = lockPublicationDraft(groupId);
+        requireNoPublicationInFlight(groupId);
         currentDraft.assertEditable(expectedRevision);
         GatewayDraftVO sourceDraft = source == null ? draftService.get(groupId) : source.draft();
         if (!sourceDraft.gatewayGroupId().equals(groupId) || (source == null && sourceDraft.revision() != expectedRevision)) throw invalid();
         String normalizedReason = requiredReason(reason);
         String releaseId = SnowflakeIdGenerator.nextId();
         List<PreparedGatewayRelease.ExposurePlan> plans = compile(owner, group, releaseId, sourceDraft, source);
-        GatewayCiliumReleaseArtifact artifact = artifact(owner, groupId, releaseId, sourceDraft, plans);
+        JsonNode mcpPublication = compileMcpPublication(owner, currentDraft, sourceDraft, source);
+        if (plans.isEmpty() && mcpPublication == null) {
+            throw new IllegalArgumentException("YUHENG_RELEASE_NO_PUBLIC_EXPOSURES");
+        }
+        GatewayCiliumReleaseArtifact artifact = artifact(owner, groupId, releaseId, sourceDraft, plans, mcpPublication);
         Instant now = clock.instant();
+        var validation = new LinkedHashMap<String, Object>();
+        validation.put("valid", true);
+        validation.put("currentStateOverrides", overrides(plans));
+        validation.put("warnings", deprecatedWarnings(sourceDraft));
+        if (!plans.isEmpty()) validation.put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID);
+        if (mcpPublication != null) {
+            validation.put("mcpPublication", Map.of("contentSha256", mcpPublication.path("contentSha256").textValue(),
+                    "mappingCount", mcpPublication.path("mappings").size()));
+        }
         GatewayReleaseBO release = new GatewayReleaseBO(releaseId, groupId, currentDraft.getRevision(),
                 currentDraft.getBasedOnReleaseId(), rollbackOf, GatewayReleaseStatus.READY, false, null,
-                Map.of("valid", true, "capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID,
-                        "currentStateOverrides", overrides(plans), "warnings", deprecatedWarnings(sourceDraft)),
+                Map.copyOf(validation),
                 Map.of("basedOnReleaseId", currentDraft.getBasedOnReleaseId() == null ? "" : currentDraft.getBasedOnReleaseId(),
                         "rollbackOfReleaseId", rollbackOf == null ? "" : rollbackOf, "exposureCount", plans.size(),
                         "currentStateOverrides", overrides(plans)),
@@ -203,6 +235,113 @@ public class GatewayReleaseService {
         publications.enqueueCurrent(owner, releaseId, 1, artifact);
         if (completedWithEvidence(owner, releaseId, 1)) advanceDraftBasis(currentDraft, release, now);
         return releaseId;
+    }
+
+    private GatewayGroupBO requireEnabledGroup(String groupId) {
+        GatewayGroupBO group = groups.findByIdAndDeletedFalse(groupId)
+                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway group is unavailable"));
+        if (!group.isEnabled()) throw new IllegalStateException("YUHENG_ADMIN_YUHENG_GROUP_DISABLED");
+        return group;
+    }
+
+    private GatewayDraftBO lockPublicationDraft(String groupId) {
+        return drafts.lockForPublication(groupId)
+                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway draft is unavailable"));
+    }
+
+    private void requireNoPublicationInFlight(String groupId) {
+        if (releases.hasReleaseInProgress(groupId)) throw new IllegalStateException("YUHENG_ADMIN_RELEASE_IN_PROGRESS");
+    }
+
+    private JsonNode compileMcpPublication(long owner, GatewayDraftBO current, GatewayDraftVO draft, RollbackSource source) {
+        boolean hasMappingPolicy = draft.policies().stream()
+                .anyMatch(policy -> McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType()));
+        if (source != null) {
+            if (hasMappingPolicy && !source.artifact().hasMcpPublication()) throw mcpReplayRejected();
+            return revalidateMcpReplay(owner, source.release(), source.artifact(), current);
+        }
+        if (!hasMappingPolicy) return null;
+        JsonNode section = mappingFactory().compileMappingSection(owner, draft);
+        if (section == null) throw invalid();
+        return section;
+    }
+
+    private JsonNode revalidateMcpReplay(long owner, GatewayReleaseBO release, GatewayCiliumReleaseArtifact artifact,
+                                         GatewayDraftBO current) {
+        JsonNode section = artifact.mcpPublication();
+        if (section == null) return null;
+        String group = release.getGatewayGroupId();
+        requireMcpArtifactIdentity(artifact, owner, group, release.getId());
+        String basis = current.getBasedOnReleaseId();
+        if (basis != null && !basis.equals(release.getId())) {
+            GatewayCiliumReleaseArtifact effective = releases.loadNative(basis)
+                    .orElseThrow(GatewayReleaseService::mcpReplayRejected);
+            requireMcpArtifactIdentity(effective, owner, group, basis);
+            verifyCurrentMcpRestrictions(section, effective.mcpPublication());
+        }
+        mappingFactory().revalidateMappingSection(owner, group, section);
+        return section;
+    }
+
+    private static void requireMcpArtifactIdentity(
+            GatewayCiliumReleaseArtifact artifact, long owner, String group, String releaseId) {
+        if (!Long.toString(owner).equals(artifact.ownerTenantId())
+                || !group.equals(artifact.gatewayGroupId())
+                || !releaseId.equals(artifact.releaseId())) {
+            log.debug("MCP release replay rejected because the frozen artifact identity does not match");
+            throw mcpReplayRejected();
+        }
+    }
+
+    private static void verifyCurrentMcpRestrictions(JsonNode frozen, JsonNode current) {
+        var currentById = new HashMap<String, JsonNode>();
+        if (current != null) {
+            current.path("mappings").forEach(entry -> currentById.put(entry.path("toolId").textValue(), entry));
+        }
+        for (JsonNode entry : frozen.path("mappings")) {
+            JsonNode tool = entry.path("tool");
+            if (!tool.path("enabled").booleanValue()) continue;
+            JsonNode latest = currentById.get(entry.path("toolId").textValue());
+            if (latest == null || !sameMcpBinding(entry, latest) || !preservesMcpRestrictions(tool, latest.path("tool"))) {
+                throw mcpReplayRejected();
+            }
+        }
+    }
+
+    private static boolean sameMcpBinding(JsonNode frozen, JsonNode current) {
+        return sameFields(frozen.path("sourceOperation"), current.path("sourceOperation"), "operationId", "operationKey")
+                && sameFields(frozen.path("siServer"), current.path("siServer"),
+                "resourceId", "resourceKey", "bizCode", "namespaceCode", "envCode", "ownerAppCode");
+    }
+
+    private static boolean sameFields(JsonNode first, JsonNode second, String... fields) {
+        for (String field : fields) {
+            if (!first.path(field).equals(second.path(field))) return false;
+        }
+        return true;
+    }
+
+    private static boolean preservesMcpRestrictions(JsonNode frozen, JsonNode current) {
+        if (!current.path("enabled").booleanValue()
+                || (frozen.path("idempotent").booleanValue() && !current.path("idempotent").booleanValue())
+                || McpPersistentRiskLevelEnum.fromWire(frozen.path("riskLevel").textValue()).getCode()
+                    < McpPersistentRiskLevelEnum.fromWire(current.path("riskLevel").textValue()).getCode()) return false;
+        var permissions = new HashSet<JsonNode>();
+        frozen.path("requiredPermissions").forEach(permissions::add);
+        for (JsonNode permission : current.path("requiredPermissions")) {
+            if (!permissions.contains(permission)) return false;
+        }
+        return true;
+    }
+
+    private McpReleaseContentFactory mappingFactory() {
+        McpReleaseContentFactory factory = mcp == null ? null : mcp.getIfAvailable();
+        if (factory == null) throw invalid();
+        return factory;
+    }
+
+    private static IllegalStateException mcpReplayRejected() {
+        return new IllegalStateException("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
     }
 
     private boolean completedWithEvidence(long owner, String releaseId, int attemptNo) {
@@ -219,10 +358,9 @@ public class GatewayReleaseService {
 
     private List<PreparedGatewayRelease.ExposurePlan> compile(long owner, GatewayGroupBO group, String releaseId,
                                                              GatewayDraftVO source, RollbackSource rollback) {
-        BindingResolver resolver = bindings.getIfAvailable();
-        if (resolver == null) throw invalid();
         long groupId = positive(group.getId());
         List<GatewayRuntimePolicy> policies = source.policies().stream().filter(policy -> policy.isEnabled())
+                .filter(policy -> !McpApiMappingContentBO.POLICY_TYPE.equals(policy.getPolicyType()))
                 .map(policy -> new GatewayRuntimePolicy(policy.getPolicyId(), policy.getPolicyType(), policy.getPolicyScope(), policy.getContent())).toList();
         List<PreparedGatewayRelease.ExposurePlan> plans = new ArrayList<>();
         for (GatewayRouteDraftBO route : source.routes().stream().filter(GatewayRouteDraftBO::isEnabled)
@@ -230,6 +368,8 @@ public class GatewayReleaseService {
             var canonical = routeMapper.canonicalize(route.getContent());
             var runtime = routeMapper.toRuntimeRoute(route, canonical);
             if (!runtime.accessZones().contains(AccessZone.PUBLIC)) continue;
+            BindingResolver resolver = bindings.getIfAvailable();
+            if (resolver == null) throw invalid();
             GatewayOperationBO operation = catalog.findOperation(route.getOperationId())
                     .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway operation is unavailable"));
             if (!operation.isExternalAccessible() || !Set.of("ACTIVE", "DEPRECATED").contains(operation.getLifecycleStatus())) throw invalid();
@@ -256,7 +396,6 @@ public class GatewayReleaseService {
                     current == null ? 0L : current.getVersion(), current == null ? 0L : current.getDesiredGeneration(),
                     current == null ? GatewayUrlExposureStateEnum.OPEN : current.getDesiredState(), changed, compiled));
         }
-        if (plans.isEmpty()) throw new IllegalArgumentException("YUHENG_RELEASE_NO_PUBLIC_EXPOSURES");
         return List.copyOf(plans);
     }
 
@@ -292,23 +431,25 @@ public class GatewayReleaseService {
     }
 
     private GatewayCiliumReleaseArtifact artifact(long owner, String group, String releaseId, GatewayDraftVO source,
-                                                 List<PreparedGatewayRelease.ExposurePlan> plans) {
+                                                 List<PreparedGatewayRelease.ExposurePlan> plans, JsonNode mcpPublication) {
         ObjectNode canonical = json.createObjectNode().put("releaseId", releaseId).put("ownerTenantId", Long.toString(owner))
                 .put("gatewayGroupId", group).put("generatedAt", clock.instant().toString());
         canonical.set("sourceContent", json.valueToTree(source));
+        if (mcpPublication != null) canonical.set("mcpPublication", mcpPublication);
+        ObjectNode activation = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION).put("releaseId", releaseId);
+        ObjectNode manifest = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION)
+                .put("compilerVersion", GatewayHttpRouteCompiler.COMPILER_VERSION).put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID);
+        ArrayNode targets = activation.putArray("exposures");
+        ArrayNode resources = manifest.putArray("resources");
+        ArrayNode dependencies = manifest.putArray("dependencies");
+        if (plans.isEmpty()) return new GatewayCiliumReleaseArtifact(canonical, activation, manifest);
         ObjectNode publication = canonical.putObject("exposurePublication").put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION)
                 .put("target", "CILIUM_GATEWAY_API").put("gatewayClassName", "cilium")
                 .put("routeControllerName", GatewayHttpRouteCompiler.CONTROLLER_NAME).put("compilerVersion", GatewayHttpRouteCompiler.COMPILER_VERSION)
                 .put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID)
                 .put("publicationDomainId", plans.getFirst().compiled().binding().publicationDomain().publicationDomainId())
                 .put("backendAuthorizationProfile", GatewayHttpRouteCompiler.AUTHORIZATION_PROFILE);
-        ObjectNode activation = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION).put("releaseId", releaseId);
-        ObjectNode manifest = json.createObjectNode().put("schemaVersion", GatewayHttpRouteCompiler.SCHEMA_VERSION)
-                .put("compilerVersion", GatewayHttpRouteCompiler.COMPILER_VERSION).put("capabilityProfileId", GatewayHttpRouteCompiler.CAPABILITY_PROFILE_ID);
         ArrayNode entries = publication.putArray("exposures");
-        ArrayNode targets = activation.putArray("exposures");
-        ArrayNode resources = manifest.putArray("resources");
-        ArrayNode dependencies = manifest.putArray("dependencies");
         for (var plan : plans.stream().sorted(Comparator.comparingLong(PreparedGatewayRelease.ExposurePlan::exposureId)).toList()) {
             if (!publication.path("publicationDomainId").asText().equals(plan.compiled().binding().publicationDomain().publicationDomainId())) throw invalid();
             entries.add(plan.compiled().snapshotEntry());
@@ -395,5 +536,5 @@ public class GatewayReleaseService {
                 .successful(true).occurredAt(clock.instant()).build());
     }
 
-    private record RollbackSource(GatewayDraftVO draft, GatewayCiliumReleaseArtifact artifact) { }
+    private record RollbackSource(GatewayDraftVO draft, GatewayCiliumReleaseArtifact artifact, GatewayReleaseBO release) { }
 }

@@ -6,7 +6,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.validation.annotation.Validated;
+import top.egon.cola.component.common.mybatis.business.EgonColaTenantIdProvider;
 import top.egon.cola.component.yuheng.admin.routing.converter.GatewayDraftPersistenceConverter;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.po.GatewayDraftRecordPO;
@@ -41,6 +45,25 @@ public class MpGatewayDraftMetadataRepository implements GatewayDraftMetadataRep
     @Override
     public Optional<GatewayDraftBO> findById(String id) {
         return find(id);
+    }
+
+    /** Serializes publication decisions on the existing tenant-bound draft row in the caller's LOCAL transaction. */
+    @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.MANDATORY)
+    public Optional<GatewayDraftBO> lockForPublication(String gatewayGroupId) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()
+                || !TransactionSynchronizationManager.isSynchronizationActive()
+                || TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
+            throw new IllegalStateException("YUHENG_DRAFT_PUBLICATION_TRANSACTION_REQUIRED");
+        }
+        if (EgonColaTenantIdProvider.currentTenantId() <= 0L) {
+            throw new IllegalStateException("YUHENG_DRAFT_PUBLICATION_TENANT_REQUIRED");
+        }
+        Long group = gatewayGroupColumn(gatewayGroupId);
+        if (group == null || group <= 0L || !group.toString().equals(gatewayGroupId)) {
+            throw new IllegalArgumentException("YUHENG_DRAFT_PUBLICATION_GROUP_INVALID");
+        }
+        return draftPersistenceRepository.lockForPublication(group).map(draftPersistenceConverter::toTarget);
     }
 
     /** MP 写入在 save 中即时执行，事务仍由调用方提交。 / MP writes execute during save; callers still commit the transaction. */

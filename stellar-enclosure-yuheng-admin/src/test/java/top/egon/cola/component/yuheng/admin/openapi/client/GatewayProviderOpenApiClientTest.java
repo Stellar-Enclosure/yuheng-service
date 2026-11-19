@@ -2,9 +2,6 @@ package top.egon.cola.component.yuheng.admin.openapi.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceInstance;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceKey;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceSnapshot;
 import top.egon.cola.component.yuheng.admin.openapi.GatewayOpenApiValidationTestFixture;
 import top.egon.cola.component.yuheng.admin.openapi.domain.dto.GatewayOpenApiDocumentDTO;
 import top.egon.cola.component.yuheng.admin.openapi.domain.dto.GatewayOpenApiSyncCandidateDTO;
@@ -230,187 +227,31 @@ class GatewayProviderOpenApiClientTest {
     }
 
     @Test
-    void candidateCanOnlyBeDerivedFromHealthyDdcHttpProviderData() {
-        DdcManagementServiceKey service = new DdcManagementServiceKey(
-                "trade",
-                "TEST",
-                "orders",
-                "orders-service-id",
-                "HTTP_PROVIDER",
-                "orders-service",
-                "default",
-                "1.0.0",
-                "https"
-        );
-        DdcManagementServiceSnapshot snapshot =
-                new DdcManagementServiceSnapshot(
-                        service,
-                        7,
-                        NOW,
-                        List.of(new DdcManagementServiceInstance(
-                                "instance-1",
-                                "lease-1",
-                                "provider.internal",
-                                9443,
-                                true,
-                                java.util.Map.of(),
-                                "ONLINE",
-                                NOW.minusSeconds(30),
-                                NOW,
-                                NOW.plusSeconds(60)
-                        ))
-                );
-        GatewayOpenApiGroupManifestDTO manifest =
-                new GatewayOpenApiGroupManifestDTO(
-                        List.of("orders"),
-                        GatewayOpenApiGroupManifestDTO.PATH_TEMPLATE,
-                        "https://provider.example/resource",
-                        "1.0.0",
-                        "build-1"
-                );
-
-        GatewayOpenApiSyncCandidateDTO candidate =
-                GatewayOpenApiSyncCandidateDTO.from(
-                        "app-1",
-                        snapshot,
-                        snapshot.instances().getFirst(),
-                        manifest,
-                        "orders"
-                );
-
-        assertThat(candidate.applicationId()).isEqualTo("app-1");
-        assertThat(candidate.buildId()).isEqualTo("build-1");
-        assertThat(candidate.openapiGroup()).isEqualTo("orders");
-        assertThat(candidate.providerServiceName())
-                .isEqualTo("orders-service");
+    void productionInternalHttpRequiresExactServiceFqdnAndAnApprovedSourceGuard() {
+        var candidate = internalCandidate("orders.apps-prod.svc.cluster.local");
+        var tokens=mock(GatewayOpenApiTokenSupplier.class);var dns=mock(GatewayOpenApiDnsPolicy.class);var http=mock(HttpClient.class);
+        assertThatThrownBy(()->client(tokens,dns,http).fetch(candidate)).isInstanceOf(GatewayOpenApiFetchException.class);
+        verifyNoInteractions(tokens,dns,http);
+        assertThatThrownBy(()->internalCandidate("attacker.example" )).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->internalCandidate("127.0.0.1")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void developmentHttpCandidateRequiresAnExplicitOptIn() {
-        DdcManagementServiceKey service = new DdcManagementServiceKey(
-                "trade",
-                "TEST",
-                "orders",
-                "orders-service-id",
-                "HTTP_PROVIDER",
-                "orders-service",
-                "default",
-                "1.0.0",
-                "http"
-        );
-        DdcManagementServiceSnapshot snapshot =
-                new DdcManagementServiceSnapshot(
-                        service,
-                        7,
-                        NOW,
-                        List.of(new DdcManagementServiceInstance(
-                                "instance-1",
-                                "lease-1",
-                                "provider.internal",
-                                8080,
-                                false,
-                                java.util.Map.of(),
-                                "ONLINE",
-                                NOW.minusSeconds(30),
-                                NOW,
-                                NOW.plusSeconds(60)
-                        ))
-                );
-        GatewayOpenApiGroupManifestDTO manifest =
-                new GatewayOpenApiGroupManifestDTO(
-                        List.of("orders"),
-                        GatewayOpenApiGroupManifestDTO.PATH_TEMPLATE,
-                        "https://provider.example/resource",
-                        "1.0.0",
-                        "build-1"
-                );
-
-        assertThatThrownBy(() -> GatewayOpenApiSyncCandidateDTO.from(
-                "app-1",
-                snapshot,
-                snapshot.instances().getFirst(),
-                manifest,
-                "orders"
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not an HTTP provider");
-
-        GatewayOpenApiSyncCandidateDTO candidate =
-                GatewayOpenApiSyncCandidateDTO.from(
-                        "app-1",
-                        snapshot,
-                        snapshot.instances().getFirst(),
-                        manifest,
-                        "orders",
-                        true
-                );
-
-        assertThat(candidate.secure()).isFalse();
-        assertThat(candidate.developmentPlaintext()).isTrue();
+    void developmentHttpStillRequiresAnExplicitLocalOptIn() {
+        assertThatThrownBy(()->new GatewayOpenApiSyncCandidateDTO("app","trade","orders","build","1","orders",
+                "orders","default","1","fixture","localhost",8080,false,"/v3/api-docs/{group}",
+                URI.create("https://canonical.example/resource"),NOW.minusSeconds(1),NOW.plusSeconds(60)))
+                .isInstanceOf(IllegalArgumentException.class);
+        var candidate=new GatewayOpenApiSyncCandidateDTO("app","trade","orders","build","1","orders",
+                "orders","default","1","fixture","localhost",8080,false,"/v3/api-docs/{group}",
+                URI.create("https://canonical.example/resource"),NOW.minusSeconds(1),NOW.plusSeconds(60),true);
+        assertThat(candidate.developmentPlaintext()).isTrue();assertThat(candidate.approvedInternalHttp()).isFalse();
     }
 
-    @Test
-    void candidateRejectsAnInstanceOutsideTheDdcSnapshot() {
-        DdcManagementServiceKey service = new DdcManagementServiceKey(
-                "trade",
-                "TEST",
-                "orders",
-                "orders-service-id",
-                "HTTP_PROVIDER",
-                "orders-service",
-                "default",
-                "1.0.0",
-                "https"
-        );
-        DdcManagementServiceInstance snapshotInstance =
-                new DdcManagementServiceInstance(
-                        "instance-1",
-                        "lease-1",
-                        "provider.internal",
-                        9443,
-                        true,
-                        java.util.Map.of(),
-                        "ONLINE",
-                        NOW.minusSeconds(30),
-                        NOW,
-                        NOW.plusSeconds(60)
-                );
-        DdcManagementServiceSnapshot snapshot =
-                new DdcManagementServiceSnapshot(
-                        service,
-                        7,
-                        NOW,
-                        List.of(snapshotInstance)
-                );
-        GatewayOpenApiGroupManifestDTO manifest =
-                new GatewayOpenApiGroupManifestDTO(
-                        List.of("orders"),
-                        GatewayOpenApiGroupManifestDTO.PATH_TEMPLATE,
-                        "https://provider.example/resource",
-                        "1.0.0",
-                        "build-1"
-                );
-        DdcManagementServiceInstance unrelated =
-                new DdcManagementServiceInstance(
-                        "instance-2",
-                        "lease-2",
-                        "attacker.internal",
-                        9443,
-                        true,
-                        java.util.Map.of(),
-                        "ONLINE",
-                        NOW.minusSeconds(30),
-                        NOW,
-                        NOW.plusSeconds(60)
-                );
-
-        assertThatThrownBy(() -> GatewayOpenApiSyncCandidateDTO.from(
-                "app-1",
-                snapshot,
-                unrelated,
-                manifest,
-                "orders"
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not part of the supplied snapshot");
+    private GatewayOpenApiSyncCandidateDTO internalCandidate(String host) {
+        return new GatewayOpenApiSyncCandidateDTO("app","trade","orders","build","1","orders","orders","default","1",
+                "source-1",host,8080,false,"/v3/api-docs/{group}",URI.create("https://canonical.example/resource"),
+                NOW.minusSeconds(1),NOW.plusSeconds(60),false,true);
     }
 
     @Test

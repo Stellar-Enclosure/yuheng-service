@@ -10,26 +10,15 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonGatewayPolicy;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpServerMutationRequestDTO;
-import top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpServerRequestDTO;
 import top.egon.cola.component.yuheng.admin.mcp.service.McpControlPlaneService;
-import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
-import top.egon.cola.component.yuheng.admin.shared.domain.RequestAuditContext;
 
 import java.util.List;
 
@@ -41,7 +30,7 @@ import java.util.List;
  */
 @Validated
 @lombok.extern.slf4j.Slf4j
-@lombok.RequiredArgsConstructor
+@lombok.RequiredArgsConstructor(onConstructor_ = @org.springframework.beans.factory.annotation.Autowired)
 @RestController("mcpServerController")
 @RequestMapping("/api/v1/yuheng/admin/mcp/servers")
 @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:read') and (hasAnyAuthority('CAP_yuheng:mcp:read','CAP_*'))")
@@ -62,7 +51,6 @@ public class McpServerController {
      */
     @org.springframework.beans.factory.annotation.Qualifier("mcpControlPlaneService")
     private final McpControlPlaneService service;
-
 
     /**
      * 中文说明：执行 list 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
@@ -87,39 +75,6 @@ public class McpServerController {
     }
 
     /**
-     * 中文说明：执行 create 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the create operation; this method is the invocation entry point on {@code McpServerController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpServerController.create(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 create 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpServer.create", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpServer.create",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpServerController.create")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO create(
-            @Valid @RequestBody McpServerRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.createServer(
-                request.mutation(),
-                idempotencyKey,
-                actor,
-                audit()
-        );
-    }
-
-    /**
      * 中文说明：执行 get 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
      * English summary: Executes the get operation; this method is the invocation entry point on {@code McpServerController} and performs the corresponding runtime, management, or protocol work.
      *
@@ -138,76 +93,6 @@ public class McpServerController {
     @GetMapping("/{id}")
     public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpServerVO get(@PathVariable String id) {
         return service.getServer(id);
-    }
-
-    /**
-     * 中文说明：执行 update 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the update operation; this method is the invocation entry point on {@code McpServerController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpServerController.update(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param id 参数 id；parameter id。
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 update 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpServer.update", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpServer.update",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpServerController.update")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO update(
-            @PathVariable String id,
-            @Valid @RequestBody McpServerRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.updateServer(
-                id,
-                request.mutation(),
-                idempotencyKey,
-                actor,
-                audit()
-        );
-    }
-
-    /**
-     * 中文说明：执行 delete 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the delete operation; this method is the invocation entry point on {@code McpServerController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpServerController.delete(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param id 参数 id；parameter id。
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 delete 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpServer.delete", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpServer.delete",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpServerController.delete")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO delete(
-            @PathVariable String id,
-            @Valid @RequestBody McpServerMutationRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.deleteServer(
-                id,
-                request.control(),
-                idempotencyKey,
-                actor,
-                audit()
-        );
     }
 
     /**
@@ -252,19 +137,5 @@ public class McpServerController {
     public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpCapabilityPreviewVO preview(@PathVariable String id) {
         return service.preview(service.getServer(id).gatewayGroupId());
     }
-
-    /**
-     * 中文说明：执行 审计 操作；该方法是 {@code McpServerController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the audit operation; this method is the invocation entry point on {@code McpServerController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpServerController.audit(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @return 返回 审计 的处理结果；returns the result of the operation.
-     */
-    private RequestAuditContext audit() {
-        return RequestAuditContext.current();
-    }
-
-
-
 
 }

@@ -51,7 +51,7 @@ class PermissionProducerCoverageTest {
             assertThat(resources.put(resource.key(), resource)).as(resource.key()).isNull();
         }
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
-        var environment = new org.springframework.core.env.StandardEnvironment();
+        var environment = new org.springframework.web.context.support.StandardServletEnvironment();
         environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("producer-coverage",
                 Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true")));
         scanner.setEnvironment(environment);
@@ -84,15 +84,19 @@ class PermissionProducerCoverageTest {
                 }
             }
         }
+        assertThat(apiKeys).hasSize(69)
+                .contains("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
+        Set<String> protocolKeys = new TreeSet<>();
         for (Method method : NativeProtocolPermissionMetadata.class.getDeclaredMethods()) {
             PermissionResource declaration = method.getAnnotation(PermissionResource.class);
             if (declaration != null) {
                 assertThat(apiKeys.add(declaration.key())).isTrue();
+                assertThat(protocolKeys.add(declaration.key())).isTrue();
                 assertThat(resources.get(declaration.key()).access()).isEqualTo(declaration.access());
             }
         }
-        walk(top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpArtifactUploadCommandDTO.class, false, resources, fields, external, new HashSet<>());
-        assertThat(apiKeys).hasSize(99).contains("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
+        assertThat(protocolKeys).containsExactlyInAnyOrder("yuheng.api.reporting.submit", "yuheng.api.reporting.status",
+                "yuheng.api.health", "yuheng.api.info", "yuheng.api.metrics");
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.API)
                 .map(PermissionManifest.ResourceDefinition::key).toList()).containsExactlyInAnyOrderElementsOf(apiKeys);
         assertThat(resources.values().stream().filter(value -> value.type() == ResourceType.FIELD)

@@ -11,21 +11,17 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonGatewayPolicy;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpManagedToolOverrideRequestDTO;
-import top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpRemoteToolRequestDTO;
 import top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpToolMutationRequestDTO;
 import top.egon.cola.component.yuheng.admin.mcp.service.McpToolAdminService;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
@@ -40,7 +36,7 @@ import java.util.List;
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
 @lombok.extern.slf4j.Slf4j
-@lombok.RequiredArgsConstructor
+@lombok.RequiredArgsConstructor(onConstructor_ = @org.springframework.beans.factory.annotation.Autowired)
 @RestController("mcpToolAdminController")
 @RequestMapping("/api/v1/yuheng/admin/mcp")
 @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:read') and (hasAnyAuthority('CAP_yuheng:mcp:read','CAP_*'))")
@@ -62,7 +58,6 @@ public class McpToolAdminController {
     @org.springframework.beans.factory.annotation.Qualifier("mcpToolAdminService")
     private final McpToolAdminService service;
 
-
     /**
      * 中文说明：执行 managedTools 操作；该方法是 {@code McpToolAdminController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
      * English summary: Executes the managed tools operation; this method is the invocation entry point on {@code McpToolAdminController} and performs the corresponding runtime, management, or protocol work.
@@ -77,7 +72,8 @@ public class McpToolAdminController {
             allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
             oauthScopes = GatewayPermissionCodes.MCP_READ)
     @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
-    @Operation(operationId = "admin.mcpToolAdminController.managedTools")
+    @Operation(operationId = "admin.mcpToolAdminController.managedTools",
+            description = "Reads desired MCP_API_MAPPING policies. serverId is the exact selected SI resource ID; overrideRevision is the aggregate draft revision.")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/groups/{groupId}/managed-tools")
@@ -103,7 +99,8 @@ public class McpToolAdminController {
             allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
             oauthScopes = GatewayPermissionCodes.MCP_WRITE)
     @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpToolAdminController.putOverride")
+    @Operation(operationId = "admin.mcpToolAdminController.putOverride",
+            description = "Tightens the selected mapping. Both revision fields use the aggregate draft revision. serverId may confirm the selected SI resource but cannot retarget its fixed version.")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @PutMapping("/managed-tools/{toolId}/override")
@@ -138,7 +135,8 @@ public class McpToolAdminController {
             allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
             oauthScopes = GatewayPermissionCodes.MCP_WRITE)
     @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpToolAdminController.deleteOverride")
+    @Operation(operationId = "admin.mcpToolAdminController.deleteOverride",
+            description = "Explicitly resets operator restrictions to the currently approved code baseline, retaining the mapping and exact SI version. An independently disabled policy stays disabled; URL state is unchanged.")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @DeleteMapping("/managed-tools/{toolId}/override")
@@ -171,7 +169,8 @@ public class McpToolAdminController {
             allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
             oauthScopes = GatewayPermissionCodes.MCP_READ)
     @RequiresPermissions(codes = GatewayPermissionCodes.MCP_READ)
-    @Operation(operationId = "admin.mcpToolAdminController.remoteTools")
+    @Operation(operationId = "admin.mcpToolAdminController.remoteTools",
+            description = "Read-only historical remote Tool archive. serverId is the actual archived legacy Server ID and is never treated as an SI resource ID.")
     @EgonGatewayPolicy(
             exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
     @GetMapping("/remote-tools")
@@ -180,114 +179,5 @@ public class McpToolAdminController {
             @RequestParam(required = false) String serverId) {
         return service.remoteTools(gatewayGroupId, serverId);
     }
-
-    /**
-     * 中文说明：执行 create远程工具 操作；该方法是 {@code McpToolAdminController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the create remote tool operation; this method is the invocation entry point on {@code McpToolAdminController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpToolAdminController.createRemoteTool(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 create远程工具 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpToolAdmin.createRemoteTool", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.createRemoteTool",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpToolAdminController.createRemoteTool")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @PostMapping("/remote-tools")
-    @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO createRemoteTool(
-            @Valid @RequestBody McpRemoteToolRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.putRemoteTool(
-                null,
-                request.mutation(),
-                idempotencyKey,
-                actor,
-                RequestAuditContext.current()
-        );
-    }
-
-    /**
-     * 中文说明：执行 update远程工具 操作；该方法是 {@code McpToolAdminController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the update remote tool operation; this method is the invocation entry point on {@code McpToolAdminController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpToolAdminController.updateRemoteTool(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param toolId 参数 工具Id；parameter tool id。
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 update远程工具 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpToolAdmin.updateRemoteTool", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.updateRemoteTool",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpToolAdminController.updateRemoteTool")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @PutMapping("/remote-tools/{toolId}")
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO updateRemoteTool(
-            @PathVariable String toolId,
-            @Valid @RequestBody McpRemoteToolRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.putRemoteTool(
-                toolId,
-                request.mutation(),
-                idempotencyKey,
-                actor,
-                RequestAuditContext.current()
-        );
-    }
-
-    /**
-     * 中文说明：执行 delete远程工具 操作；该方法是 {@code McpToolAdminController} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
-     * English summary: Executes the delete remote tool operation; this method is the invocation entry point on {@code McpToolAdminController} and performs the corresponding runtime, management, or protocol work.
-     *
-     * 用法 / Usage: 调用方式 / Usage: {@code McpToolAdminController.deleteRemoteTool(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
-     * @param toolId 参数 工具Id；parameter tool id。
-     * @param request 参数 请求；parameter request。
-     * @param idempotencyKey 参数 idempotency键；parameter idempotency key。
-     * @param actor 参数 actor；parameter actor。
-     * @return 返回 delete远程工具 的处理结果；returns the result of the operation.
-     */
-    @PermissionResource(key = "yuheng.api.mcpToolAdmin.deleteRemoteTool", type = ResourceType.API,
-            labelPage = "gateway.permissions", labelKey = "api.mcpToolAdmin.deleteRemoteTool",
-            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
-            oauthScopes = GatewayPermissionCodes.MCP_WRITE)
-    @RequiresPermissions(codes = GatewayPermissionCodes.MCP_WRITE)
-    @Operation(operationId = "admin.mcpToolAdminController.deleteRemoteTool")
-    @EgonGatewayPolicy(
-            exposure = EgonGatewayPolicy.Exposure.EXTERNAL)
-    @DeleteMapping("/remote-tools/{toolId}")
-    @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:write') and (hasAnyAuthority('CAP_yuheng:mcp:write','CAP_*'))")
-    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMutationResultVO deleteRemoteTool(
-            @PathVariable String toolId,
-            @Valid @RequestBody McpToolMutationRequestDTO request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            AdminActor actor) {
-        return service.deleteRemoteTool(
-                toolId,
-                request.control(),
-                idempotencyKey,
-                actor,
-                RequestAuditContext.current()
-        );
-    }
-
-
-
-
-
 
 }

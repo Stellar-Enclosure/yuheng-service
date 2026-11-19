@@ -79,6 +79,8 @@ public class GatewayReleasePublicationCoordinator {
         requireTransaction(owner);
         requireArtifact(owner, artifact);
         if (!releaseId.equals(artifact.releaseId()) || attemptNo <= 0) throw invalid();
+        // MCP mappings are immutable release content, not Cilium commands or runtime notifications.
+        if (!artifact.hasExposurePublication()) return;
         for (JsonNode entry : artifact.canonicalSnapshot().path("exposurePublication").path("exposures")) {
             GatewayUrlExposureBO row = current(owner, entry.path("exposureId").asText());
             String commandId = releaseId + ":" + attemptNo + ":" + row.getVersion() + ":" + row.getId() + ":" + row.getDesiredGeneration();
@@ -111,10 +113,18 @@ public class GatewayReleasePublicationCoordinator {
                 .header("tenant-id", Long.toString(owner)).header("event-id", eventId).build());
     }
 
-    /** Read-only evidence projection; enqueue success is never evidence of URL convergence. */
+    /**
+     * Read-only publication evidence. MCP success proves the exact durable artifact, not runtime consumption.
+     * A mixed artifact still requires all real Cilium targets to converge; enqueue success proves neither.
+     */
     public NativeOutcome observeNative(long owner, GatewayCiliumReleaseArtifact artifact) {
         requireOwner(owner);
         requireArtifact(owner, artifact);
+        if (artifact.hasMcpPublication()) requirePersistedArtifact(artifact);
+        if (!artifact.hasExposurePublication()) {
+            if (!artifact.hasMcpPublication()) throw invalid();
+            return new NativeOutcome(GatewayReleaseStatus.SUCCESS, false, List.of(), List.of());
+        }
         List<ExposureOutcomeVO> outcomes = new ArrayList<>();
         List<ClusterTargetVO> targets = new ArrayList<>();
         int converged = 0;
@@ -180,6 +190,14 @@ public class GatewayReleasePublicationCoordinator {
         try { exposureId = Long.parseLong(id); } catch (RuntimeException malformed) { throw invalid(); }
         return exposures.findOwned(owner, exposureId).filter(row -> Objects.equals(row.getOwnerTenantId(), owner)
                 && Objects.equals(row.getId(), exposureId)).orElseThrow(GatewayReleasePublicationCoordinator::invalid);
+    }
+
+    private void requirePersistedArtifact(GatewayCiliumReleaseArtifact artifact) {
+        var persisted = releases.loadNative(artifact.releaseId()).orElseThrow(GatewayReleasePublicationCoordinator::invalid);
+        if (!persisted.hasMcpPublication() || !artifact.releaseId().equals(persisted.releaseId())
+                || !artifact.ownerTenantId().equals(persisted.ownerTenantId())
+                || !artifact.gatewayGroupId().equals(persisted.gatewayGroupId())
+                || !artifact.artifactSha256().equals(persisted.artifactSha256())) throw invalid();
     }
 
     private static void requireOwner(long owner) {

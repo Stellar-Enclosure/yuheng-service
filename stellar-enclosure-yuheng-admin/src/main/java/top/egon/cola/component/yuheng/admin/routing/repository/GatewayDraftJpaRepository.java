@@ -23,6 +23,9 @@ public interface GatewayDraftJpaRepository {
      */
     Optional<GatewayDraftBO> findById(String id);
 
+    /** Locks this tenant's active draft head until the caller's named publication transaction ends. */
+    Optional<GatewayDraftBO> lockForPublication(String gatewayGroupId);
+
     /**
      * 中文说明：写入或更新草稿头业务载体并返回持久化结果；MP 守卫写入即时生效，修订号由持久边界递增。
      * English summary: Persists the draft head business carrier and returns the stored carrier; the guarded MP write is immediate and the persistence boundary increments the revision.

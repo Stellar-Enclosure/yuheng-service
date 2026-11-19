@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
-import top.egon.cola.component.tianshu.model.management.DdcManagementScopeBinding;
+import top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO;
 import top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationCreateCommandDTO;
 import top.egon.cola.component.yuheng.admin.application.domain.dto.GatewayApplicationUpdateCommandDTO;
 import top.egon.cola.component.yuheng.admin.application.domain.exception.GatewayApplicationAlreadyExistsException;
@@ -126,7 +126,7 @@ public class GatewayApplicationService {
                         required(command.env(), "env"),
                         required(command.applicationCode(), "applicationCode")
                 );
-        DdcManagementScopeBinding binding = scopes.requireEnabled(scope);
+        BindingVO binding = scopes.requireEnabled(scope);
         GatewayApplicationBO existing = applications
                 .findByBizCodeAndApplicationCodeAndEnvAndDeletedFalse(
                         scope.bizCode(),
@@ -190,9 +190,9 @@ public class GatewayApplicationService {
     @Transactional(readOnly = true)
     public List<GatewayApplicationVO> list(
             top.egon.cola.component.yuheng.admin.scope.domain.dto.GatewayScopeQueryDTO query) {
-        List<DdcManagementScopeBinding> bindings = scopes.bindings(query);
+        List<BindingVO> bindings = scopes.bindings(query);
         Map<top.egon.cola.component.yuheng.admin.scope.domain.GatewayPhysicalApplicationKey,
-                List<DdcManagementScopeBinding>> bindingsByApplication =
+                List<BindingVO>> bindingsByApplication =
                 bindings.stream().collect(Collectors.groupingBy(
                         GatewayApplicationService::physicalKey,
                         LinkedHashMap::new,
@@ -329,7 +329,7 @@ public class GatewayApplicationService {
     private GatewayApplicationVO scopedView(
             GatewayApplicationBO application,
             top.egon.cola.component.yuheng.admin.scope.domain.dto.GatewayScopeQueryDTO query,
-            List<DdcManagementScopeBinding> bindings) {
+            List<BindingVO> bindings) {
         String namespace = application.getNamespace();
         if (!query.empty()) {
             namespace = query.namespace() == null
@@ -351,9 +351,9 @@ public class GatewayApplicationService {
      */
     private String matchedNamespace(
             GatewayApplicationBO application,
-            List<DdcManagementScopeBinding> bindings) {
+            List<BindingVO> bindings) {
         return bindings.stream()
-                .map(DdcManagementScopeBinding::namespaceCode)
+                .map(BindingVO::namespaceCode)
                 .filter(application.getNamespace()::equals)
                 .findFirst()
                 .orElseGet(() -> bindings.isEmpty()
@@ -399,7 +399,7 @@ public class GatewayApplicationService {
      * @return 返回 physical键 的处理结果；returns the result of the operation.
      */
     private static top.egon.cola.component.yuheng.admin.scope.domain.GatewayPhysicalApplicationKey physicalKey(
-            DdcManagementScopeBinding binding) {
+            BindingVO binding) {
         return new top.egon.cola.component.yuheng.admin.scope.domain.GatewayPhysicalApplicationKey(
                 binding.bizCode(),
                 binding.env(),

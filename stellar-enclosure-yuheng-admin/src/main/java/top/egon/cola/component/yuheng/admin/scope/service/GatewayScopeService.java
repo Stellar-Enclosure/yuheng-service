@@ -4,10 +4,7 @@ package top.egon.cola.component.yuheng.admin.scope.service;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.tianshu.error.management.DdcManagementClientException;
-import top.egon.cola.component.tianshu.model.management.DdcManagementScopeBinding;
-import top.egon.cola.component.tianshu.model.management.DdcManagementScopeQuery;
+import top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO;
 import top.egon.cola.component.yuheng.admin.application.domain.bo.GatewayApplicationBO;
 import top.egon.cola.component.yuheng.admin.application.repository.GatewayApplicationRepository;
 import top.egon.cola.component.yuheng.admin.scope.domain.GatewayPhysicalApplicationKey;
@@ -36,19 +33,19 @@ public class GatewayScopeService {
      *
      * 用法 / Usage: 该字段通过 {@code GatewayScopeService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayScopeService}; do not couple callers to its representation when the owning type exposes an API.
      */
-    private static final Comparator<DdcManagementScopeBinding> BINDING_ORDER =
-            Comparator.comparing(DdcManagementScopeBinding::bizCode)
-                    .thenComparing(DdcManagementScopeBinding::namespaceCode)
-                    .thenComparing(DdcManagementScopeBinding::env)
-                    .thenComparing(DdcManagementScopeBinding::appCode);
+    private static final Comparator<BindingVO> BINDING_ORDER =
+            Comparator.comparing(BindingVO::bizCode)
+                    .thenComparing(BindingVO::namespaceCode)
+                    .thenComparing(BindingVO::env)
+                    .thenComparing(BindingVO::appCode);
 
     /**
-     * 中文说明：保存 客户端 对应的状态、依赖或配置值；字段类型为 {@code DdcManagementClient}，由 {@code GatewayScopeService} 在其生命周期内读取或更新。
-     * English summary: Holds the state, dependency, or configuration represented by client; its type is {@code DdcManagementClient}, and {@code GatewayScopeService} reads or updates it during its lifecycle.
+     * 中文说明：保存 客户端 对应的状态、依赖或配置值；字段类型为 {@code GatewayScopeBindingReader}，由 {@code GatewayScopeService} 在其生命周期内读取或更新。
+     * English summary: Holds the state, dependency, or configuration represented by client; its type is {@code GatewayScopeBindingReader}, and {@code GatewayScopeService} reads or updates it during its lifecycle.
      *
      * 用法 / Usage: 该字段通过 {@code GatewayScopeService} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayScopeService}; do not couple callers to its representation when the owning type exposes an API.
      */
-    private final DdcManagementClient client;
+    private final GatewayScopeBindingReader client;
 
     /**
      * 中文说明：保存 applications 对应的状态、依赖或配置值；字段类型为 {@code GatewayApplicationRepository}，由 {@code GatewayScopeService} 在其生命周期内读取或更新。
@@ -68,7 +65,7 @@ public class GatewayScopeService {
      */
     @Autowired
     public GatewayScopeService(
-            ObjectProvider<DdcManagementClient> client,
+            @org.springframework.beans.factory.annotation.Qualifier("gatewayScopeBindingReader") ObjectProvider<GatewayScopeBindingReader> client,
             GatewayApplicationRepository applications) {
         this(client.getIfAvailable(), applications);
     }
@@ -82,7 +79,7 @@ public class GatewayScopeService {
      * @param applications 参数 applications；parameter applications。
      */
     GatewayScopeService(
-            DdcManagementClient client,
+            GatewayScopeBindingReader client,
             GatewayApplicationRepository applications) {
         this.client = client;
         this.applications = applications;
@@ -117,20 +114,14 @@ public class GatewayScopeService {
      * @param query 参数 query；parameter query。
      * @return 返回 bindings 的处理结果；returns the result of the operation.
      */
-    public List<DdcManagementScopeBinding> bindings(GatewayScopeQueryDTO query) {
+    public List<BindingVO> bindings(GatewayScopeQueryDTO query) {
         Objects.requireNonNull(query, "query");
         try {
-            return client().getScopeBindings(new DdcManagementScopeQuery(
-                            query.bizCode(),
-                            query.namespace(),
-                            query.env(),
-                            query.appCode()
-                    )).stream()
-                    .filter(DdcManagementScopeBinding::enabled)
+            return client().bindings(query).stream()
+                    .filter(BindingVO::enabled)
                     .sorted(BINDING_ORDER)
                     .toList();
-        } catch (DdcManagementClientException
-                 | UnsupportedOperationException error) {
+        } catch (RuntimeException error) {
             throw new IllegalStateException(
                     "Tianshu scope catalog is unavailable",
                     error
@@ -146,7 +137,7 @@ public class GatewayScopeService {
      * @param query 参数 query；parameter query。
      * @return 返回 requireEnabled 的处理结果；returns the result of the operation.
      */
-    public DdcManagementScopeBinding requireEnabled(GatewayScopeQueryDTO query) {
+    public BindingVO requireEnabled(GatewayScopeQueryDTO query) {
         return bindings(query).stream()
                 .filter(value -> exact(value, query))
                 .findFirst()
@@ -162,10 +153,10 @@ public class GatewayScopeService {
      * 用法 / Usage: 调用方式 / Usage: {@code GatewayScopeService.client(...)}。调用方应准备合法参数并处理返回值或异常；/ Call it with valid arguments and handle the return value or exception according to the owning component's lifecycle.
      * @return 返回 客户端 的处理结果；returns the result of the operation.
      */
-    private DdcManagementClient client() {
+    private GatewayScopeBindingReader client() {
         if (client == null) {
             throw new IllegalStateException(
-                    "Tianshu management client is not configured"
+                    "Tianshu logical scope catalog is not configured"
             );
         }
         return client;
@@ -181,7 +172,7 @@ public class GatewayScopeService {
      * @return 返回 view 的处理结果；returns the result of the operation.
      */
     private static GatewayScopeVO view(
-            DdcManagementScopeBinding binding,
+            BindingVO binding,
             Map<GatewayPhysicalApplicationKey, String> connected) {
         String applicationId = connected.get(physicalKey(binding));
         return new GatewayScopeVO(
@@ -206,7 +197,7 @@ public class GatewayScopeService {
      * @return 返回 exact 的处理结果；returns the result of the operation.
      */
     private static boolean exact(
-            DdcManagementScopeBinding binding,
+            BindingVO binding,
             GatewayScopeQueryDTO query) {
         return Objects.equals(binding.bizCode(), query.bizCode())
                 && Objects.equals(binding.namespaceCode(), query.namespace())
@@ -240,7 +231,7 @@ public class GatewayScopeService {
      * @return 返回 physical键 的处理结果；returns the result of the operation.
      */
     private static GatewayPhysicalApplicationKey physicalKey(
-            DdcManagementScopeBinding binding) {
+            BindingVO binding) {
         return new GatewayPhysicalApplicationKey(
                 binding.bizCode(),
                 binding.env(),

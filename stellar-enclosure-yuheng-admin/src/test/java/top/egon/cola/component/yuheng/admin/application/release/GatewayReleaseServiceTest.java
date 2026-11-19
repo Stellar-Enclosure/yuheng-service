@@ -1,5 +1,6 @@
 package top.egon.cola.component.yuheng.admin.release.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,6 +33,8 @@ import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCom
 import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.*;
 import top.egon.cola.component.yuheng.admin.group.domain.bo.GatewayGroupBO;
 import top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository;
+import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpApiMappingContentBO;
+import top.egon.cola.component.yuheng.admin.mcp.service.McpReleaseContentFactory;
 import top.egon.cola.component.yuheng.admin.observability.domain.bo.GatewayAuditLogBO;
 import top.egon.cola.component.yuheng.admin.observability.repository.GatewayAuditLogRepository;
 import top.egon.cola.component.yuheng.admin.permission.GatewayPermissionCodes;
@@ -43,6 +46,7 @@ import top.egon.cola.component.yuheng.admin.release.domain.enums.GatewayReleaseS
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import top.egon.cola.component.yuheng.admin.release.repository.GatewayReleaseRepository;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayDraftBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayRouteDraftBO;
 import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
 import top.egon.cola.component.yuheng.admin.routing.repository.GatewayDraftJpaRepository;
@@ -71,6 +75,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -212,6 +217,189 @@ class GatewayReleaseServiceTest {
     }
 
     @Test
+    void mappingOnlyCreatePublishesFrozenContentWithoutHttpWork() {
+        JsonNode section = f.mappingDraft(false, true, "LOW", "orders:read");
+
+        var created = f.create();
+
+        assertThat(created.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(created.exposureOutcomes()).isEmpty();
+        assertThat(created.clusterTargets()).isEmpty();
+        assertThat(f.artifacts.get(created.releaseId()).mcpPublication()).isEqualTo(section);
+        assertThat(f.artifacts.get(created.releaseId()).hasExposurePublication()).isFalse();
+        assertThat(created.validationReport()).containsEntry("mcpPublication",
+                Map.of("contentSha256", section.path("contentSha256").textValue(), "mappingCount", 1));
+        assertThat(f.rows).isEmpty();
+        assertThat(f.messages).isEmpty();
+        verify(f.resolver, never()).resolve(anyLong(), anyLong(), anyString(), anyString());
+        var order = inOrder(f.drafts, f.releases);
+        order.verify(f.drafts).lockForPublication(GROUP);
+        order.verify(f.releases).hasReleaseInProgress(GROUP);
+        order.verify(f.releases).insertNative(any(), any(), anyInt());
+    }
+
+    @Test
+    void mixedCreatePublishesBothSectionsAndAwaitsOnlyActualHttpRoute() {
+        JsonNode section = f.mappingDraft(true, true, "LOW", "orders:read");
+
+        var created = f.create();
+
+        assertThat(created.status()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
+        assertThat(created.exposureOutcomes()).hasSize(1);
+        assertThat(f.artifacts.get(created.releaseId()).hasExposurePublication()).isTrue();
+        assertThat(f.artifacts.get(created.releaseId()).mcpPublication()).isEqualTo(section);
+        assertThat(f.messages).hasSize(1);
+    }
+
+    @Test
+    void emptyDraftStillCannotPublishAndDoesNotResolveHttpOrMcpBindings() {
+        when(f.draftService.get(GROUP)).thenReturn(new GatewayDraftVO(GROUP, 0L, null, "EDITABLE", "source",
+                List.of(), List.of(), NOW));
+
+        assertThatThrownBy(f::create).hasMessage("YUHENG_RELEASE_NO_PUBLIC_EXPOSURES");
+        assertThat(f.heads).isEmpty();
+        verify(f.resolver, never()).resolve(anyLong(), anyLong(), anyString(), anyString());
+        verify(f.mcp, never()).compileMappingSection(anyLong(), any());
+    }
+
+    @Test
+    void retryRevalidatesAndReusesTheExactFrozenMappingSection() {
+        JsonNode section = f.mappingDraft(false, true, "LOW", "orders:read");
+        var created = f.create();
+        f.heads.get(created.releaseId()).setStatus(GatewayReleaseStatus.UNKNOWN);
+
+        var retried = f.service.retry(created.releaseId(), ADMIN, REQUEST);
+
+        verify(f.mcp).revalidateMappingSection(OWNER, GROUP, section);
+        assertThat(retried.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(f.artifacts.get(retried.releaseId()).mcpPublication()).isEqualTo(section);
+        assertThat(f.attempts.get(retried.releaseId())).hasSize(2);
+        assertThat(f.messages).isEmpty();
+    }
+
+    @Test
+    void retryWithRevokedSourceCannotBeginAnotherAttempt() {
+        JsonNode section = f.mappingDraft(false, true, "LOW", "orders:read");
+        var created = f.create();
+        f.heads.get(created.releaseId()).setStatus(GatewayReleaseStatus.UNKNOWN);
+        doThrow(new IllegalStateException("source authorization revoked"))
+                .when(f.mcp).revalidateMappingSection(OWNER, GROUP, section);
+
+        assertThatThrownBy(() -> f.service.retry(created.releaseId(), ADMIN, REQUEST))
+                .hasMessage("source authorization revoked");
+        verify(f.releases, never()).nextAttempt(anyString(), any());
+        assertThat(f.attempts.get(created.releaseId())).hasSize(1);
+        assertThat(f.messages).isEmpty();
+    }
+
+    @Test
+    void mappingRetryUsesStatusAfterAcquiringTheGroupPublicationLock() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var created = f.create();
+        String releaseId = created.releaseId();
+        when(f.releases.find(releaseId)).thenReturn(Optional.of(f.header(releaseId, GatewayReleaseStatus.UNKNOWN)),
+                Optional.of(f.header(releaseId, GatewayReleaseStatus.SUCCESS)));
+
+        assertThatThrownBy(() -> f.service.retry(releaseId, ADMIN, REQUEST))
+                .hasMessage("YUHENG_ADMIN_RELEASE_NOT_RETRYABLE");
+
+        verify(f.releases, never()).nextAttempt(anyString(), any());
+        verify(f.mcp, never()).revalidateMappingSection(anyLong(), anyString(), any());
+    }
+
+    @Test
+    void rollbackCreatesNewReleaseWithTheExactFrozenMappingSection() {
+        JsonNode section = f.mappingDraft(false, true, "LOW", "orders:read");
+        var original = f.create();
+        f.mappingDraft(false, true, "CRITICAL", "other:permission");
+
+        var rolled = f.service.rollback(GROUP, new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST);
+
+        verify(f.mcp).revalidateMappingSection(OWNER, GROUP, section);
+        assertThat(rolled.releaseId()).isNotEqualTo(original.releaseId());
+        assertThat(rolled.rollbackOfReleaseId()).isEqualTo(original.releaseId());
+        assertThat(rolled.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(f.artifacts.get(rolled.releaseId()).mcpPublication()).isEqualTo(section);
+        assertThat(f.messages).isEmpty();
+    }
+
+    @Test
+    void rollbackCannotRestoreToolDisabledByNewerSuccessfulPublication() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var original = f.create();
+        f.mappingDraft(false, false, "LOW", "orders:read");
+        f.create();
+
+        assertThatThrownBy(() -> f.service.rollback(GROUP,
+                new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST))
+                .hasMessage("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
+        assertThat(f.artifacts).hasSize(2);
+    }
+
+    @Test
+    void retryCannotChangeAnOlderPublicationAfterTheDraftBasisAdvances() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var original = f.create();
+        f.heads.get(original.releaseId()).setStatus(GatewayReleaseStatus.UNKNOWN);
+        f.mappingDraft(false, true, "HIGH", "orders:read", "orders:privileged");
+        f.create();
+
+        assertThatThrownBy(() -> f.service.retry(original.releaseId(), ADMIN, REQUEST))
+                .hasMessage("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
+        assertThat(f.attempts.get(original.releaseId())).hasSize(1);
+    }
+
+    @Test
+    void rollbackCannotDropNewPermissionsOrLowerTheEffectiveRiskFloor() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var original = f.create();
+        f.mappingDraft(false, true, "HIGH", "orders:read", "orders:privileged");
+        f.create();
+
+        assertThatThrownBy(() -> f.service.rollback(GROUP,
+                new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST))
+                .hasMessage("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
+        assertThat(f.artifacts).hasSize(2);
+    }
+
+    @Test
+    void rollbackCannotSkipCurrentMcpRestrictionsWhenBasisArtifactIsMissing() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var original = f.create();
+        f.mappingDraft(false, false, "HIGH", "orders:read", "orders:privileged");
+        var current = f.create();
+        when(f.releases.loadNative(current.releaseId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> f.service.rollback(GROUP,
+                new GatewayReleaseRollbackCommandDTO(original.releaseId(), 0L, "rollback"), ADMIN, REQUEST))
+                .hasMessage("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
+        verify(f.mcp, never()).revalidateMappingSection(anyLong(), anyString(), any());
+        assertThat(f.artifacts).hasSize(2);
+        assertThat(f.messages).isEmpty();
+    }
+
+    @Test
+    void retryCannotSkipCurrentMcpRestrictionsWhenBasisArtifactIdentityDoesNotMatch() {
+        f.mappingDraft(false, true, "LOW", "orders:read");
+        var baseline = f.create();
+        var original = f.create();
+        f.heads.get(original.releaseId()).setStatus(GatewayReleaseStatus.UNKNOWN);
+        f.drafts.findById(GROUP).orElseThrow().setBasedOnReleaseId(baseline.releaseId());
+        when(f.releases.loadNative(baseline.releaseId())).thenReturn(Optional.of(f.artifacts.get(original.releaseId())));
+
+        assertThatThrownBy(() -> f.service.retry(original.releaseId(), ADMIN, REQUEST))
+                .hasMessage("YUHENG_RELEASE_MCP_REPLAY_NO_LONGER_AUTHORIZED");
+        verify(f.releases, never()).nextAttempt(anyString(), any());
+        assertThat(f.attempts.get(original.releaseId())).hasSize(1);
+    }
+
+    private static GatewayPolicyDraftBO mappingPolicy() {
+        return GatewayPolicyDraftBO.builder().gatewayGroupId(GROUP).policyId("orders-tool")
+                .policyType(McpApiMappingContentBO.POLICY_TYPE).policyScope(McpApiMappingContentBO.POLICY_SCOPE)
+                .enabled(true).content(Map.of()).build();
+    }
+
+    @Test
     void sourceOperationMustRemainExternallyAuthorizedAndActive() {
         f.operation.setExternalAccessible(false);
         assertThatThrownBy(f::create).isInstanceOf(IllegalStateException.class);
@@ -262,6 +450,7 @@ class GatewayReleaseServiceTest {
         final GatewayUrlExposureRepository exposures = mock(GatewayUrlExposureRepository.class);
         final TransactionalOutbox outbox = mock(TransactionalOutbox.class);
         final BindingResolver resolver = mock(BindingResolver.class);
+        final McpReleaseContentFactory mcp = mock(McpReleaseContentFactory.class);
         final Map<String, GatewayReleaseBO> heads = new LinkedHashMap<>();
         final Map<String, GatewayCiliumReleaseArtifact> artifacts = new LinkedHashMap<>();
         final Map<Long, GatewayUrlExposureBO> rows = new LinkedHashMap<>();
@@ -284,16 +473,23 @@ class GatewayReleaseServiceTest {
             tx = new TransactionTemplate(tm);
             var beans = new StaticListableBeanFactory();
             beans.addBean("gatewayHttpRouteBindingResolver", resolver);
+            beans.addBean("mcpReleaseContentFactory", mcp);
             when(groups.findByIdAndDeletedFalse(GROUP)).thenReturn(Optional.of(GatewayGroupBO.builder().id(GROUP)
                     .gatewayGroupCode("orders").env("prod").namespace("business").enabled(true).build()));
             when(drafts.findById(GROUP)).thenReturn(Optional.of(new GatewayDraftBO(GROUP, "admin-a", NOW)));
+            when(drafts.lockForPublication(GROUP)).thenAnswer(call -> {
+                inTransaction();
+                return drafts.findById(GROUP);
+            });
             when(draftService.get(GROUP)).thenAnswer(call -> new GatewayDraftVO(GROUP, 0L, null, "EDITABLE", "source", List.of(route), List.of(), NOW));
             when(catalog.findOperation("9001")).thenReturn(Optional.of(operation));
             when(catalog.loadDefinitions("9001")).thenAnswer(call -> List.of(definition));
             when(resolver.resolve(OWNER, Long.parseLong(GROUP), "orders-read", "9001")).thenReturn(Optional.of(binding));
             when(releases.find(anyString())).thenAnswer(call -> Optional.ofNullable(heads.get(call.getArgument(0))));
             when(releases.loadNative(anyString())).thenAnswer(call -> Optional.ofNullable(artifacts.get(call.getArgument(0))));
-            when(releases.history(GROUP)).thenAnswer(call -> new ArrayList<>(heads.values()));
+            when(releases.history(GROUP)).thenAnswer(call -> heads.values().stream()
+                    .sorted(Comparator.comparing(GatewayReleaseBO::getCreatedAt)
+                            .thenComparingLong(head -> Long.parseLong(head.getId())).reversed()).toList());
             when(releases.attempts(anyString())).thenAnswer(call -> attempts.getOrDefault(call.getArgument(0), List.of()));
             doAnswer(call -> {
                 inTransaction();
@@ -345,7 +541,32 @@ class GatewayReleaseServiceTest {
             });
             coordinator = new GatewayReleasePublicationCoordinator(releases, exposures, outbox, converter, json, Clock.fixed(NOW, ZoneOffset.UTC));
             service = new GatewayReleaseService(groups, drafts, draftService, catalog, releases, auditStore, tx, exposures,
-                    coordinator, new GatewayHttpRouteCompiler(json), beans.getBeanProvider(BindingResolver.class), json, Clock.fixed(NOW, ZoneOffset.UTC));
+                    coordinator, new GatewayHttpRouteCompiler(json), beans.getBeanProvider(BindingResolver.class),
+                    beans.getBeanProvider(McpReleaseContentFactory.class), json, Clock.fixed(NOW, ZoneOffset.UTC));
+        }
+
+        JsonNode mappingDraft(boolean publicRoute, boolean enabled, String risk, String... permissions) {
+            var draft = new GatewayDraftVO(GROUP, 0L, null, "EDITABLE", "source",
+                    publicRoute ? List.of(route) : List.of(), List.of(mappingPolicy()), NOW);
+            when(draftService.get(GROUP)).thenReturn(draft);
+            String toolId = "b".repeat(64);
+            var entry = json.createObjectNode().put("toolId", toolId).put("dependencyClosureDigest", "c".repeat(64));
+            entry.putObject("sourceOperation").put("operationId", "9001").put("operationKey", "orders.read")
+                    .put("definitionDigest", "a".repeat(64));
+            entry.putObject("siServer").put("resourceId", "901").put("versionId", "902").put("versionNo", "3")
+                    .put("digestSha256", "d".repeat(64)).put("bizCode", "commerce").put("namespaceCode", "orders")
+                    .put("envCode", "prod").put("ownerAppCode", "orders").put("resourceKey", "order-tools");
+            var tool = entry.putObject("tool").put("toolId", toolId).put("operationId", "9001")
+                    .put("serverCode", "order-tools").put("name", "readOrders").put("description", "Read an order")
+                    .put("sourceType", "LOCAL_OPERATION").put("operationProtocol", "HTTP").putNull("remoteMountId")
+                    .put("inputSchema", "{\"type\":\"object\"}").put("outputSchema", "{\"type\":\"object\"}")
+                    .put("riskLevel", risk).put("idempotent", true).put("enabled", enabled);
+            tool.putObject("annotations");
+            var permissionArray = tool.putArray("requiredPermissions");
+            for (String permission : permissions) permissionArray.add(permission);
+            JsonNode section = GatewayCiliumReleaseArtifact.mcpPublication(json.createArrayNode().add(entry));
+            when(mcp.compileMappingSection(OWNER, draft)).thenReturn(section);
+            return section;
         }
 
         top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayReleaseVO create() {

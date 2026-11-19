@@ -1,97 +1,38 @@
 package top.egon.cola.component.yuheng.admin.mcp.repository.filesystem;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import top.egon.cola.component.yuheng.core.mcp.app.McpAppArtifactStore;
+import top.egon.cola.component.yuheng.admin.mcp.service.McpControlPlaneService;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.util.HexFormat;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/** Native App artifacts have a single owner outside the Yuheng Admin process. */
 class McpArtifactUploadIT {
 
-    @TempDir
-    Path temporaryDirectory;
-
     @Test
-    void artifactVersionCannotBeOverwritten() {
-        byte[] original = "<html>original</html>".getBytes(
-                StandardCharsets.UTF_8
-        );
-        byte[] changed = "<html>changed</html>".getBytes(
-                StandardCharsets.UTF_8
-        );
-        FileSystemMcpAppArtifactRepository store =
-                new FileSystemMcpAppArtifactRepository(temporaryDirectory);
-
-        var first = store.write(request(original));
-        var replay = store.write(request(original));
-
-        assertEquals(first, replay);
-        assertArrayEquals(original, store.read(new
-                McpAppArtifactStore.ReadRequest(
-                first.artifactReference(),
-                first.sha256(),
-                first.sizeBytes()
-        )).content());
-        assertThrows(
-                McpAppArtifactStore.ArtifactConflictException.class,
-                () -> store.write(request(changed))
-        );
-        assertFalse(Files.exists(temporaryDirectory.resolve(
-                "apps/dashboard/1.0.0/index.html.tmp"
-        )));
-    }
-
-    @Test
-    void symlinkEscapeAndWrongDigestAreRejected() throws IOException {
-        Path outside = Files.createTempDirectory("mcp-app-outside-");
-        Files.createSymbolicLink(temporaryDirectory.resolve("apps"), outside);
-        FileSystemMcpAppArtifactRepository store =
-                new FileSystemMcpAppArtifactRepository(temporaryDirectory);
-        byte[] content = "<html>safe</html>".getBytes(StandardCharsets.UTF_8);
-
-        assertThrows(
-                McpAppArtifactStore.ArtifactRejectedException.class,
-                () -> store.write(request(content))
-        );
-        assertThrows(
-                McpAppArtifactStore.ArtifactRejectedException.class,
-                () -> new FileSystemMcpAppArtifactRepository(
-                        temporaryDirectory.resolve("clean")
-                ).write(new McpAppArtifactStore.WriteRequest(
-                        "dashboard",
-                        "1.0.0",
-                        content,
-                        "0".repeat(64)
-                ))
-        );
-    }
-
-    private McpAppArtifactStore.WriteRequest request(byte[] content) {
-        return new McpAppArtifactStore.WriteRequest(
-                "dashboard",
-                "1.0.0",
-                content,
-                sha256(content)
-        );
-    }
-
-    private static String sha256(byte[] value) {
-        try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(value)
-            );
-        } catch (java.security.NoSuchAlgorithmException failure) {
-            throw new IllegalStateException(failure);
+    void nativeArtifactControllerAndFilesystemRuntimeAreAbsent() {
+        for (String type : new String[]{
+                "top.egon.cola.component.yuheng.admin.mcp.controller.McpAppAdminController",
+                "top.egon.cola.component.yuheng.admin.mcp.repository.filesystem.FileSystemMcpAppArtifactRepository"}) {
+            assertThatThrownBy(() -> Class.forName(type))
+                    .as(type).isInstanceOf(ClassNotFoundException.class);
         }
+    }
+
+    @Test
+    void serviceRetainsMetadataHistoryWithoutArtifactMutation() {
+        assertThat(Arrays.stream(McpControlPlaneService.class.getDeclaredMethods())
+                .filter(method -> Modifier.isPublic(method.getModifiers()))
+                .map(java.lang.reflect.Method::getName))
+                .contains("artifacts", "artifact")
+                .doesNotContain("uploadArtifact", "registerArtifact", "revokeArtifact");
+        assertThat(Arrays.stream(McpControlPlaneService.class.getDeclaredConstructors())
+                .flatMap(constructor -> Arrays.stream(constructor.getParameterTypes()))
+                .map(Class::getName))
+                .noneMatch(name -> name.contains("McpAppArtifactStore")
+                        || name.contains("McpAppSecurityValidator"));
     }
 }

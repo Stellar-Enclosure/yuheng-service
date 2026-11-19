@@ -2,6 +2,14 @@ package top.egon.cola.component.yuheng.admin.mcp.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpApiMappingContentBO;
+import top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO;
+import top.egon.cola.component.yuheng.admin.routing.domain.bo.GatewayPolicyDraftBO;
+import top.egon.cola.component.yuheng.admin.catalog.domain.vo.GatewayCurrentOperationDefinitionVO;
+import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
+import top.egon.cola.component.yuheng.admin.mcp.domain.exception.McpValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
@@ -25,11 +33,24 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
 import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
 import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpManagedToolOverrideBO;
 
 class McpReleaseContentFactoryTest {
+
+    @Test
+    void nativeMappingCompilationLeavesOrdinaryDraftsWithoutAnMcpSection() throws Exception {
+        var draft = new top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO(
+                "group-1", 3, null, "EDITING", "ordinary routes", List.of(), List.of(), NOW);
+        var compile = McpReleaseContentFactory.class.getMethod("compileMappingSection", long.class,
+                top.egon.cola.component.yuheng.admin.routing.domain.vo.GatewayDraftVO.class);
+
+        assertThat(compile.invoke(factory, 7L, draft)).isNull();
+    }
 
     private static final Instant NOW = Instant.parse("2026-08-06T00:00:00Z");
 
@@ -367,6 +388,201 @@ class McpReleaseContentFactoryTest {
         assertThat(tool.riskLevel()).isEqualTo("HIGH");
         assertThat(tool.enabled()).isFalse();
         assertThat(projection.overrideRevision()).isEqualTo(3);
+    }
+
+    @Test
+    void nativeMappingFreezesApprovedSourceAndSiWithoutLocalServerRows() throws Exception {
+        var source = nativeSource();
+        var intent = nativeIntent(false);
+        var resolver = nativeResolver(intent);
+        var nativeFactory = nativeFactory(resolver);
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(source));
+
+        JsonNode section = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        JsonNode entry = section.path("mappings").get(0);
+
+        assertThat(section.path("schemaVersion").asText()).isEqualTo("mcp-api-mapping-v1");
+        assertThat(section.path("contentSha256").asText()).matches("[a-f0-9]{64}");
+        assertThat(entry.path("toolId").asText())
+                .isEqualTo("59da10910192faf61cf5c56d05d572c4440858ded75f4350b65807e873c55d21");
+        assertThat(entry.path("sourceOperation").path("definitionDigest").asText()).isEqualTo("a".repeat(64));
+        assertThat(entry.path("siServer")).isEqualTo(objectMapper.valueToTree(intent.content().get("siServer")));
+        assertThat(entry.path("dependencyClosureDigest").asText()).isEqualTo("c".repeat(64));
+        assertThat(entry.path("tool").path("requiredPermissions")).isEqualTo(
+                objectMapper.valueToTree(List.of("mcp:orders:audit", "mcp:orders:read")));
+        assertThat(entry.path("tool").path("riskLevel").asText()).isEqualTo("HIGH");
+        assertThat(entry.path("tool").path("enabled").booleanValue()).isTrue();
+        assertThat(objectMapper.readTree(entry.path("tool").path("inputSchema").textValue()))
+                .isEqualTo(objectMapper.valueToTree(Map.of("type", "object", "properties", Map.of("body", Map.of("type", "object")), "additionalProperties", false)));
+        assertThat(section.toString()).doesNotContain("specJson", "credential", "clientSecret");
+        verifyNoInteractions(servers, overrides);
+        verify(resolver).resolveClosure(7, intent.siServer());
+    }
+
+    @Test
+    void realNativeMappingRequiresTheTrustedReaderButOrdinaryDraftDoesNot() {
+        var intent = nativeIntent(false);
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(nativeSource()));
+
+        assertThatThrownBy(() -> factory.compileMappingSection(7, nativeDraft(intent, true)))
+                .isInstanceOf(McpValidationException.class)
+                .hasMessageContaining("approved published SI reader");
+    }
+
+    @Test
+    void staleSourceDigestAndUnapprovedSourceCannotBeCompiled() {
+        var intent = nativeIntent(false);
+        var resolver = nativeResolver(intent);
+        var nativeFactory = nativeFactory(resolver);
+        var source = nativeSource();
+        source.definition().setDefinitionSha256("b".repeat(64));
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(source));
+        assertThatThrownBy(() -> nativeFactory.compileMappingSection(7, nativeDraft(intent, true)))
+                .isInstanceOf(McpValidationException.class);
+        source.definition().setDefinitionSha256("a".repeat(64))
+                .setAttributes(Map.of("mcpExposure", Map.of("registerMcp", false)));
+        assertThatThrownBy(() -> nativeFactory.compileMappingSection(7, nativeDraft(intent, true)))
+                .isInstanceOf(McpValidationException.class);
+        verifyNoInteractions(resolver);
+    }
+
+    @Test
+    void disabledIntentAndDisabledPolicyBothFreezeDisabledTools() {
+        var intent = nativeIntent(true);
+        var resolver = nativeResolver(intent);
+        var nativeFactory = nativeFactory(resolver);
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(nativeSource()));
+        assertThat(nativeFactory.compileMappingSection(7, nativeDraft(intent, true))
+                .path("mappings").get(0).path("tool").path("enabled").booleanValue()).isFalse();
+        assertThat(nativeFactory.compileMappingSection(7, nativeDraft(nativeIntent(false), false))
+                .path("mappings").get(0).path("tool").path("enabled").booleanValue()).isFalse();
+    }
+
+    @Test
+    void revalidationKeepsOriginalPinnedSchemaDespiteANewerApprovedDefinition() {
+        var intent = nativeIntent(false);
+        var resolver = nativeResolver(intent);
+        var nativeFactory = nativeFactory(resolver);
+        var original = nativeSource();
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(original));
+        JsonNode frozen = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        String bytes = frozen.toString();
+        var latest = nativeSource();
+        latest.operation().setCurrentDefinitionId("definition-2");
+        latest.definition().setId("definition-2").setDefinitionSha256("b".repeat(64))
+                .setRequestSchema(Map.of("type", "object", "properties", Map.of("query", Map.of("type", "object"))));
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(latest));
+        when(catalog.loadDefinitions("101")).thenReturn(List.of(latest.definition(), original.definition()));
+
+        nativeFactory.revalidateMappingSection(7, "group-1", frozen);
+
+        assertThat(frozen.toString()).isEqualTo(bytes);
+        verify(resolver, org.mockito.Mockito.times(2)).resolveClosure(7, intent.siServer());
+    }
+
+    @Test
+    void revalidationCannotReplaceMissingPinnedHistoryWithTheCurrentDefinition() {
+        var intent = nativeIntent(false);
+        var nativeFactory = nativeFactory(nativeResolver(intent));
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(nativeSource()));
+        JsonNode frozen = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        when(catalog.loadDefinitions("101")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", frozen))
+                .isInstanceOf(McpValidationException.class);
+    }
+
+    @Test
+    void currentApprovalAndPermissionFloorAreCheckedAgainBeforeRepublishing() {
+        var intent = nativeIntent(false);
+        var nativeFactory = nativeFactory(nativeResolver(intent));
+        var original = nativeSource();
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(original));
+        JsonNode frozen = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        var latest = nativeSource();
+        latest.definition().setAttributes(Map.of("mcpExposure", Map.of("registerMcp", true,
+                "mcpServerCode", "orders", "mcpName", "orders.get", "riskLevel", "CRITICAL",
+                "requiredPermissions", List.of("mcp:orders:extra"), "idempotent", true)));
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(latest));
+        when(catalog.loadDefinitions("101")).thenReturn(List.of(original.definition()));
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", frozen))
+                .isInstanceOf(McpValidationException.class);
+        latest.definition().setAttributes(Map.of("mcpExposure", Map.of("registerMcp", false)));
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", frozen))
+                .isInstanceOf(McpValidationException.class);
+    }
+
+    @Test
+    void changedClosureAndCurrentAuthorizationFailureNeverFallBackToFrozenApproval() {
+        var intent = nativeIntent(false);
+        var resolver = nativeResolver(intent);
+        var nativeFactory = nativeFactory(resolver);
+        var source = nativeSource();
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(source));
+        when(catalog.loadDefinitions("101")).thenReturn(List.of(source.definition()));
+        JsonNode frozen = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        String bytes = frozen.toString();
+        when(resolver.resolveClosure(7, intent.siServer())).thenReturn("e".repeat(64));
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", frozen))
+                .isInstanceOf(McpValidationException.class);
+        org.mockito.Mockito.doThrow(new SecurityException("denied")).when(resolver)
+                .resolveClosure(7, intent.siServer());
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", frozen))
+                .isInstanceOf(SecurityException.class);
+        assertThat(frozen.toString()).isEqualTo(bytes);
+    }
+
+    @Test
+    void validlyHashedButChangedFrozenSchemaIsRejected() {
+        var intent = nativeIntent(false);
+        var nativeFactory = nativeFactory(nativeResolver(intent));
+        var source = nativeSource();
+        when(catalog.loadCurrentOperationDefinitions("group-1")).thenReturn(List.of(source));
+        when(catalog.loadDefinitions("101")).thenReturn(List.of(source.definition()));
+        JsonNode frozen = nativeFactory.compileMappingSection(7, nativeDraft(intent, true));
+        ((ObjectNode) frozen.path("mappings").get(0).path("tool"))
+                .put("inputSchema", "{\"type\":\"string\"}");
+        JsonNode rehashed = GatewayCiliumReleaseArtifact.mcpPublication(frozen.path("mappings"));
+        assertThatThrownBy(() -> nativeFactory.revalidateMappingSection(7, "group-1", rehashed))
+                .isInstanceOf(McpValidationException.class);
+    }
+
+    private McpApiMappingContentBO nativeIntent(boolean disabled) {
+        return new McpApiMappingContentBO(new McpApiMappingContentBO.SourceOperationVO("101",
+                "http:orders:GET:/orders/{id}", "a".repeat(64)),
+                new McpApiMappingContentBO.SiServerVersionVO("201", "301", "3", "d".repeat(64),
+                        "commerce", "default", "test", "orders-app", "orders"),
+                Set.of("mcp:orders:audit"), "HIGH", disabled);
+    }
+
+    private GatewayDraftVO nativeDraft(McpApiMappingContentBO intent, boolean enabled) {
+        return new GatewayDraftVO("group-1", 3, null, "EDITING", "mapping", List.of(),
+                List.of(new GatewayPolicyDraftBO("group-1", "mapping-1", McpApiMappingContentBO.POLICY_TYPE,
+                        McpApiMappingContentBO.POLICY_SCOPE, intent.content(), enabled, NOW, "admin")), NOW);
+    }
+
+    private GatewayCurrentOperationDefinitionVO nativeSource() {
+        var approvedExposure = new java.util.LinkedHashMap<>(exposure("orders", "orders.get", "LOW"));
+        approvedExposure.put("requiredPermissions", List.of("mcp:orders:read"));
+        return current("101", "http:orders:GET:/orders/{id}", "HTTP",
+                Map.of("description", "Get one order", "mcpExposure", approvedExposure),
+                Map.of("type", "object", "properties", Map.of("body", Map.of("type", "object")), "additionalProperties", false),
+                Map.of("type", "object", "title", "Order"), "OPENAPI31");
+    }
+
+    private McpPublishedSiResolver nativeResolver(McpApiMappingContentBO intent) {
+        var resolver = mock(McpPublishedSiResolver.class);
+        when(resolver.resolveClosure(7, intent.siServer())).thenReturn("c".repeat(64));
+        return resolver;
+    }
+
+    private McpReleaseContentFactory nativeFactory(McpPublishedSiResolver resolver) {
+        var beans = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+        beans.addBean("mcpPublishedSiResolver", resolver);
+        return new McpReleaseContentFactory(servers, mock(McpCapabilityDraftRepository.class), overrides,
+                mock(McpRemoteToolDraftRepository.class), mock(McpRemoteProviderRepository.class),
+                mock(McpArtifactMetadataRepository.class), mock(GatewayDraftJpaRepository.class), catalog,
+                mock(McpValidationService.class), objectMapper, beans.getBeanProvider(McpPublishedSiResolver.class));
     }
 
     private top.egon.cola.component.yuheng.admin.catalog.domain.vo.GatewayCurrentOperationDefinitionVO current(

@@ -7,6 +7,8 @@ import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.F
 import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionGroup;
 import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.PermissionResource;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import top.egon.cola.component.yuheng.admin.llm.domain.enums.LlmRoutingModeEnum;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -94,6 +96,24 @@ public class GatewayLlmModelVO {
                 plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
     private List<GatewayLlmRouteBindingVO> routes;
 
+    @PermissionResource(key = "yuheng.field.GatewayLlmModelVO.routingMode", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.routingMode",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.STRING,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
+    @Schema(nullable = true)
+    private LlmRoutingModeEnum routingMode;
+
+    @PermissionResource(key = "yuheng.field.GatewayLlmModelVO.cachePolicy", type = ResourceType.FIELD,
+            labelPage = "gateway.permissions", labelKey = "field.cachePolicy",
+            allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
+            oauthScopes = GatewayPermissionCodes.LLM_READ)
+    @FieldPermissions(valueType = PermissionManifest.JsonFieldType.OBJECT,
+            plainRead = @PermissionGroup(codes = GatewayPermissionCodes.LLM_READ))
+    @Schema(nullable = true)
+    private LlmCachePolicyVO cachePolicy;
+
     @PermissionResource(key = "yuheng.field.GatewayLlmModelVO.revision", type = ResourceType.FIELD,
             labelPage = "gateway.permissions", labelKey = "field.revision",
             allowedPrincipals = {PermissionManifest.PrincipalType.USER, PermissionManifest.PrincipalType.SERVICE},
@@ -105,6 +125,7 @@ public class GatewayLlmModelVO {
     public static GatewayLlmModelVO from(LlmModelVO value) {
         return new GatewayLlmModelVO(value.getKey(), value.getName(), value.getKind(), value.getProtocols(),
                 value.getEnabled(), value.getDimensions(), value.getEmbeddingSpaceId(), value.getAllowedSubjects(),
-                value.getRoutes().stream().map(GatewayLlmRouteBindingVO::from).toList(), value.getRevision());
+                value.getRoutes().stream().map(GatewayLlmRouteBindingVO::from).toList(),
+                value.getRoutingMode(), value.getCachePolicy(), value.getRevision());
     }
 }

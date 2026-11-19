@@ -7,9 +7,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import top.egon.cola.component.yuheng.admin.config.properties.GatewayAdminOpenApiProperties;
-import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
-import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientFactory;
-import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientHandle;
 import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
 import top.egon.cola.component.yuheng.admin.exposure.domain.exception.GatewayUrlExposureException;
 import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.BindingVO;
@@ -39,6 +36,38 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class GatewayAdminConfigurationTest {
+    @Test
+    void historicalRuleCompilerIsAbsentFromAdminProductionClasspath() {
+        ClassLoader production=GatewayAdminConfiguration.class.getClassLoader();
+        assertThat(production.getResource("top/egon/cola/component/yuheng/admin/rule/service/GatewayRuleCompiler.class")).isNull();
+        assertThatThrownBy(()->Class.forName("top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCompiler",false,production))
+                .isInstanceOf(ClassNotFoundException.class);
+    }
+
+    @Test
+    void nativeAdminNeverAssemblesLegacyManagementFactoryOrHandle() {
+        assertThat(GatewayAdminConfiguration.class.getDeclaredMethods())
+                .filteredOn(method -> method.isAnnotationPresent(org.springframework.context.annotation.Bean.class))
+                .noneMatch(method -> method.getGenericReturnType().getTypeName().contains("DdcRpcClientHandle")
+                        || method.getReturnType().getSimpleName().equals("DdcManagementClient"));
+    }
+
+
+    @Test
+    void openApiTokenAssemblyNoLongerUsesThePlatformManagementCredential() {
+        assertThat(GatewayAdminConfiguration.class.getDeclaredMethods()).noneMatch(method -> method.getName().equals("gatewayOpenApiTokenSupplier"));
+    }
+
+    @Test
+    void legacyRulePublisherAndCleanupAreAbsentFromAdminSpringAssembly() {
+        Class<?> legacyPublisher = top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher.class;
+        Class<?> legacyCleanup = top.egon.cola.component.yuheng.admin.release.controller.scheduled.GatewayRuleChunkGarbageCollector.class;
+        assertThat(GatewayAdminConfiguration.class.getDeclaredMethods())
+                .noneMatch(method -> method.isAnnotationPresent(org.springframework.context.annotation.Bean.class)
+                        && legacyPublisher.equals(method.getReturnType()));
+        assertThat(org.springframework.core.annotation.AnnotatedElementUtils.hasAnnotation(
+                legacyCleanup, org.springframework.stereotype.Component.class)).isFalse();
+    }
 
     @Test
     void explicitReopenRequiresTheSameStillApprovedBindingAndFrozenContent() {
@@ -110,56 +139,17 @@ class GatewayAdminConfigurationTest {
     }
 
     @Test
-    void projectionConstructorQualifiesClockAndValidatesGroupBoundary() {
-        Class<?> type = top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService.class;
+    void projectionConstructorUsesOnlyOwnedControlDependenciesAndRetainsValidation() {
+        Class<?> type=top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService.class;
         assertThat(type.getConstructors()).hasSize(1);
-        assertThat(Arrays.stream(type.getConstructors()[0].getParameters())
-                .map(parameter -> parameter.getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()))
-                .contains("gatewayProjectionClock", "gatewayEngineRoleConsistencyStrategy", "ddcManagementClient");
-        new org.springframework.boot.test.context.runner.ApplicationContextRunner()
-                .withUserConfiguration(type,
-                        top.egon.cola.component.yuheng.admin.runtime.service.GatewayEngineRoleConsistencyStrategy.class)
-                .withBean("mpGatewayGroupRepository", top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository.class,
-                        () -> mock(top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository.class))
-                .withBean("gatewayReleaseService", top.egon.cola.component.yuheng.admin.release.service.GatewayReleaseService.class,
-                        () -> mock(top.egon.cola.component.yuheng.admin.release.service.GatewayReleaseService.class))
-                .withBean("mpGatewayReleasePublicationRepository",
-                        top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository.class,
-                        () -> mock(top.egon.cola.component.yuheng.admin.release.repository.GatewayReleasePublicationRepository.class))
-                .withBean("gatewayProjectionClock", java.time.Clock.class,
-                        () -> new GatewayAdminConfiguration().gatewayProjectionClock())
-                .withBean("unrelatedClock", java.time.Clock.class, java.time.Clock::systemDefaultZone)
-                .withBean("yuheng.admin-top.egon.cola.component.yuheng.admin.config.GatewayAdminProperties",
-                        top.egon.cola.component.yuheng.admin.config.GatewayAdminProperties.class,
-                        top.egon.cola.component.yuheng.admin.config.GatewayAdminProperties::new)
-                .withBean(org.springframework.validation.beanvalidation.MethodValidationPostProcessor.class,
-                        org.springframework.validation.beanvalidation.MethodValidationPostProcessor::new)
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    var service = context.getBean(
-                            top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService.class);
-                    org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.runtimeConsistency(" "))
-                            .isInstanceOf(jakarta.validation.ConstraintViolationException.class);
-                });
-    }
-
-    @Test
-    void createsDdcManagementClientThroughTheDirectRpcFactory() {
-        GatewayAdminConfiguration configuration =
-                new GatewayAdminConfiguration();
-        DdcRpcClientFactory factory = mock(DdcRpcClientFactory.class);
-        DdcManagementClient client = mock(DdcManagementClient.class);
-        DdcRpcClientHandle<DdcManagementClient> expected =
-                new DdcRpcClientHandle<>(client, () -> {
-                });
-        when(factory.managementClient()).thenReturn(expected);
-
-        DdcRpcClientHandle<DdcManagementClient> handle = configuration
-                .gatewayDdcManagementClientHandle(factory);
-
-        assertThat(handle).isSameAs(expected);
-        assertThat(configuration.ddcManagementClient(handle)).isSameAs(client);
-        verify(factory).managementClient();
+        assertThat(Arrays.stream(type.getConstructors()[0].getParameters()).map(parameter->parameter.getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()))
+                .containsExactly("mpGatewayGroupRepository","gatewayReleaseService");
+        new org.springframework.boot.test.context.runner.ApplicationContextRunner().withUserConfiguration(type)
+                .withBean("mpGatewayGroupRepository",top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository.class,()->mock(top.egon.cola.component.yuheng.admin.group.repository.GatewayGroupRepository.class))
+                .withBean("gatewayReleaseService",top.egon.cola.component.yuheng.admin.release.service.GatewayReleaseService.class,()->mock(top.egon.cola.component.yuheng.admin.release.service.GatewayReleaseService.class))
+                .withBean(org.springframework.validation.beanvalidation.MethodValidationPostProcessor.class,org.springframework.validation.beanvalidation.MethodValidationPostProcessor::new)
+                .run(context->{assertThat(context).hasNotFailed();var service=context.getBean(top.egon.cola.component.yuheng.admin.runtime.service.GatewayProjectionService.class);
+                    assertThatThrownBy(()->service.runtimeConsistency(" ")).isInstanceOf(jakarta.validation.ConstraintViolationException.class);});
     }
 
     @Test

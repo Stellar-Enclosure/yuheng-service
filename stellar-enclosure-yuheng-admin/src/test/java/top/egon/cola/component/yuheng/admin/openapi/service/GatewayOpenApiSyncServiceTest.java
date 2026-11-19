@@ -21,10 +21,6 @@ import top.egon.cola.component.yuheng.admin.openapi.repository.GatewayOpenApiSyn
 import top.egon.cola.component.yuheng.admin.openapi.validation.GatewayOpenApiValidationChain;
 import top.egon.cola.component.yuheng.admin.openapi.validation.GatewayOpenApiValidationResult;
 import top.egon.cola.component.yuheng.contract.reporting.GatewayInterfaceDefinitionReportResult;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceCatalog;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceInstance;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceKey;
-import top.egon.cola.component.tianshu.model.management.DdcManagementServiceSnapshot;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -38,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -48,6 +45,98 @@ import org.mockito.ArgumentCaptor;
 import top.egon.cola.component.yuheng.admin.openapi.converter.GatewayOpenApi31ContractAdapter;
 
 class GatewayOpenApiSyncServiceTest {
+    @org.junit.jupiter.api.Test
+    void nativeDiscoveryDoesNotRequireLegacyManagementClient() {
+        org.assertj.core.api.Assertions.assertThat(java.util.Arrays.stream(GatewayOpenApiSyncService.class.getConstructors())
+                .flatMap(constructor -> java.util.Arrays.stream(constructor.getParameterTypes())))
+                .noneMatch(type -> type.getSimpleName().equals("DdcManagementClient"));
+    }
+
+
+    @Test
+    void mismatchedApprovedRawDigestNeverValidatesSnapshotsOrImportsTheCatalog() throws Exception {
+        var context=new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent(
+                new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties().setTenantId(7L).setIdentityTenantId(1001L).setServiceUserId("source"),
+                new top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties());
+        var applications=mock(GatewayApplicationRepository.class);var scopes=mock(top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeService.class);
+        when(applications.findByIdAndDeletedFalse("application-1")).thenReturn(Optional.of(GatewayOpenApiSourceInventoryTest.app()));
+        when(scopes.requireEnabled(any())).thenReturn(new top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO(
+                "binding","platform","logical-docs","prod","app-id","orders","Orders",true));
+        var sources=new GatewayOpenApiSourceInventory(context,applications,scopes,List.of(GatewayOpenApiSourceInventoryTest.source("a".repeat(64))),Clock.fixed(NOW,ZoneOffset.UTC));
+        var candidate=context.call("1001",()->sources.sources(GatewayOpenApiSourceInventoryTest.app()).getFirst().candidates().getFirst());
+        var states=mock(GatewayOpenApiSyncRepository.class);var snapshots=mock(GatewayOpenApiSnapshotRepository.class);
+        var client=mock(GatewayProviderOpenApiClient.class);var validation=mock(GatewayOpenApiValidationChain.class);var coordinator=mock(GatewayOpenApiAggregateCoordinator.class);
+        when(states.findByKey(any())).thenReturn(Optional.of(row(GatewayOpenApiSyncStateEnum.DISCOVERED,0)));when(states.claim(any(),anyLong(),any())).thenReturn(true);
+        when(client.fetch(candidate)).thenReturn(document(candidate));
+        var service=new GatewayOpenApiSyncService(sources,applications,states,snapshots,client,validation,coordinator,new GatewayAdminOpenApiProperties(),new SimpleMeterRegistry(),Clock.fixed(NOW,ZoneOffset.UTC));
+        context.call("1001",()->{service.synchronize(candidate);return null;});
+        verify(states).markFailure(any(),anyLong(),eq(GatewayOpenApiSyncStateEnum.FETCH_FAILED),eq("YUHENG_OPENAPI_SOURCE_DIGEST_MISMATCH"),any(),any(),any());
+        org.mockito.Mockito.verifyNoInteractions(validation,snapshots,coordinator);
+    }
+
+    @Test
+    void manualSynchronizationCannotBypassTheApprovedCompleteGroupSet() throws Exception {
+        var context=new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent(
+                new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties().setTenantId(7L).setIdentityTenantId(1001L).setServiceUserId("source"),
+                new top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties());
+        var applications=mock(GatewayApplicationRepository.class);var scopes=mock(top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeService.class);
+        when(applications.findByIdAndDeletedFalse("application-1")).thenReturn(Optional.of(GatewayOpenApiSourceInventoryTest.app()));
+        when(scopes.requireEnabled(any())).thenReturn(new top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO("binding","platform","logical-docs","prod","app-id","orders","Orders",true));
+        var base=GatewayOpenApiSourceInventoryTest.source("a".repeat(64));
+        var provisionalCandidate=new GatewayOpenApiSyncCandidateDTO("application-1","platform","orders","build-1","1","orders","orders-http","default","1","source",
+                "orders-http.apps-prod.svc.cluster.local",8080,false,"/v3/api-docs/{group}",base.resourceUri(),base.approvedAt(),base.validUntil(),false,true);
+        var document=document(provisionalCandidate);
+        var approved=new GatewayOpenApiSourceInventory.SourceVO(base.sourceId(),base.scopeBindingId(),base.gatewayApplicationId(),base.clusterId(),base.kubernetesNamespace(),base.buildId(),base.artifactVersion(),base.providerServiceName(),base.providerGroup(),base.providerVersion(),base.port(),base.resourceUri(),Map.of("orders",document.documentSha256(),"inventory","b".repeat(64)),base.approvedAt(),base.validUntil());
+        var sources=new GatewayOpenApiSourceInventory(context,applications,scopes,List.of(approved),Clock.fixed(NOW,ZoneOffset.UTC));
+        var states=mock(GatewayOpenApiSyncRepository.class);var snapshots=mock(GatewayOpenApiSnapshotRepository.class);var client=mock(GatewayProviderOpenApiClient.class);var validation=mock(GatewayOpenApiValidationChain.class);var coordinator=mock(GatewayOpenApiAggregateCoordinator.class);
+        when(states.findByKey(any())).thenReturn(Optional.of(row(GatewayOpenApiSyncStateEnum.DISCOVERED,0)));when(states.claim(any(),anyLong(),any())).thenReturn(true);
+        when(states.transition(any(),anyLong(),any(),any(),any())).thenReturn(true);when(client.fetch(provisionalCandidate)).thenReturn(document);
+        when(validation.validate(document)).thenReturn(GatewayOpenApiValidationResult.passed());when(snapshots.insertOrReuse(any())).thenAnswer(call->call.getArgument(0));
+        var service=new GatewayOpenApiSyncService(sources,applications,states,snapshots,client,validation,coordinator,new GatewayAdminOpenApiProperties(),new SimpleMeterRegistry(),Clock.fixed(NOW,ZoneOffset.UTC));
+        context.call("1001",()->{service.synchronize(provisionalCandidate);return null;});
+        verify(states).markFailure(any(),anyLong(),eq(GatewayOpenApiSyncStateEnum.INGEST_FAILED),eq("YUHENG_OPENAPI_GROUP_SET_INCOMPLETE"),any(),any(),any());
+        org.mockito.Mockito.verifyNoInteractions(coordinator);
+    }
+
+    @Test
+    void approvedArtifactActuallyProducesBusinessApiCatalogIngestion() throws Exception {
+        var context=new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceContextComponent(
+                new top.egon.cola.component.yuheng.admin.config.GatewayPersistenceProperties().setTenantId(7L).setIdentityTenantId(1001L).setServiceUserId("source"),
+                new top.egon.cola.component.common.mybatis.autoconfigure.EgonColaMybatisPlusProperties());
+        var apps=mock(GatewayApplicationRepository.class);var scopes=mock(top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeService.class);
+        when(apps.findByIdAndDeletedFalse("application-1")).thenReturn(Optional.of(GatewayOpenApiSourceInventoryTest.app()));
+        when(scopes.requireEnabled(any())).thenReturn(new top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO("binding","platform","logical-docs","prod","app-id","orders","Orders",true));
+        var json=new com.fasterxml.jackson.databind.ObjectMapper();
+        var tree=(com.fasterxml.jackson.databind.node.ObjectNode)top.egon.cola.component.yuheng.admin.openapi.GatewayOpenApiValidationTestFixture.document().documentJson();
+        ((com.fasterxml.jackson.databind.node.ObjectNode)tree.get("x-egon-service")).put("bizCode","platform").put("artifactVersion","1");
+        byte[] raw=json.writeValueAsBytes(tree);
+        var source=GatewayOpenApiSourceInventoryTest.source(top.egon.cola.component.yuheng.admin.openapi.GatewayOpenApiValidationTestFixture.sha256(raw));
+        var sources=new GatewayOpenApiSourceInventory(context,apps,scopes,List.of(source),Clock.fixed(NOW,ZoneOffset.UTC));
+        var candidate=context.call("1001",()->sources.sources(GatewayOpenApiSourceInventoryTest.app()).getFirst().candidates().getFirst());
+        var document=top.egon.cola.component.yuheng.admin.openapi.GatewayOpenApiValidationTestFixture.document(candidate,raw,"application/json",200);
+        var states=mock(GatewayOpenApiSyncRepository.class);var snapshots=mock(GatewayOpenApiSnapshotRepository.class);var http=mock(GatewayProviderOpenApiClient.class);
+        when(states.findByKey(any())).thenReturn(Optional.of(row(GatewayOpenApiSyncStateEnum.DISCOVERED,0)));when(states.claim(any(),anyLong(),any())).thenReturn(true);
+        when(states.transition(any(),anyLong(),any(),any(),any())).thenReturn(true);when(snapshots.insertOrReuse(any())).thenAnswer(call->call.getArgument(0));when(http.fetch(candidate)).thenReturn(document);
+        var validation=new GatewayOpenApiValidationChain(List.of(
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApiDocumentEnvelopeValidator(),
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApi31Validator(),
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApiEgonExtensionValidator(),
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApiMcpProjectionValidator(),
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApiReferenceValidator(),
+                new top.egon.cola.component.yuheng.admin.openapi.validation.rule.GatewayOpenApiLimitValidator(top.egon.cola.component.yuheng.admin.openapi.validation.GatewayOpenApiValidationLimits.defaults())));
+        var ingestion=mock(top.egon.cola.component.yuheng.admin.reporting.service.GatewayDefinitionIngestionService.class);
+        when(ingestion.ingest(any())).thenReturn(result("set-approved"));
+        var coordinator=new GatewayOpenApiAggregateCoordinator(new GatewayOpenApi31ContractAdapter(),
+                org.mapstruct.factory.Mappers.getMapper(top.egon.cola.component.yuheng.admin.openapi.converter.GatewayOpenApiDefinitionConverter.class),ingestion,Clock.fixed(NOW,ZoneOffset.UTC));
+        var service=new GatewayOpenApiSyncService(sources,apps,states,snapshots,http,validation,coordinator,new GatewayAdminOpenApiProperties(),new SimpleMeterRegistry(),Clock.fixed(NOW,ZoneOffset.UTC));
+        context.call("1001",()->{service.synchronize(candidate);return null;});
+        verify(ingestion).ingest(org.mockito.ArgumentMatchers.argThat(command->command.applicationId().equals("application-1")
+                &&command.report().application().bizCode().equals("platform")&&command.report().application().namespace().equals("logical-docs")
+                &&command.report().businessDomains().stream().flatMap(domain->domain.entityDomains().stream())
+                        .flatMap(domain->domain.interfaceGroups().stream()).flatMap(group->group.operations().stream())
+                        .anyMatch(operation->"orders.list".equals(operation.attributes().get("openapiOperationId")))));
+        verify(states).setValid(any(),anyLong(),any(),eq("set-approved"),eq(NOW));
+    }
 
     @BeforeAll
     static void bindTheProcessWideEngine() {
@@ -180,7 +269,7 @@ class GatewayOpenApiSyncServiceTest {
     }
 
     @Test
-    void freshDdcManifestDiscoversAllGroupsAndIngestsOneAggregate() {
+    void approvedManifestDiscoversAllGroupsAndIngestsOneAggregate() {
         GatewayOpenApiSyncRepository syncStates = mock(GatewayOpenApiSyncRepository.class);
         GatewayOpenApiSnapshotRepository snapshots = mock(GatewayOpenApiSnapshotRepository.class);
         GatewayProviderOpenApiClient client = mock(GatewayProviderOpenApiClient.class);
@@ -193,18 +282,11 @@ class GatewayOpenApiSyncServiceTest {
                 .thenReturn(List.of(application()));
         when(applications.findByIdAndDeletedFalse("application-1"))
                 .thenReturn(Optional.of(application()));
-        DdcManagementServiceInstance instance = instance();
-        DdcManagementServiceKey service = new DdcManagementServiceKey(
-                "platform", "test", "orders", "service-1", "HTTP_PROVIDER",
-                "orders-http", "default", "1.0.0", "https");
-        DdcManagementServiceSnapshot snapshot = new DdcManagementServiceSnapshot(
-                service, 4, NOW, List.of(instance));
-        DdcManagementServiceCatalog catalog = new DdcManagementServiceCatalog(
-                4, NOW, List.of(service));
-        top.egon.cola.component.tianshu.api.client.DdcManagementClient ddc =
-                mock(top.egon.cola.component.tianshu.api.client.DdcManagementClient.class);
-        when(ddc.getServiceKeys(any())).thenReturn(catalog);
-        when(ddc.getInstances(any())).thenReturn(snapshot);
+        GatewayOpenApiSourceInventory sources=mock(GatewayOpenApiSourceInventory.class);
+        when(sources.sources(any())).thenReturn(List.of(new GatewayOpenApiSourceInventory.ApprovedPublicationVO(
+                new top.egon.cola.component.yuheng.contract.reporting.openapi.GatewayOpenApiGroupManifestDTO(
+                        List.of("orders","inventory"),"/v3/api-docs/{group}","https://orders.internal","1.0.0","build-1"),
+                List.of(orders,inventory))));
         when(syncStates.findByKey(any())).thenReturn(Optional.empty());
         when(syncStates.upsertDiscovered(any())).thenAnswer(invocation ->
                 invocation.getArgument(0));
@@ -246,7 +328,7 @@ class GatewayOpenApiSyncServiceTest {
         GatewayAdminOpenApiProperties properties =
                 new GatewayAdminOpenApiProperties();
         GatewayOpenApiSyncService serviceUnderTest = new GatewayOpenApiSyncService(
-                ddc,
+                sources,
                 applications,
                 syncStates,
                 snapshots,
@@ -258,8 +340,7 @@ class GatewayOpenApiSyncServiceTest {
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         int claimed = serviceUnderTest.reconcile();
-        verify(ddc).getServiceKeys(any());
-        verify(ddc).getInstances(any());
+        verify(sources).sources(any());
         verify(syncStates).findDue(eq(NOW), eq(50));
         verify(syncStates, org.mockito.Mockito.times(2)).upsertDiscovered(any());
         assertThat(claimed).isEqualTo(2);
@@ -273,20 +354,15 @@ class GatewayOpenApiSyncServiceTest {
     }
 
     @Test
-    void staleDdcObservationAbortsWithoutMarkingRowsStale() {
+    void unavailableApprovedSourceAbortsWithoutMarkingRowsStale() {
         GatewayApplicationRepository applications = mock(GatewayApplicationRepository.class);
         when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
                 .thenReturn(List.of(application()));
-        top.egon.cola.component.tianshu.api.client.DdcManagementClient ddc =
-                mock(top.egon.cola.component.tianshu.api.client.DdcManagementClient.class);
-        DdcManagementServiceKey service = new DdcManagementServiceKey(
-                "platform", "test", "orders", "service-1", "HTTP_PROVIDER",
-                "orders-http", "default", "1.0.0", "https");
-        when(ddc.getServiceKeys(any())).thenReturn(
-                new DdcManagementServiceCatalog(4, NOW.minusSeconds(301), List.of(service)));
+        GatewayOpenApiSourceInventory sources=mock(GatewayOpenApiSourceInventory.class);
+        when(sources.sources(any())).thenThrow(new IllegalStateException("approval unavailable"));
         GatewayOpenApiSyncRepository syncStates = mock(GatewayOpenApiSyncRepository.class);
         GatewayOpenApiSyncService serviceUnderTest = new GatewayOpenApiSyncService(
-                ddc,
+                sources,
                 applications,
                 syncStates,
                 mock(GatewayOpenApiSnapshotRepository.class),
@@ -308,10 +384,8 @@ class GatewayOpenApiSyncServiceTest {
         GatewayApplicationRepository applications = mock(GatewayApplicationRepository.class);
         when(applications.findAllByDeletedFalseOrderByCreatedAtDesc())
                 .thenReturn(List.of(application()));
-        top.egon.cola.component.tianshu.api.client.DdcManagementClient ddc =
-                mock(top.egon.cola.component.tianshu.api.client.DdcManagementClient.class);
-        when(ddc.getServiceKeys(any())).thenReturn(
-                new DdcManagementServiceCatalog(4, NOW, List.of()));
+        GatewayOpenApiSourceInventory sources=mock(GatewayOpenApiSourceInventory.class);
+        when(sources.sources(any())).thenReturn(List.of());
         GatewayOpenApiSyncRepository syncStates = mock(GatewayOpenApiSyncRepository.class);
         GatewayOpenApiSyncBO ingesting = rowFor(
                 "orders", "sync-orders", GatewayOpenApiSyncStateEnum.INGESTING);
@@ -344,7 +418,7 @@ class GatewayOpenApiSyncServiceTest {
                 .thenReturn(true);
 
         GatewayOpenApiSyncService serviceUnderTest = new GatewayOpenApiSyncService(
-                ddc,
+                sources,
                 applications,
                 syncStates,
                 snapshots,
@@ -370,8 +444,12 @@ class GatewayOpenApiSyncServiceTest {
             GatewayApplicationRepository applications) {
         GatewayAdminOpenApiProperties properties =
                 new GatewayAdminOpenApiProperties();
+        GatewayOpenApiSourceInventory sourceInventory=mock(GatewayOpenApiSourceInventory.class);
+        when(sourceInventory.manifest(any())).thenAnswer(call->{GatewayOpenApiSyncCandidateDTO selected=call.getArgument(0);
+            return new top.egon.cola.component.yuheng.contract.reporting.openapi.GatewayOpenApiGroupManifestDTO(List.of(selected.openapiGroup()),
+                    selected.pathTemplate(),selected.resourceUri().toString(),selected.artifactVersion(),selected.buildId());});
         return new GatewayOpenApiSyncService(
-                mock(top.egon.cola.component.tianshu.api.client.DdcManagementClient.class),
+                sourceInventory,
                 applications,
                 syncStates,
                 snapshots,
@@ -486,27 +564,7 @@ class GatewayOpenApiSyncServiceTest {
                 base.getUpdatedAt());
     }
 
-    private DdcManagementServiceInstance instance() {
-        return new DdcManagementServiceInstance(
-                "instance-1",
-                "lease-1",
-                "provider.internal",
-                18443,
-                true,
-                Map.of(
-                        "yuheng.definition-source", "OPENAPI31",
-                        "yuheng.openapi.enabled", "true",
-                        "yuheng.openapi.path-template", "/v3/api-docs/{group}",
-                        "yuheng.openapi.spec", "3.1",
-                        "yuheng.openapi.groups", "inventory,orders",
-                        "yuheng.openapi.resource-uri", "https://orders.internal",
-                        "yuheng.artifact-version", "1.0.0",
-                        "yuheng.build-id", "build-1"),
-                "ONLINE",
-                NOW.minusSeconds(10),
-                NOW.minusSeconds(1),
-                NOW.plusSeconds(60));
-    }
+
 
     private GatewayApplicationBO application() {
         return new GatewayApplicationBO(

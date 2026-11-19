@@ -5,7 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeAll;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import top.egon.cola.component.tianshu.model.management.DdcManagementScopeBinding;
+import top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeBindingReader.BindingVO;
 import top.egon.cola.component.yuheng.admin.scope.service.GatewayScopeService;
 import top.egon.cola.component.yuheng.admin.scope.domain.dto.GatewayScopeQueryDTO;
 import top.egon.cola.component.yuheng.admin.shared.domain.AdminActor;
@@ -181,8 +181,8 @@ class GatewayApplicationServiceTest {
         );
     }
 
-    private DdcManagementScopeBinding binding(String namespace) {
-        return new DdcManagementScopeBinding(
+    private BindingVO binding(String namespace) {
+        return new BindingVO(
                 "binding-" + namespace,
                 "retail",
                 namespace,

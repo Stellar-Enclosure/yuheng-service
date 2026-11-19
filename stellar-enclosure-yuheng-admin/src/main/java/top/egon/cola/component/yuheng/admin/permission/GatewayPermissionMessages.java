@@ -475,6 +475,13 @@ import top.egon.cola.platform.tianquan.jianshen.contract.permission.annotation.L
 @PermissionMessage(pageCode="gateway.permissions", key="permission.read", defaultLocale="en-US", defaults=@LocalizedText(locale="en-US", text="Read"))
 @PermissionMessage(pageCode="gateway.permissions", key="permission.releases.write", defaultLocale="en-US", defaults=@LocalizedText(locale="en-US", text="Releases write"))
 @PermissionMessage(pageCode="gateway.permissions",key="field.artifact",defaultLocale="en-US",defaults=@LocalizedText(locale="en-US",text="Artifact upload bytes"))
+@PermissionMessage(pageCode="gateway.permissions", key="field.routingMode", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Routing mode"), @LocalizedText(locale="zh-CN", text="路由模式")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.cachePolicy", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Cache policy"), @LocalizedText(locale="zh-CN", text="缓存策略")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.mode", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Mode"), @LocalizedText(locale="zh-CN", text="模式")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.maxCacheTemperature", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Maximum cache temperature"), @LocalizedText(locale="zh-CN", text="缓存温度上限")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.semanticThreshold", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Semantic similarity threshold"), @LocalizedText(locale="zh-CN", text="语义相似度阈值")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.embeddingModelKey", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Embedding model key"), @LocalizedText(locale="zh-CN", text="嵌入模型键")})
+@PermissionMessage(pageCode="gateway.permissions", key="field.promptCacheOptimizationEnabled", defaultLocale="en-US", defaults={@LocalizedText(locale="en-US", text="Prompt cache optimization"), @LocalizedText(locale="zh-CN", text="提示缓存优化")})
 public final class GatewayPermissionMessages {
     private GatewayPermissionMessages() { }
 }

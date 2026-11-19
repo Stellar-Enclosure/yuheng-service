@@ -83,7 +83,7 @@ public final class GatewayPersistenceTestSupport {
                 "egon.cola.component.transactional-outbox.storage.validate-schema=true",
                 "egon.cola.component.transactional-outbox.storage.mp.auto-initialize-ddl=true",
                 "egon.cola.component.cache.enabled=false"));
-        for (String table : List.of("gateway_group", "gateway_release", "gateway_release_content", "gateway_release_attempt", "gateway_idempotency_record", "gateway_audit_log")) {
+        for (String table : List.of("gateway_group", "gateway_draft", "gateway_release", "gateway_release_content", "gateway_release_attempt", "gateway_idempotency_record", "gateway_audit_log")) {
             properties.add("egon.cola.component.mybatis-plus.sharding.tables." + table + ".type=STANDARD_TENANT_ID");
             properties.add("egon.cola.component.mybatis-plus.sharding.tables." + table + ".sharding-column=tenant_id");
         }

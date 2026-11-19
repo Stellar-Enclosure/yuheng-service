@@ -8,7 +8,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 import top.egon.cola.component.common.id.snowflake.SnowflakeIdGenerator;
 import top.egon.cola.component.tianshu.api.client.DdcManagementClient;
 import top.egon.cola.component.tianshu.model.management.DdcManagementConfig;
@@ -34,7 +33,7 @@ import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayChunkCleanu
  *
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
-@Component
+@Deprecated(forRemoval = true)
 public class GatewayRuleChunkGarbageCollector {
 
     private final GatewayPersistenceContextComponent persistenceContext;
