@@ -53,7 +53,7 @@ class PermissionProducerCoverageTest {
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
         var environment = new org.springframework.web.context.support.StandardServletEnvironment();
         environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("producer-coverage",
-                Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true")));
+                Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true", "yuheng.admin.mcp.mapping-seed.enabled", "true", "yuheng.admin.mcp.publication-export.enabled", "true")));
         scanner.setEnvironment(environment);
         scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
         var mappings = new Mappings();
@@ -84,7 +84,7 @@ class PermissionProducerCoverageTest {
                 }
             }
         }
-        assertThat(apiKeys).hasSize(69)
+        assertThat(apiKeys).hasSize(71)
                 .contains("yuheng.api.gatewayUrlExposure.get", "yuheng.api.gatewayUrlExposure.putState");
         Set<String> protocolKeys = new TreeSet<>();
         for (Method method : NativeProtocolPermissionMetadata.class.getDeclaredMethods()) {

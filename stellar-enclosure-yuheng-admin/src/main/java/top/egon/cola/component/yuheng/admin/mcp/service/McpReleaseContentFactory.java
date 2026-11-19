@@ -68,6 +68,7 @@ import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpRemoteToolDraftBO;
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
 @Slf4j
+@org.springframework.validation.annotation.Validated
 @Service("mcpReleaseContentFactory")
 public class McpReleaseContentFactory {
 
@@ -247,6 +248,35 @@ public class McpReleaseContentFactory {
             mappings.add(entry);
         }
         return mappings.isEmpty() ? null : GatewayCiliumReleaseArtifact.mcpPublication(mappings);
+    }
+
+    /** Compiles registration-only evidence; this entry never resolves or invents an executable SI version. */
+    public JsonNode compileRegisteredIdentityMappings(@jakarta.validation.constraints.Positive long owner, @jakarta.validation.constraints.NotBlank String gatewayGroupId,
+            @jakarta.validation.constraints.NotNull @jakarta.validation.Valid top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMappingSeedArtifactVO.RegisteredIdentityVO identity,
+            @jakarta.validation.constraints.NotEmpty @jakarta.validation.Valid java.util.List<top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpMappingSeedFreezeCommand.MappingInputVO> inputs) {
+        if (owner <= 0 || identity == null || identity.ownerTenantId() != owner
+                || !identity.gatewayGroupId().equals(gatewayGroupId) || inputs == null || inputs.isEmpty() || inputs.size() > 200) {
+            throw mappingSourceUnavailable();
+        }
+        java.util.Set<String> operations = new java.util.HashSet<>();
+        java.util.TreeMap<String, JsonNode> ordered = new java.util.TreeMap<>();
+        for (var input : inputs) {
+            if (input == null || !operations.add(input.operationId())) throw mappingSourceUnavailable();
+            var current = mappingSource(gatewayGroupId, input.source(), identity.resourceKey(), true);
+            var tool = mappingTool(current.operation(), current.definition(), identity.resourceKey(),
+                    input.additionalPermissions(), input.minimumRiskLevel(), !input.disabled());
+            var entry = objectMapper.createObjectNode().put("toolId", tool.toolId());
+            entry.set("sourceOperation", objectMapper.valueToTree(input.source()));
+            JsonNode projection = objectMapper.valueToTree(tool);
+            var permissions = objectMapper.createArrayNode();
+            tool.requiredPermissions().stream().sorted().forEach(permissions::add);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) projection).set("requiredPermissions", permissions);
+            entry.set("tool", projection);
+            if (ordered.putIfAbsent(tool.toolId(), entry) != null) throw mappingSourceUnavailable();
+        }
+        var result = objectMapper.createArrayNode();
+        ordered.values().forEach(result::add);
+        return result;
     }
 
     /** Rechecks current authorization around the exact frozen projection; never rewrites its bytes. */

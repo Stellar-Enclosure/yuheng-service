@@ -182,6 +182,69 @@ public class GatewayReleaseService {
         return get(id);
     }
 
+    /** Read-only operator proof. Selectors select frozen facts; they cannot supply tenant or SI authority. */
+    public top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMappingPublicationEvidenceVO exportBoundMapping(
+            @jakarta.validation.constraints.Positive long trustedOwner,
+            @jakarta.validation.constraints.NotBlank String groupId,
+            @jakarta.validation.constraints.NotBlank String releaseId,
+            @jakarta.validation.constraints.NotBlank String resourceId,
+            @jakarta.validation.constraints.NotBlank String versionId,
+            @jakarta.validation.constraints.NotBlank String versionNo,
+            @jakarta.validation.constraints.NotNull AdminActor actor) {
+        if (actor == null || !actor.oauthScopes().contains(GatewayPermissionCodes.MCP_WRITE)
+                || !(actor.scopes().contains(GatewayPermissionCodes.MCP_WRITE) || actor.scopes().contains("*"))) {
+            throw new top.egon.cola.component.common.core.exception.CommonException(403,
+                    "YUHENG_MCP_MAPPING_PUBLICATION_DENIED", "The mapping export is not authorized");
+        }
+        if (trustedOwner <= 0 || owner() != trustedOwner) throw new top.egon.cola.component.common.core.exception.CommonException(403,
+                "YUHENG_MCP_MAPPING_PUBLICATION_DENIED", "The mapping export is not authorized");
+        try { positive(groupId); positive(releaseId); positive(resourceId); positive(versionId); positive(versionNo); }
+        catch (RuntimeException badSelector) { throw new IllegalArgumentException("YUHENG_MCP_MAPPING_PUBLICATION_SELECTOR_INVALID"); }
+        requireEnabledGroup(groupId);
+        GatewayReleaseBO source = required(releaseId);
+        if (!groupId.equals(source.getGatewayGroupId()) || source.getStatus() != GatewayReleaseStatus.SUCCESS) {
+            throw new IllegalStateException("YUHENG_MCP_MAPPING_PUBLICATION_SUCCESS_REQUIRED");
+        }
+        GatewayCiliumReleaseArtifact artifact = nativeArtifact(releaseId);
+        requireMcpArtifactIdentity(artifact, trustedOwner, groupId, releaseId);
+        if (!artifact.hasMcpPublication()) throw mcpReplayRejected();
+        ArrayNode selected = json.createArrayNode();
+        for (JsonNode entry : artifact.mcpPublication().path("mappings")) {
+            JsonNode server = entry.path("siServer");
+            if (resourceId.equals(server.path("resourceId").asText())
+                    && versionId.equals(server.path("versionId").asText())
+                    && versionNo.equals(server.path("versionNo").asText())) selected.add(entry);
+        }
+        if (selected.isEmpty()) throw new GatewayAdminNotFoundException("The fixed SI mapping is unavailable");
+        JsonNode section = GatewayCiliumReleaseArtifact.mcpPublication(selected);
+        var evidence = top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpMappingPublicationEvidenceVO.create(artifact, selected);
+        GatewayDraftBO current = drafts.findById(groupId)
+                .orElseThrow(() -> new GatewayAdminNotFoundException("Gateway draft is unavailable"));
+        String basis = current.getBasedOnReleaseId();
+        long revision = current.getRevision();
+        if (basis == null) throw mcpReplayRejected();
+        GatewayReleaseBO effectiveHead = required(basis);
+        if (!groupId.equals(effectiveHead.getGatewayGroupId()) || effectiveHead.getStatus() != GatewayReleaseStatus.SUCCESS) throw mcpReplayRejected();
+        GatewayCiliumReleaseArtifact effective = releases.loadNative(basis)
+                .orElseThrow(GatewayReleaseService::mcpReplayRejected);
+        requireMcpArtifactIdentity(effective, trustedOwner, groupId, basis);
+        verifyCurrentMcpRestrictions(section, effective.mcpPublication());
+        try {
+            mappingFactory().revalidateMappingSection(trustedOwner, groupId, section);
+        } catch (top.egon.cola.component.yuheng.admin.mcp.domain.exception.McpValidationException unavailable) {
+            if ("YUHENG_MCP_API_MAPPING_SI_UNAVAILABLE".equals(unavailable.code())) {
+                throw new top.egon.cola.component.common.core.exception.CommonException(503,
+                        "YUHENG_MCP_MAPPING_PUBLICATION_AUTHORITY_UNAVAILABLE", "The current SI authority is unavailable", true, null);
+            }
+            throw unavailable;
+        }
+        // Re-read the effective pointer after current SI/source authorization, refusing a moving publication basis.
+        GatewayDraftBO confirmed = drafts.findById(groupId).orElseThrow(GatewayReleaseService::mcpReplayRejected);
+        if (!Objects.equals(basis, confirmed.getBasedOnReleaseId())
+                || revision != confirmed.getRevision()) throw mcpReplayRejected();
+        return evidence;
+    }
+
     public Optional<String> artifactSha256(String releaseId) { return releases.findArtifactSha256(releaseId); }
 
     public GatewayReleaseVO get(String releaseId) {

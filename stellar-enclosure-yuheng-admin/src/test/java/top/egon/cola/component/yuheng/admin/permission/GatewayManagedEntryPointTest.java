@@ -67,7 +67,7 @@ class GatewayManagedEntryPointTest {
         }, manager);
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
         var env = new org.springframework.web.context.support.StandardServletEnvironment();
-        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("coverage", Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true")));
+        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("coverage", Map.of("egon.cola.platform.tianquan.jianshen.enabled", "true", "yuheng.admin.mcp.mapping-seed.enabled", "true", "yuheng.admin.mcp.publication-export.enabled", "true")));
         scanner.setEnvironment(env); scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
         int count = 0;
         for (var candidate : scanner.findCandidateComponents("top.egon.cola.component.yuheng.admin")) {
@@ -89,7 +89,7 @@ class GatewayManagedEntryPointTest {
                 count++;
             }
         }
-        assertThat(count).isEqualTo(69); verifyNoInteractions(loader);
+        assertThat(count).isEqualTo(71); verifyNoInteractions(loader);
     }
 
     @Test
