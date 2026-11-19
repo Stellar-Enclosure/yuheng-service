@@ -133,7 +133,9 @@ public class GatewayReleaseService {
             int attempt = releases.nextAttempt(releaseId, clock.instant());
             releases.beginAttempt(releaseId, attempt, clock.instant());
             publications.enqueueCurrent(owner, releaseId, attempt, artifact);
-            publications.completeNative(owner, releaseId, attempt);
+            if (completedWithEvidence(owner, releaseId, attempt)) {
+                drafts.findById(release.getGatewayGroupId()).ifPresent(draft -> advanceDraftBasis(draft, release, clock.instant()));
+            }
             audit(actor, request, release.getGatewayGroupId(), releaseId, "RETRY", release.getDraftRevision());
         });
         return get(releaseId);
@@ -199,8 +201,20 @@ public class GatewayReleaseService {
         releases.beginAttempt(releaseId, 1, now);
         audit(actor, request, groupId, releaseId, rollbackOf == null ? "CREATE_RELEASE" : "ROLLBACK", currentDraft.getRevision());
         publications.enqueueCurrent(owner, releaseId, 1, artifact);
-        publications.completeNative(owner, releaseId, 1);
+        if (completedWithEvidence(owner, releaseId, 1)) advanceDraftBasis(currentDraft, release, now);
         return releaseId;
+    }
+
+    private boolean completedWithEvidence(long owner, String releaseId, int attemptNo) {
+        return publications.recoverNative(owner, releaseId, attemptNo)
+                .filter(outcome -> outcome.status() == GatewayReleaseStatus.SUCCESS).isPresent();
+    }
+
+    private void advanceDraftBasis(GatewayDraftBO draft, GatewayReleaseBO release, Instant at) {
+        if (Objects.equals(draft.getBasedOnReleaseId(), release.getId())
+                || !Objects.equals(draft.getBasedOnReleaseId(), release.getBasedOnReleaseId())) return;
+        draft.baseOn(release.getId(), "gateway_release_reconciler", at);
+        drafts.save(draft);
     }
 
     private List<PreparedGatewayRelease.ExposurePlan> compile(long owner, GatewayGroupBO group, String releaseId,

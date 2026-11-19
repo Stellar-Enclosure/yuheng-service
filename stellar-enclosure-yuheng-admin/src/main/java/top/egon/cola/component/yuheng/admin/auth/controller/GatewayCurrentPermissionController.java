@@ -1,6 +1,7 @@
 package top.egon.cola.component.yuheng.admin.auth.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,6 +12,7 @@ import top.egon.cola.platform.tianquan.jianshen.starter.permission.*;
 
 /** Current USER metadata for this host's fixed catalog and executing build. */
 @RestController
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @io.swagger.v3.oas.annotations.tags.Tag(name="identity-authorization",description="统一身份权限视图")
 @top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog(businessDomainCode="xingyuan",businessDomainName="平台治理域",
         entityDomainCode="yuheng-admin",entityDomainName="统一身份认证上下文域",interfaceGroupCode="yuheng-admin")

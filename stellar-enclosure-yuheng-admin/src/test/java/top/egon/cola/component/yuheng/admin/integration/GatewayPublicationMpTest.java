@@ -1485,6 +1485,30 @@ class GatewayPublicationMpTest {
                 assertThat(physical.queryForObject("SELECT count(*) FROM public." + table + " WHERE " + column + "=?", Long.class, rolledBackId)).isZero();
             }
             assertThat(context.call(null, () -> repository.loadNative(Long.toString(rolledBackId)))).isEmpty();
+            String releaseId = Long.toString(RELEASE_ID);
+            context.call(null, () -> transactions.execute(status -> {
+                repository.beginAttempt(releaseId, 1, NOW);
+                assertThat(repository.recoverableAfter(0, 1)).singleElement().satisfies(candidate -> {
+                    assertThat(candidate.getReleaseId()).isEqualTo(releaseId);
+                    assertThat(candidate.getAttemptNo()).isEqualTo(1);
+                });
+                assertThat(repository.recoverableAfter(RELEASE_ID, 1)).isEmpty();
+                assertThat(repository.completeCurrentNativeAttempt(releaseId, 1, GatewayReleaseStatus.FAILED, false, NOW)).isTrue();
+                int second = repository.nextAttempt(releaseId, NOW);
+                assertThat(second).isEqualTo(2);
+                repository.beginAttempt(releaseId, second, NOW);
+                assertThat(repository.completeCurrentNativeAttempt(releaseId, 1, GatewayReleaseStatus.SUCCESS, false, NOW)).isFalse();
+                assertThat(repository.find(releaseId)).get().extracting(GatewayReleaseBO::getStatus)
+                        .isEqualTo(GatewayReleaseStatus.PUBLISHING);
+                assertThat(repository.completeCurrentNativeAttempt(releaseId, second, GatewayReleaseStatus.SUCCESS, false, NOW)).isTrue();
+                assertThat(repository.completeCurrentNativeAttempt(releaseId, second, GatewayReleaseStatus.FAILED, true, NOW)).isFalse();
+                return null;
+            }));
+            assertThat(physical.queryForList("""
+                    SELECT status FROM public.gateway_release_attempt_t0 WHERE release_id=? ORDER BY attempt_no
+                    """, String.class, RELEASE_ID)).containsExactly("FAILED", "SUCCESS");
+            assertThat(physical.queryForObject("SELECT status FROM public.gateway_release_t0 WHERE id=?", String.class, RELEASE_ID))
+                    .isEqualTo("SUCCESS");
         });
     }
 

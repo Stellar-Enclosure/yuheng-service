@@ -5,6 +5,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import top.egon.cola.component.yuheng.admin.release.domain.vo.GatewayCiliumReleaseArtifact;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.yuheng.admin.release.domain.bo.GatewayRecoverableReleaseAttemptBO;
@@ -90,6 +93,10 @@ public interface GatewayReleaseRepository {
      * @return 返回 recoverable 的处理结果；returns the result of the operation.
      */
     List<GatewayRecoverableReleaseAttemptBO> recoverable();
+
+    /** Keyset page of publishing heads in the current installation scope; no cross-tenant scan. */
+    List<GatewayRecoverableReleaseAttemptBO> recoverableAfter(@PositiveOrZero long afterReleaseId,
+                                                            @Min(1) @Max(128) int limit);
 
     /**
      * 中文说明：执行 attempts 操作；按 {@code attempt_no DESC} 列出发布的全部尝试，并把各 attempt 的实例目标观测聚合进载体。
@@ -193,6 +200,10 @@ public interface GatewayReleaseRepository {
             String errorMessage,
             List<GatewayReleaseTargetBO> targets,
             Instant now);
+
+    /** Finalizes only the current PUBLISHING attempt and its PUBLISHING head. */
+    boolean completeCurrentNativeAttempt(@NotBlank String releaseId, @Positive int attemptNo,
+                                         @NotNull GatewayReleaseStatus status, boolean partialApplied, @NotNull Instant now);
 
     /**
      * 中文说明：执行 hasReleaseInProgress 操作；判断网关组内是否仍存在未完成（{@code CREATED}/{@code VALIDATING}/{@code READY}/{@code PUBLISHING}）的发布。

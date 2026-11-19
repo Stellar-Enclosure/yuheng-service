@@ -240,7 +240,7 @@ class AiMpRepositoryContractTest {
         assertTrue(namespace.find());
         assertEquals(EXPOSURE_MAPPER, namespace.group(1));
         Map<String, String> sql = exposureStatements(text);
-        assertEquals(Set.of("findOwned", "findOwnedRoute", "scanBinding", "lockPublicationDomain",
+        assertEquals(Set.of("findOwned", "findOwnedRoute", "findRecoveryIds", "scanBinding", "lockPublicationDomain",
                 "compareAndSetDesired", "compareAndSetContent", "bindRouteUid", "recordObservation"), sql.keySet());
         for (var statement : sql.entrySet()) {
             assertTrue(statement.getValue().contains(EXPOSURE_TABLE), statement.getKey());
@@ -250,9 +250,13 @@ class AiMpRepositoryContractTest {
                     statement.getKey() + " must retain the active-row predicate");
             assertFalse(statement.getValue().contains("${"), "no substituted SQL in " + statement.getKey());
         }
-        for (String id : List.of("findOwned", "findOwnedRoute")) {
+        for (String id : List.of("findOwned", "findOwnedRoute", "findRecoveryIds")) {
             assertTrue(sql.get(id).contains("owner_tenant_id = #{owner}"), id + " requires the trusted owner");
         }
+        String recovery = sql.get("findRecoveryIds");
+        assertTrue(recovery.contains("id &gt; #{afterId}"));
+        assertTrue(recovery.contains("ORDER BY id ASC LIMIT #{limit}"));
+        assertTrue(recovery.contains("reconcile_status IN ('PENDING', 'SYNCED')"));
         for (String id : List.of("compareAndSetDesired", "compareAndSetContent", "bindRouteUid", "recordObservation")) {
             String where = sql.get(id).substring(sql.get(id).indexOf("WHERE"));
             assertTrue(where.contains("owner_tenant_id = #{record.ownerTenantId}"), id);

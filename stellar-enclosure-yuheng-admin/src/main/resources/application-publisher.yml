@@ -1,0 +1,96 @@
+# Run this profile in a separate deployment, with its own approved ServiceAccount and projected files.
+spring:
+  main:
+    web-application-type: none
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV4
+      - top.egon.cola.platform.tianquan.shoubing.starter.client.ServiceTokenWebClientConfiguration
+      - top.egon.cola.component.rpc.tianshu.autoconfigure.DdcRpcAutoConfiguration
+server:
+  ssl:
+    enabled: false
+springdoc:
+  api-docs:
+    enabled: false
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: [readinessState]
+  endpoints:
+    web:
+      exposure:
+        exclude: "*"
+yuheng:
+  admin:
+    exposure:
+      role: PUBLISHER
+      api-server: ${YUHENG_PUBLISHER_API_SERVER}
+      ca-file: ${YUHENG_PUBLISHER_CA_FILE}
+      token-file: ${YUHENG_PUBLISHER_TOKEN_FILE}
+      request-timeout: ${YUHENG_PUBLISHER_REQUEST_TIMEOUT:5s}
+      max-response-bytes: ${YUHENG_PUBLISHER_MAX_RESPONSE_BYTES:1048576}
+    tianshu:
+      enabled: false
+    openapi:
+      enabled: false
+      allow-development-http: ${YUHENG_ADMIN_OPENAPI_ALLOW_DEVELOPMENT_HTTP:false}
+      reconcile-delay: ${YUHENG_ADMIN_OPENAPI_RECONCILE_DELAY:PT30S}
+      batch-size: ${YUHENG_ADMIN_OPENAPI_BATCH_SIZE:50}
+      maximum-instance-attempts: ${YUHENG_ADMIN_OPENAPI_MAX_INSTANCE_ATTEMPTS:3}
+      claim-timeout: ${YUHENG_ADMIN_OPENAPI_CLAIM_TIMEOUT:PT2M}
+      connect-timeout: ${YUHENG_ADMIN_OPENAPI_CONNECT_TIMEOUT:PT3S}
+      read-timeout: ${YUHENG_ADMIN_OPENAPI_READ_TIMEOUT:PT10S}
+      maximum-document-bytes: ${YUHENG_ADMIN_OPENAPI_MAX_DOCUMENT_BYTES:5242880}
+      maximum-operations: ${YUHENG_ADMIN_OPENAPI_MAX_OPERATIONS:5000}
+      maximum-schema-nodes: ${YUHENG_ADMIN_OPENAPI_MAX_SCHEMA_NODES:50000}
+      maximum-ref-depth: ${YUHENG_ADMIN_OPENAPI_MAX_REF_DEPTH:64}
+      retry-initial-delay: ${YUHENG_ADMIN_OPENAPI_RETRY_INITIAL_DELAY:PT5S}
+      retry-maximum-delay: ${YUHENG_ADMIN_OPENAPI_RETRY_MAXIMUM_DELAY:PT5M}
+      retry-jitter: ${YUHENG_ADMIN_OPENAPI_RETRY_JITTER:0.20}
+      drift-sample-interval: ${YUHENG_ADMIN_OPENAPI_DRIFT_SAMPLE_INTERVAL:PT5M}
+      allowed-cidrs:
+        - ${YUHENG_ADMIN_OPENAPI_ALLOWED_CIDR:}
+      required-scope: ${YUHENG_ADMIN_OPENAPI_REQUIRED_SCOPE:yuheng.openapi.read}
+    observability:
+      kafka:
+        enabled: false
+egon:
+  cola:
+    platform:
+      tianquan:
+        shoubing:
+          enabled: false
+          usage-observation:
+            enabled: false
+        jianshen:
+          enabled: false
+    component:
+      cache:
+        enabled: false
+      rpc:
+        enabled: false
+      tianshu:
+        enabled: false
+      transactional-outbox:
+        enabled: true
+        node-id: ${YUHENG_PUBLISHER_NODE_ID}
+        polling:
+          enabled: true
+        cleanup:
+          enabled: false
+        annotation:
+          enabled: false
+        retry:
+          recover-exhausted: true
+        http:
+          enabled: false
+        rabbitmq:
+          enabled: false
+      yuheng:
+        openapi:
+          enabled: false
+        reporting:
+          enabled: false

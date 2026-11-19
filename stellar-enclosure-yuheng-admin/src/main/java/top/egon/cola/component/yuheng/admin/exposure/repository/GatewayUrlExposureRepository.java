@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import org.springframework.validation.annotation.Validated;
 import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
 import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
@@ -27,6 +30,9 @@ public interface GatewayUrlExposureRepository {
 
     Optional<GatewayUrlExposureBO> findOwnedRoute(@Positive long trustedOwner, @Positive long gatewayGroupId,
                                                 String routeId);
+
+    /** Keyset page of only the installation owner's pending and previously confirmed routes. */
+    List<Long> findRecoveryIds(@Positive long trustedOwner, @PositiveOrZero long afterId, @Min(1) @Max(128) int limit);
 
     /** Reports domain occupancy without returning a conflicting tenant's identity or mutating its state. */
     boolean hasPublishedOverlap(@Positive long trustedOwner, @NotNull GatewayUrlExposureBO proposed);

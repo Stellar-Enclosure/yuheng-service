@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,6 +49,7 @@ import top.egon.cola.component.yuheng.admin.mcp.domain.bo.McpArtifactMetadataBO;
 @lombok.extern.slf4j.Slf4j
 @lombok.RequiredArgsConstructor
 @RestController("mcpAppAdminController")
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @RequestMapping("/api/v1/yuheng/admin/mcp/apps")
 @PreAuthorize("hasAuthority('SCOPE_yuheng:mcp:read') and (hasAnyAuthority('CAP_yuheng:mcp:read','CAP_*'))")
 @Tag(name = "yuheng-admin")

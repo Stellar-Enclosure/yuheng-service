@@ -41,6 +41,7 @@ import java.util.Map;
  */
 @Slf4j
 @Configuration(value = "gatewayAdminSecurityConfiguration", proxyBeanMethods = false)
+@org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication(type = org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET)
 @EnableMethodSecurity
 public class GatewayAdminSecurityConfiguration {
 

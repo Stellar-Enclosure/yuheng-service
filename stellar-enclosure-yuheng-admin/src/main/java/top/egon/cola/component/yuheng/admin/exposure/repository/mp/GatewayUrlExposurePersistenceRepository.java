@@ -72,6 +72,10 @@ public class GatewayUrlExposurePersistenceRepository
         return loaded(mapper.findOwnedRoute(owner, groupId, routeId));
     }
 
+    public List<Long> findRecoveryIds(long owner, long afterId, int limit) {
+        return List.copyOf(mapper.findRecoveryIds(owner, afterId, Math.min(limit, pageSize())));
+    }
+
     public List<GatewayUrlExposurePO> scanBinding(String cluster, BindingVO binding, long afterId) {
         return mapper.scanBinding(cluster, binding.gatewayNamespace(), binding.gatewayName(),
                 binding.listenerName(), afterId, properties.getPagination().getMaxPageSize())

@@ -51,6 +51,12 @@
         WHERE tenant_id = 0 AND deleted_at IS NULL AND owner_tenant_id = #{owner}
           AND gateway_group_id = #{groupId} AND route_id = #{routeId}
     </select>
+    <select id="findRecoveryIds" resultType="long">
+        SELECT id FROM public.gateway_url_exposure_t0
+        WHERE tenant_id = 0 AND deleted_at IS NULL AND owner_tenant_id = #{owner}
+          AND reconcile_status IN ('PENDING', 'SYNCED') AND id &gt; #{afterId}
+        ORDER BY id ASC LIMIT #{limit}
+    </select>
     <select id="scanBinding" resultMap="Exposure">
         SELECT <include refid="columns"/> FROM public.gateway_url_exposure_t0
         WHERE tenant_id = 0 AND deleted_at IS NULL AND cluster_id = #{cluster}

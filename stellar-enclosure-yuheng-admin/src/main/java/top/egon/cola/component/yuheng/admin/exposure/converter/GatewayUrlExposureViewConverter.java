@@ -8,6 +8,7 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 import org.mapstruct.factory.Mappers;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import top.egon.cola.component.common.core.converter.BaseForwardConverter;
 import top.egon.cola.component.yuheng.admin.exposure.domain.bo.GatewayUrlExposureBO;
@@ -16,6 +17,7 @@ import top.egon.cola.component.yuheng.admin.exposure.domain.vo.GatewayUrlExposur
 import top.egon.cola.component.yuheng.admin.exposure.domain.vo.GatewayUrlExposureVO.ConditionVO;
 import top.egon.cola.component.yuheng.admin.exposure.domain.vo.GatewayUrlExposureVO.KubernetesRouteVO;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -30,6 +32,11 @@ public class GatewayUrlExposureViewConverter implements BaseForwardConverter<Gat
 
     private static final GatewayUrlExposureViewMapping MAPPING = Mappers.getMapper(GatewayUrlExposureViewMapping.class);
     private static final String CILIUM_CONTROLLER = "io.cilium/gateway-controller";
+    private final Clock clock;
+
+    public GatewayUrlExposureViewConverter(@Qualifier("gatewayProjectionClock") Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
 
     public GatewayUrlExposureVO toView(GatewayUrlExposureBO row) {
         if (row == null) {
@@ -52,9 +59,13 @@ public class GatewayUrlExposureViewConverter implements BaseForwardConverter<Gat
         if (view.getConditions() == null) {
             view.setConditions(List.of());
         }
-        if ("SYNCED".equals(view.getReconcileStatus()) && (!completeShape || !hasCurrentEvidence(view))) {
-            // Preserve the last confirmed observation and stored error; do not fabricate convergence.
+        boolean synced = "SYNCED".equals(view.getReconcileStatus());
+        boolean shapeAndConditions = synced && completeShape && hasCurrentEvidence(view);
+        if (synced && (!shapeAndConditions || !hasUnexpiredEvidence(observation))) {
             view.setReconcileStatus("PENDING");
+            if (shapeAndConditions && view.getLastErrorCode() == null) {
+                view.setLastErrorCode("DATAPLANE_EVIDENCE_INCOMPLETE");
+            }
         }
         return view;
     }
@@ -62,6 +73,16 @@ public class GatewayUrlExposureViewConverter implements BaseForwardConverter<Gat
     @Override
     public GatewayUrlExposureVO toTarget(GatewayUrlExposureBO source) {
         return toView(source);
+    }
+
+    private boolean hasUnexpiredEvidence(JsonNode observation) {
+        String expiry = text(observation.path("evidence"), "expiresAt", 64);
+        if (expiry == null || !expiry.endsWith("Z")) return false;
+        try {
+            return clock.instant().isBefore(Instant.parse(expiry));
+        } catch (DateTimeParseException malformed) {
+            return false;
+        }
     }
 
     private KubernetesRouteVO route(GatewayUrlExposureBO row, JsonNode value) {

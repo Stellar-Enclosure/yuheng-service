@@ -27,15 +27,18 @@ import top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcRulePublisher
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Durable native wakeups and current-row outcomes. It has no DDC publication or Kubernetes write path. */
 public class GatewayReleasePublicationCoordinator {
     public static final String LEGACY_READ_ONLY = "YUHENG_RELEASE_LEGACY_ARTIFACT_READ_ONLY";
+    private static final long RECOVERY_WINDOW_SECONDS = Duration.ofMinutes(5).toSeconds();
     private final GatewayReleaseRepository releases;
     private final GatewayUrlExposureRepository exposures;
     private final TransactionalOutbox outbox;
@@ -80,14 +83,32 @@ public class GatewayReleasePublicationCoordinator {
             GatewayUrlExposureBO row = current(owner, entry.path("exposureId").asText());
             String commandId = releaseId + ":" + attemptNo + ":" + row.getVersion() + ":" + row.getId() + ":" + row.getDesiredGeneration();
             String key = TenantScopedOutboxKey.of(owner, "exposure-publication", commandId);
-            String eventId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
-            var event = new ExposureDesiredStateChangedEvent(eventId, owner, row.getId(), row.getDesiredGeneration(),
-                    row.getDesiredState(), Objects.requireNonNull(row.getUpdateTime(), "updateTime"));
-            outbox.enqueue(OutboxMessage.builder().messageId(eventId).idempotencyKey(key)
-                    .channel(ExposureDesiredStateChangedEvent.CHANNEL).destination(ExposureDesiredStateChangedEvent.DESTINATION)
-                    .schemaVersion(ExposureDesiredStateChangedEvent.SCHEMA_VERSION).payload(event)
-                    .header("tenant-id", Long.toString(owner)).header("event-id", eventId).build());
+            enqueue(owner, row, key, Objects.requireNonNull(row.getUpdateTime(), "updateTime"));
         }
+    }
+
+    /** Across replicas, an outstanding current generation produces one recovery wakeup per window. */
+    public void enqueueRecovery(long owner, long exposureId) {
+        requireTransaction(owner);
+        var row = exposures.findOwned(owner, exposureId).orElse(null);
+        if (row == null) return;
+        if (!Objects.equals(row.getOwnerTenantId(), owner) || !Objects.equals(row.getId(), exposureId)) throw invalid();
+        if (!"PENDING".equals(row.getReconcileStatus()) && (!"SYNCED".equals(row.getReconcileStatus())
+                || "SYNCED".equals(converter.toView(row).getReconcileStatus()))) return;
+        long second = clock.instant().getEpochSecond();
+        long window = second - Math.floorMod(second, RECOVERY_WINDOW_SECONDS);
+        String commandId = exposureId + ":" + row.getDesiredGeneration() + ":" + window;
+        enqueue(owner, row, TenantScopedOutboxKey.of(owner, "exposure-recovery", commandId), Instant.ofEpochSecond(window));
+    }
+
+    private void enqueue(long owner, GatewayUrlExposureBO row, String key, Instant occurredAt) {
+        String eventId = UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
+        var event = new ExposureDesiredStateChangedEvent(eventId, owner, row.getId(), row.getDesiredGeneration(),
+                row.getDesiredState(), occurredAt);
+        outbox.enqueue(OutboxMessage.builder().messageId(eventId).idempotencyKey(key)
+                .channel(ExposureDesiredStateChangedEvent.CHANNEL).destination(ExposureDesiredStateChangedEvent.DESTINATION)
+                .schemaVersion(ExposureDesiredStateChangedEvent.SCHEMA_VERSION).payload(event)
+                .header("tenant-id", Long.toString(owner)).header("event-id", eventId).build());
     }
 
     /** Read-only evidence projection; enqueue success is never evidence of URL convergence. */
@@ -136,9 +157,22 @@ public class GatewayReleasePublicationCoordinator {
         requireTransaction(owner);
         var artifact = releases.loadNative(releaseId).orElseThrow(() -> new IllegalStateException(LEGACY_READ_ONLY));
         NativeOutcome outcome = observeNative(owner, artifact);
-        if (outcome.status() != GatewayReleaseStatus.PUBLISHING) releases.completeAttempt(releaseId, attemptNo, outcome.status(),
-                outcome.partialApplied(), null, null, null, List.of(), clock.instant());
+        finish(releaseId, attemptNo, outcome);
         return outcome;
+    }
+
+    /** Legacy journals stay archived; only terminal evidence won by this transaction can advance the draft basis. */
+    public Optional<NativeOutcome> recoverNative(long owner, String releaseId, int attemptNo) {
+        requireTransaction(owner);
+        return releases.loadNative(releaseId).flatMap(artifact -> {
+            NativeOutcome outcome = observeNative(owner, artifact);
+            return finish(releaseId, attemptNo, outcome) ? Optional.of(outcome) : Optional.empty();
+        });
+    }
+
+    private boolean finish(String releaseId, int attemptNo, NativeOutcome outcome) {
+        return outcome.status() != GatewayReleaseStatus.PUBLISHING
+                && releases.completeCurrentNativeAttempt(releaseId, attemptNo, outcome.status(), outcome.partialApplied(), clock.instant());
     }
 
     private GatewayUrlExposureBO current(long owner, String id) {

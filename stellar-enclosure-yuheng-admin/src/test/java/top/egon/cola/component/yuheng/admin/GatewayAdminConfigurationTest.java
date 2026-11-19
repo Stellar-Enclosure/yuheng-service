@@ -102,7 +102,7 @@ class GatewayAdminConfigurationTest {
     void projectionClockIsNamedAndIndependentOfOpenApiFlag() throws Exception {
         Method factory = GatewayAdminConfiguration.class.getDeclaredMethod("gatewayProjectionClock");
         assertThat(factory.getAnnotation(org.springframework.context.annotation.Bean.class).value())
-                .containsExactly("gatewayProjectionClock");
+                .containsExactly("gatewayProjectionClock", "egonColaMybatisPlusClock");
         assertThat(factory.getAnnotation(org.springframework.boot.autoconfigure.condition.ConditionalOnProperty.class))
                 .isNull();
         assertThat(new GatewayAdminConfiguration().gatewayProjectionClock().getZone())

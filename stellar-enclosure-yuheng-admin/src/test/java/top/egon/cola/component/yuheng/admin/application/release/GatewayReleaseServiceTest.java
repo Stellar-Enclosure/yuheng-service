@@ -120,6 +120,20 @@ class GatewayReleaseServiceTest {
     }
 
     @Test
+    void unchangedFreshlyObservedContentCanFinalizeTheNewAttemptAndAdvanceDraftBasis() {
+        var first = f.create();
+        f.onlyRow().setObservedState("OPEN").setObservedGeneration(1L).setReconcileStatus("SYNCED");
+        f.heads.get(first.releaseId()).setStatus(GatewayReleaseStatus.SUCCESS);
+        var second = f.create();
+        assertThat(second.releaseId()).isNotEqualTo(first.releaseId());
+        assertThat(second.status()).isEqualTo(GatewayReleaseStatus.SUCCESS);
+        assertThat(f.onlyRow().getReleaseId()).isEqualTo(Long.valueOf(first.releaseId()));
+        assertThat(f.drafts.findById(GROUP)).get().extracting(GatewayDraftBO::getBasedOnReleaseId)
+                .isEqualTo(second.releaseId());
+        verify(f.drafts).save(any(GatewayDraftBO.class));
+    }
+
+    @Test
     void contentPublishKeepsClosedAndAdvancesOnlyItsContentGeneration() {
         f.create();
         var row = f.onlyRow();
@@ -293,8 +307,13 @@ class GatewayReleaseServiceTest {
                 var list = attempts.get(call.getArgument(0)); int next = list.size() + 1;
                 list.add(GatewayReleaseAttemptBO.builder().attemptNo(next).status("PENDING").targets(List.of()).build()); return next;
             });
-            doAnswer(call -> { heads.get(call.getArgument(0)).setStatus(call.getArgument(2)); return null; })
-                    .when(releases).completeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any(), any(), any(), any(), any());
+            when(releases.completeCurrentNativeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any()))
+                    .thenAnswer(call -> {
+                        var head = heads.get(call.getArgument(0));
+                        if (head.getStatus() != GatewayReleaseStatus.PUBLISHING) return false;
+                        head.setStatus(call.getArgument(2));
+                        return true;
+                    });
             when(exposures.findOwnedRoute(anyLong(), anyLong(), anyString())).thenAnswer(call -> rows.values().stream()
                     .filter(row -> row.getOwnerTenantId().equals(call.getArgument(0)) && row.getGatewayGroupId().equals(call.getArgument(1))
                             && row.getRouteId().equals(call.getArgument(2))).findFirst().map(this::copy));

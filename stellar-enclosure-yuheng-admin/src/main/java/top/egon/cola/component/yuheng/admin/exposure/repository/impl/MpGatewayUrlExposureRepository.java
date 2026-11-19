@@ -133,6 +133,16 @@ public class MpGatewayUrlExposureRepository implements GatewayUrlExposureReposit
 
     @Override
     @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.SUPPORTS, readOnly = true)
+    public List<Long> findRecoveryIds(long trustedOwner, long afterId, int limit) {
+        requireOwner(trustedOwner);
+        if (afterId < 0 || limit < 1 || limit > 128) {
+            throw new IllegalArgumentException("URL_EXPOSURE_RECOVERY_PAGE_INVALID");
+        }
+        return context.withinUrlExposureControl(trustedOwner, () -> persistence.findRecoveryIds(trustedOwner, afterId, limit));
+    }
+
+    @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.SUPPORTS, readOnly = true)
     public boolean hasPublishedOverlap(long trustedOwner, GatewayUrlExposureBO proposed) {
         requireOwner(trustedOwner);
         if (!Objects.equals(proposed.getOwnerTenantId(), trustedOwner)) {

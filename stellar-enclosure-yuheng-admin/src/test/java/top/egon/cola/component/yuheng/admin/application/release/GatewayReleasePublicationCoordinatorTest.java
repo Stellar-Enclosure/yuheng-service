@@ -102,7 +102,29 @@ class GatewayReleasePublicationCoordinatorTest {
     void pendingIntentAndTechnicalDeliveryNeverCompleteTheBusinessAttempt() {
         var release = f.create();
         assertThat(f.coordinator.observeNative(OWNER, f.artifacts.get(release.releaseId())).status()).isEqualTo(GatewayReleaseStatus.PUBLISHING);
-        verify(f.releases, never()).completeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any(), any(), any(), any(), any());
+        verify(f.releases, never()).completeCurrentNativeAttempt(anyString(), anyInt(), any(), any(Boolean.class), any());
+    }
+
+    @Test
+    void recoveryWakeupsDeduplicateTheCurrentGenerationAcrossObservationWrites() {
+        f.create();
+        var row = f.onlyRow();
+        f.tx.executeWithoutResult(status -> f.coordinator.enqueueRecovery(OWNER, row.getId()));
+        var first = f.messages.getLast();
+        row.setVersion(8L).setUpdateTime(row.getUpdateTime().plusSeconds(2));
+        f.tx.executeWithoutResult(status -> f.coordinator.enqueueRecovery(OWNER, row.getId()));
+        assertThat(f.messages.getLast().idempotencyKey()).isEqualTo(first.idempotencyKey());
+        assertThat(f.messages.getLast().payload()).isEqualTo(first.payload());
+        row.setDesiredState(GatewayUrlExposureStateEnum.WITHDRAWN).setDesiredGeneration(2L);
+        f.tx.executeWithoutResult(status -> f.coordinator.enqueueRecovery(OWNER, row.getId()));
+        var withdrawn = f.messages.getLast();
+        assertThat(withdrawn.idempotencyKey()).isNotEqualTo(first.idempotencyKey());
+        assertThat(((ExposureDesiredStateChangedEvent) withdrawn.payload()).desiredState())
+                .isEqualTo(GatewayUrlExposureStateEnum.WITHDRAWN);
+        row.setReconcileStatus("SYNCED");
+        int count = f.messages.size();
+        f.tx.executeWithoutResult(status -> f.coordinator.enqueueRecovery(OWNER, row.getId()));
+        assertThat(f.messages).hasSize(count);
     }
 
     @Test

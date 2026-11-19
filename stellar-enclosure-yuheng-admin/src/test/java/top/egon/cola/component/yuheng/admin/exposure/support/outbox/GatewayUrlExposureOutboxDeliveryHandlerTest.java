@@ -64,13 +64,55 @@ class GatewayUrlExposureOutboxDeliveryHandlerTest {
                 .isEqualTo("YUHENG_EXPOSURE_EVENT_INVALID");
     }
 
+    @Test
+    void refusesUnboundContentTypeTenantAndEventHeadersBeforeWriter() throws Exception {
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("writer", (GatewayUrlExposureOutboxDeliveryHandler.Writer) ignored -> {
+            throw new AssertionError("An unbound envelope must not invoke a writer");
+        });
+        String payload = json.writeValueAsString(event);
+        var handler = handler(beans);
+        for (var invalid : java.util.List.of(
+                envelope(payload, "text/plain", Map.of("tenant-id", "2001", "event-id", MESSAGE_ID)),
+                envelope(payload, "application/json", Map.of()),
+                envelope(payload, "application/json", Map.of("tenant-id", "2002", "event-id", MESSAGE_ID)),
+                envelope(payload, "application/json", Map.of("tenant-id", "02001", "event-id", MESSAGE_ID)),
+                envelope(payload, "application/json", Map.of("tenant-id", "2001", "event-id", "another-event")))) {
+            assertThat(handler.deliver(invalid).code()).isEqualTo("YUHENG_EXPOSURE_EVENT_INVALID");
+        }
+    }
+
+    @Test
+    void refusesCoercedDuplicateTrailingAndOversizedJsonWithoutLeakingPayload() throws Exception {
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("writer", (GatewayUrlExposureOutboxDeliveryHandler.Writer) ignored -> {
+            throw new AssertionError("A malformed payload must not invoke a writer");
+        });
+        String payload = json.writeValueAsString(event);
+        for (String invalid : java.util.List.of(
+                payload.replace("\"ownerTenantId\":2001", "\"ownerTenantId\":\"2001\""),
+                payload.replace("\"ownerTenantId\":2001", "\"ownerTenantId\":2001,\"ownerTenantId\":2001"),
+                payload + " {}", " ".repeat(70_000) + payload, payload.replace("\"desiredState\":\"CLOSED\"", "\"desiredState\":0"),
+                payload.replace("\"exposureId\":810001", "\"exposureId\":null"),
+                payload.substring(0, payload.length() - 1) + ",\"untrusted-secret-marker\":\"" + "s".repeat(70_000) + "\"}")) {
+            var result = handler(beans).deliver(context(MESSAGE_ID, "1", invalid));
+            assertThat(result.code()).isEqualTo("YUHENG_EXPOSURE_EVENT_INVALID");
+            assertThat(result.message()).doesNotContain("untrusted-secret-marker");
+        }
+    }
+
+    private DeliveryContext envelope(String payload, String contentType, Map<String, String> headers) {
+        return new DeliveryContext(MESSAGE_ID, ExposureDesiredStateChangedEvent.CHANNEL, ExposureDesiredStateChangedEvent.DESTINATION,
+                payload, contentType, "1", headers, "trace-verified", 1, 4, NOW.plusSeconds(10));
+    }
+
     private GatewayUrlExposureOutboxDeliveryHandler handler(StaticListableBeanFactory beans) {
-        return new GatewayUrlExposureOutboxDeliveryHandler(json,
+        return new GatewayUrlExposureOutboxDeliveryHandler(GatewayUrlExposureOutboxDeliveryHandler.eventReader(json),
                 beans.getBeanProvider(GatewayUrlExposureOutboxDeliveryHandler.Writer.class));
     }
 
     private DeliveryContext context(String id, String schema, String payload) {
         return new DeliveryContext(id, ExposureDesiredStateChangedEvent.CHANNEL, ExposureDesiredStateChangedEvent.DESTINATION,
-                payload, "application/json", schema, Map.of(), "trace-verified", 1, 4, NOW.plusSeconds(10));
+                payload, "application/json", schema, Map.of("tenant-id", "2001", "event-id", id), "trace-verified", 1, 4, NOW.plusSeconds(10));
     }
 }

@@ -10,6 +10,13 @@ spring:
 
 yuheng:
   admin:
+    exposure:
+      role: ADMIN
+      api-server: ${YUHENG_PUBLISHER_API_SERVER:}
+      ca-file: ${YUHENG_PUBLISHER_CA_FILE:}
+      token-file: ${YUHENG_PUBLISHER_TOKEN_FILE:}
+      request-timeout: ${YUHENG_PUBLISHER_REQUEST_TIMEOUT:5s}
+      max-response-bytes: ${YUHENG_PUBLISHER_MAX_RESPONSE_BYTES:1048576}
     cache:
       redis:
         address: ${YUHENG_ADMIN_CACHE_REDIS_ADDRESS}
@@ -127,6 +134,10 @@ egon:
     component:
       transactional-outbox:
         enabled: true
+        polling:
+          enabled: false
+        cleanup:
+          enabled: false
         storage:
           type: MYBATIS_PLUS
           data-source-bean-name: dataSource

@@ -97,7 +97,7 @@ public class GatewayAdminConfiguration {
 
 
     /** Supplies projection timestamps regardless of whether OpenAPI discovery is enabled. */
-    @Bean("gatewayProjectionClock")
+    @Bean({"gatewayProjectionClock", "egonColaMybatisPlusClock"})
     Clock gatewayProjectionClock() {
         return Clock.systemUTC();
     }
@@ -473,6 +473,7 @@ public class GatewayAdminConfiguration {
      * @return 返回 网关可观测性RetentionReaper 的处理结果；returns the result of the operation.
      */
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "yuheng.admin.exposure.role", havingValue = "ADMIN", matchIfMissing = true)
     GatewayObservabilityRetentionReaper
             gatewayObservabilityRetentionReaper(
             GatewayCallEventIngestService service,

@@ -19,6 +19,7 @@ public interface GatewayUrlExposureDAO extends EgonColaMapper<GatewayUrlExposure
     GatewayUrlExposurePO findOwned(@Param("owner") long owner, @Param("id") long id);
     GatewayUrlExposurePO findOwnedRoute(@Param("owner") long owner, @Param("groupId") long groupId,
                                        @Param("routeId") String routeId);
+    List<Long> findRecoveryIds(@Param("owner") long owner, @Param("afterId") long afterId, @Param("limit") int limit);
     List<GatewayUrlExposurePO> scanBinding(@Param("cluster") String cluster,
             @Param("gatewayNamespace") String gatewayNamespace, @Param("gatewayName") String gatewayName,
             @Param("listenerName") String listenerName, @Param("afterId") long afterId, @Param("limit") int limit);

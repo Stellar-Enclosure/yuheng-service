@@ -380,6 +380,24 @@ class GatewayUrlExposureRepositoryIT {
     }
 
     @Test
+    void scopesPendingRecoveryByOwnerAndTraversesTheStableCursorWithTerminalIntent() {
+        var first = registration(6701L, OWNER, GATEWAY, HOST, "GET", "EXACT", "/recovery-first");
+        var foreign = registration(6702L, OTHER_OWNER, OTHER_GATEWAY, HOST, "GET", "EXACT", "/recovery-foreign");
+        var terminal = registration(6703L, OWNER, GATEWAY, HOST, "GET", "EXACT", "/recovery-terminal");
+        transaction(OWNER, () -> repository.reserveAll(OWNER, List.of(first, terminal)));
+        transaction(OTHER_OWNER, () -> repository.reserve(OTHER_OWNER, foreign));
+        assertThat(transaction(OWNER, () -> repository.compareAndSetDesired(
+                OWNER, 6703L, 0L, 1L, OPEN, WITHDRAWN, "withdraw and verify route is no longer reachable", NOW))).isTrue();
+
+        assertThat(asOwner(OWNER, () -> repository.findRecoveryIds(OWNER, 6700L, 1))).containsExactly(6701L);
+        assertThat(asOwner(OWNER, () -> repository.findRecoveryIds(OWNER, 6701L, 1))).containsExactly(6703L);
+        assertThat(asOwner(OWNER, () -> repository.findRecoveryIds(OWNER, 6703L, 1))).isEmpty();
+        assertThat(asOwner(OTHER_OWNER, () -> repository.findRecoveryIds(OTHER_OWNER, 6700L, 10))).containsExactly(6702L);
+        assertThatThrownBy(() -> asOwner(OTHER_OWNER, () -> repository.findRecoveryIds(OWNER, 6700L, 10)))
+                .isInstanceOf(IllegalStateException.class).hasMessage("TENANT_CONTEXT_MISMATCH");
+    }
+
+    @Test
     void commitsTheExposureAndItsReleaseWriteUnderTheSamePostgresTransaction() {
         var row = registration(6601L, OWNER, GATEWAY, HOST, "GET", "EXACT", "/same-transaction");
         transaction(OWNER, () -> {

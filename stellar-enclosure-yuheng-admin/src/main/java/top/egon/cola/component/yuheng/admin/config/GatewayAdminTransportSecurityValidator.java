@@ -1,13 +1,18 @@
 package top.egon.cola.component.yuheng.admin.config;
 
 
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
-import java.util.Objects;
 
 /**
  * 中文说明：{@code GatewayAdminTransportSecurityValidator} 是校验器，位于当前 Gateway 模块的相关包中，负责网关管理端传输安全校验器相关的职责与边界。
@@ -15,7 +20,10 @@ import java.util.Objects;
  *
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
-@Component
+@Component("gatewayAdminTransportSecurityValidator")
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+@Slf4j
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public final class GatewayAdminTransportSecurityValidator
         implements ApplicationRunner {
 
@@ -34,21 +42,7 @@ public final class GatewayAdminTransportSecurityValidator
      *
      * 用法 / Usage: 该字段通过 {@code GatewayAdminTransportSecurityValidator} 的构造、初始化或业务方法使用；/ Access it through the construction, initialization, or business methods of {@code GatewayAdminTransportSecurityValidator}; do not couple callers to its representation when the owning type exposes an API.
      */
-    private final Environment environment;
-
-    /**
-     * 中文说明：创建 {@code GatewayAdminTransportSecurityValidator} 实例，并接收构建该实例所需的依赖或初始数据；构造器参数定义了实例建立时必须满足的输入契约。
-     * English summary: Creates an instance of {@code GatewayAdminTransportSecurityValidator} from the dependencies or initial data required at construction time; its parameters define the initialization contract.
-     *
-     * 用法 / Usage: 由 Spring 容器、工厂或上层组件调用；/ Call it from the Spring container, a factory, or an enclosing component after validating the supplied dependencies.
-     * @param environment 参数 environment；parameter environment。
-     */
-    public GatewayAdminTransportSecurityValidator(Environment environment) {
-        this.environment = Objects.requireNonNull(
-                environment,
-                "environment"
-        );
-    }
+    @NonNull @Qualifier("environment") private final Environment environment;
 
     /**
      * 中文说明：执行 run 操作；该方法是 {@code GatewayAdminTransportSecurityValidator} 的调用入口，负责根据输入完成对应的运行时、管理面或协议处理。
@@ -60,6 +54,7 @@ public final class GatewayAdminTransportSecurityValidator
     @Override
     public void run(ApplicationArguments args) {
         validate(environment, PREFIX);
+        log.debug("Servlet Admin transport settings validated");
     }
 
     /**

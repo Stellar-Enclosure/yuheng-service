@@ -60,7 +60,9 @@ import top.egon.cola.platform.tianquan.shoubing.starter.security.UserAccessToken
 import top.egon.cola.platform.tianquan.shoubing.starter.security.domain.TokenAuditProofBO;
 
 import java.net.URI;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 
@@ -106,7 +108,7 @@ class GatewayUrlExposureControllerTest {
     }
 
     @Test void bodylessReadUsesVerifiedActorAndPreservesStringIdsNullEvidenceAndMicrosecondUtc() throws Exception {
-        var view = new GatewayUrlExposureViewConverter().toView(row().setId(9_007_199_254_740_993L));
+        var view = fixedViewConverter().toView(row().setId(9_007_199_254_740_993L));
         when(service.get(any(), any())).thenReturn(new GatewayUrlExposureService.QueryResult(view, TAG));
         mvc.perform(read(ROOT + "/810001").cookie(new Cookie("session", "irrelevant-cookie")))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", TAG))
@@ -126,7 +128,7 @@ class GatewayUrlExposureControllerTest {
     }
 
     @Test void writeOnlyReplacementHasComplete202And200ViewsLocationAndCorrectRetryHeaders() throws Exception {
-        var view = new GatewayUrlExposureViewConverter().toView(row());
+        var view = fixedViewConverter().toView(row());
         when(service.putState(any(), any())).thenReturn(new GatewayUrlExposureService.CommandResult(202, view, TAG),
                 new GatewayUrlExposureService.CommandResult(200, view, TAG));
         mvc.perform(change().content("{\"state\":\"CLOSED\",\"changeReason\":\"  emergency close  \"}"))
@@ -223,7 +225,7 @@ class GatewayUrlExposureControllerTest {
     }
 
     @Test void closedConvergenceNeedsAllCurrentEvidenceWithoutRewritingStoredObservation() {
-        var converter = new GatewayUrlExposureViewConverter();
+        var converter = fixedViewConverter();
         var row = row().setObservedState("CLOSED").setObservedGeneration(8L).setReconcileStatus("SYNCED").setObservation(observation(false));
         assertThat(converter.toView(row).getReconcileStatus()).isEqualTo("SYNCED");
         assertThat(converter.toView(row).getKubernetesRoute().getControllerName()).isNull();
@@ -238,10 +240,23 @@ class GatewayUrlExposureControllerTest {
         assertThat(row.getObservation().path("kubernetesRoute").path("controllerName").asText()).isEqualTo("io.cilium/gateway-controller");
     }
 
+    @Test void expiredOrMissingSignedEvidenceDoesNotProjectAsCurrentlySynced() {
+        var converter = fixedViewConverter();
+        var proof = observation(false);
+        var row = row().setObservedState("CLOSED").setObservedGeneration(8L).setReconcileStatus("SYNCED").setObservation(proof);
+        proof.withObject("evidence").put("expiresAt", "2026-11-17T22:40:05Z");
+        assertThat(converter.toView(row).getReconcileStatus()).isEqualTo("PENDING");
+        assertThat(converter.toView(row).getLastErrorCode()).isEqualTo("DATAPLANE_EVIDENCE_INCOMPLETE");
+        assertThat(converter.toView(row).getObservedGeneration()).isEqualTo("8");
+        proof.remove("evidence");
+        assertThat(converter.toView(row).getReconcileStatus()).isEqualTo("PENDING");
+        assertThat(row.getReconcileStatus()).isEqualTo("SYNCED");
+    }
+
     @Test void attachedOldParentsAreNotReachabilityProofAndPrivateJsonNeverLeaks() throws Exception {
         var row = row().setDesiredState(GatewayUrlExposureStateEnum.OPEN).setObservedState("OPEN")
                 .setObservedGeneration(8L).setReconcileStatus("SYNCED").setObservation(observation(true));
-        var converter = new GatewayUrlExposureViewConverter();
+        var converter = fixedViewConverter();
         assertThat(converter.toView(row).getReconcileStatus()).isEqualTo("PENDING");
         ((ObjectNode) row.getObservation().path("kubernetesRoute")).put("conditionObservedGeneration", "4");
         var projected = converter.toView(row);
@@ -252,7 +267,7 @@ class GatewayUrlExposureControllerTest {
     }
 
     @Test void malformedNonNullEvidenceNeverBecomesAnAbsentButConvergedRoute() {
-        var converter = new GatewayUrlExposureViewConverter();
+        var converter = fixedViewConverter();
         var row = row().setObservedState("CLOSED").setObservedGeneration(8L).setReconcileStatus("SYNCED");
         var malformedRoute = observation(false);
         ((ObjectNode) malformedRoute.path("kubernetesRoute")).put("uid", "foreign-route-uid");
@@ -278,7 +293,7 @@ class GatewayUrlExposureControllerTest {
                     .put("message", "Current writer evidence").put("observedGeneration", "8")
                     .put("lastTransitionTime", "2026-11-17T22:40:02.000000Z");
         }
-        assertThat(new GatewayUrlExposureViewConverter().toView(row).getReconcileStatus()).isEqualTo("SYNCED");
+        assertThat(fixedViewConverter().toView(row).getReconcileStatus()).isEqualTo("SYNCED");
         for (Class<?> type : List.of(GatewayUrlExposureVO.class, GatewayUrlExposureVO.KubernetesRouteVO.class,
                 GatewayUrlExposureVO.ConditionVO.class)) {
             for (var field : type.getDeclaredFields()) {
@@ -327,8 +342,13 @@ class GatewayUrlExposureControllerTest {
                 .setRouteName("yuheng-exposure-810001").setRouteUid("route-uid").setVersion(12L)
                 .setUpdateTime(Instant.parse("2026-11-17T22:40:00Z"));
     }
+    private static GatewayUrlExposureViewConverter fixedViewConverter() {
+        return new GatewayUrlExposureViewConverter(Clock.fixed(Instant.parse("2026-11-17T22:40:05Z"), ZoneOffset.UTC));
+    }
+
     private static ObjectNode observation(boolean attached) {
         var root = json.createObjectNode().put("schemaVersion", 1).put("privateProof", "internal-owner");
+        root.putObject("evidence").put("expiresAt", "2026-11-17T22:41:05Z");
         root.putObject("kubernetesRoute").put("kind", "HTTPRoute").put("namespace", "yuheng-routes")
                 .put("name", "yuheng-exposure-810001").put("uid", "route-uid").put("resourceVersion", "15683")
                 .put("metadataGeneration", "5").put("controllerName", "io.cilium/gateway-controller")

@@ -16,6 +16,7 @@ import java.time.Clock;
  * 用法 / Usage: 通过 Spring 容器或上层组件使用该类型；/ Use this type through the Spring container or an enclosing component; its public contract is the supported extension and invocation boundary.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "yuheng.admin.exposure.role", havingValue = "ADMIN", matchIfMissing = true)
 public class GatewayHmacNonceReaper {
 
     private final GatewayPersistenceContextComponent persistenceContext;

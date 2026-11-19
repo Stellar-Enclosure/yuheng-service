@@ -123,6 +123,15 @@ public class GatewayExposurePublicationConfiguration {
         }
     }
 
+    /** Returns only the startup-frozen authority used by the publisher's exact Kubernetes allowlist. */
+    public List<PublicationBinding> publicationBindings() {
+        return routes.values().stream().distinct()
+                .sorted(java.util.Comparator.comparingLong(PublicationBinding::ownerTenantId)
+                        .thenComparingLong(PublicationBinding::gatewayGroupId)
+                        .thenComparing(PublicationBinding::routeId).thenComparing(PublicationBinding::operationId))
+                .toList();
+    }
+
     @Bean("gatewayHttpRouteBindingResolver")
     public BindingResolver gatewayHttpRouteBindingResolver() {
         return (owner, group, route, operation) -> Optional.ofNullable(routes.get(new RouteKey(owner, group, route, operation)));

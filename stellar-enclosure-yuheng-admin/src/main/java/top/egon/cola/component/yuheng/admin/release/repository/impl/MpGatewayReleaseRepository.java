@@ -3,6 +3,7 @@ package top.egon.cola.component.yuheng.admin.release.repository.impl;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 中文说明：{@code MpGatewayReleaseRepository} 是发布聚合的 MyBatis-Plus 门面存储，逐方法替换被删除的手写 JDBC
@@ -291,6 +293,24 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                         .orderByAsc(GatewayReleaseRecordPO::getUpdateTime)
                         .orderByAsc(GatewayReleaseRecordPO::getId))
         );
+        return archivedRecoveryCandidates(heads);
+    }
+
+    @Override
+    public List<GatewayRecoverableReleaseAttemptBO> recoverableAfter(long afterReleaseId, int limit) {
+        if (afterReleaseId < 0 || limit < 1 || limit > 128) {
+            throw new IllegalArgumentException("YUHENG_RELEASE_RECOVERY_PAGE_INVALID");
+        }
+        var heads = releasePersistenceRepository.list(new Page<GatewayReleaseRecordPO>(1, limit, false),
+                boundPredicate(Wrappers.<GatewayReleaseRecordPO>lambdaQuery()
+                        .eq(GatewayReleaseRecordPO::getStatus, GatewayReleaseStatus.PUBLISHING.name())
+                        .gt(GatewayReleaseRecordPO::getId, afterReleaseId)
+                        .orderByAsc(GatewayReleaseRecordPO::getId)));
+        return heads.stream().map(head -> new GatewayRecoverableReleaseAttemptBO(Long.toString(head.getId()),
+                Long.toString(head.getGatewayGroupId()), greatestNativeAttempt(head.getId()))).toList();
+    }
+
+    private List<GatewayRecoverableReleaseAttemptBO> archivedRecoveryCandidates(List<GatewayReleaseRecordPO> heads) {
         if (heads.isEmpty()) {
             return List.of();
         }
@@ -301,9 +321,7 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                 new ArrayList<>(heads.size());
         for (GatewayReleaseRecordPO head : heads) {
             Integer attemptNo = greatestJournalAttempt.get(head.getId());
-            if (attemptNo == null) {
-                continue;
-            }
+            if (attemptNo == null) continue;
             GatewayReleaseBO carrier = releasePersistenceConverter.toBusiness(head);
             candidates.add(GatewayRecoverableReleaseAttemptBO.builder()
                     .releaseId(carrier.getId())
@@ -547,6 +565,29 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
             String errorMessage,
             List<GatewayReleaseTargetBO> targets,
             Instant now) {
+        completeAttempt(releaseId, attemptNo, status, partialApplied, changeId, errorCode, errorMessage, targets, now, false);
+    }
+
+    @Override
+    @Transactional(transactionManager = "gatewayTransactionManager", propagation = Propagation.MANDATORY)
+    public boolean completeCurrentNativeAttempt(String releaseId, int attemptNo, GatewayReleaseStatus status,
+                                                boolean partialApplied, Instant now) {
+        if (!Set.of(GatewayReleaseStatus.SUCCESS, GatewayReleaseStatus.FAILED, GatewayReleaseStatus.SUPERSEDED)
+                .contains(status) || attemptNo < 1 || !TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("YUHENG_NATIVE_RELEASE_COMPLETION_INVALID");
+        }
+        var head = find(releaseId).orElse(null);
+        if (head == null || head.getStatus() != GatewayReleaseStatus.PUBLISHING
+                || greatestNativeAttempt(technicalId(releaseId)) != attemptNo) return false;
+        completeAttempt(releaseId, attemptNo, status, partialApplied, null,
+                status == GatewayReleaseStatus.FAILED ? "YUHENG_EXPOSURE_RECONCILIATION_FAILED" : null,
+                null, List.of(), now, true);
+        return true;
+    }
+
+    private void completeAttempt(String releaseId, int attemptNo, GatewayReleaseStatus status, boolean partialApplied,
+            String changeId, String errorCode, String errorMessage, List<GatewayReleaseTargetBO> targets,
+            Instant now, boolean publishingOnly) {
         GatewayReleaseAttemptRecordPO attempt = attemptRow(
                 technicalId(releaseId),
                 attemptNo
@@ -564,7 +605,8 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                                 .set(GatewayReleaseAttemptRecordPO::getErrorMessage, errorMessage)
                                 .eq(GatewayReleaseAttemptRecordPO::getId, attempt.getId())
                                 .eq(GatewayReleaseAttemptRecordPO::getReleaseId, key)
-                                .eq(GatewayReleaseAttemptRecordPO::getAttemptNo, attemptNo))
+                                .eq(GatewayReleaseAttemptRecordPO::getAttemptNo, attemptNo)
+                                .eq(publishingOnly, GatewayReleaseAttemptRecordPO::getStatus, GatewayReleaseStatus.PUBLISHING.name()))
                 ),
                 "YUHENG_ADMIN_RELEASE_ATTEMPT_WRITE_CONFLICT"
         );
@@ -576,7 +618,8 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                                 GatewayReleaseRecordPO::getPartialApplied,
                                 partialApplied
                         )
-                        .set(GatewayReleaseRecordPO::getChangeId, changeId),
+                        .set(GatewayReleaseRecordPO::getChangeId, changeId)
+                        .eq(publishingOnly, GatewayReleaseRecordPO::getStatus, GatewayReleaseStatus.PUBLISHING.name()),
                 now
         );
         if (targets != null) {
@@ -853,6 +896,14 @@ public class MpGatewayReleaseRepository implements GatewayReleaseRepository {
                 .filter(Objects::nonNull)
                 .max(Integer::compareTo)
                 .orElse(0);
+    }
+
+    private int greatestNativeAttempt(long releaseId) {
+        var rows = attemptPersistenceRepository.list(new Page<GatewayReleaseAttemptRecordPO>(1, 1, false),
+                boundPredicate(Wrappers.<GatewayReleaseAttemptRecordPO>lambdaQuery()
+                        .eq(GatewayReleaseAttemptRecordPO::getReleaseId, releaseId)
+                        .orderByDesc(GatewayReleaseAttemptRecordPO::getAttemptNo)));
+        return rows.isEmpty() ? 0 : rows.getFirst().getAttemptNo();
     }
 
     /**
