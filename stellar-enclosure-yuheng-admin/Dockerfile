@@ -12,6 +12,11 @@ COPY --chown=yuheng:yuheng \
     target/stellar-enclosure-yuheng-admin-exec.jar \
     /app/app.jar
 
+RUN mkdir -p /opt/stellar \
+    && java -Dloader.main=top.egon.cola.component.common.id.probe.WorkerProcessProbe \
+        -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher write-script > /opt/stellar/probe \
+    && chmod 0555 /opt/stellar/probe
+
 USER yuheng
 EXPOSE 18080
 

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.availability.ApplicationAvailability;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
@@ -17,9 +18,12 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.WebApplicationContext;
+import top.egon.cola.component.common.id.autoconfigure.IdGeneratorAutoConfiguration;
+import top.egon.cola.component.common.id.probe.WorkerProcessProbe;
 import top.egon.cola.component.outbox.autoconfigure.OutboxMpStorageProperties;
 import top.egon.cola.component.outbox.autoconfigure.TransactionalOutboxProperties;
 import top.egon.cola.component.outbox.dispatch.OutboxDispatcher;
+import top.egon.cola.component.outbox.dispatch.OutboxPoller;
 import top.egon.cola.component.outbox.event.OutboxCommittedEvent;
 import top.egon.cola.component.outbox.event.OutboxCommittedEventListener;
 import top.egon.cola.component.rpc.tianshu.autoconfigure.DdcRpcProperties;
@@ -126,6 +130,14 @@ public class GatewayUrlExposurePublisherConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = PREFIX, name = "role", havingValue = "PUBLISHER")
     static class PublisherRoleConfiguration {
+        @Bean("stellarWorkerProbe")
+        @ConditionalOnProperty(name = WorkerProcessProbe.ENABLED_PROPERTY, havingValue = "true")
+        WorkerProcessProbe workerProbe(@Qualifier("applicationAvailability") ApplicationAvailability availability,
+                @Qualifier("top.egon.cola.component.common.id.autoconfigure.IdGeneratorAutoConfiguration")
+                IdGeneratorAutoConfiguration idAuthority, @Qualifier("outboxPoller") OutboxPoller poller) {
+            return new WorkerProcessProbe(availability, idAuthority::assertRedisLeaseAvailable, poller::isRunning);
+        }
+
         @Bean(value = "gatewayKubernetesClient", destroyMethod = "close")
         GatewayKubernetesClient gatewayKubernetesClient(@Qualifier("gatewayUrlExposureRole") RoleEnum role,
                 @Qualifier(PROPERTIES) PublisherProperties properties,

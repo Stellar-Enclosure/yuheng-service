@@ -7,6 +7,10 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import top.egon.cola.component.yuheng.admin.config.GatewayAdminTransportSecurityValidator;
 import org.springframework.context.PayloadApplicationEvent;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.ConfigurationClassPostProcessor;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 import top.egon.cola.component.outbox.autoconfigure.TransactionalOutboxProperties;
 import top.egon.cola.component.outbox.delivery.DeliveryHandlerRegistry;
 import top.egon.cola.component.outbox.delivery.DeliveryResult;
@@ -17,6 +21,7 @@ import top.egon.cola.component.yuheng.admin.config.GatewayAdminSecurityConfigura
 import top.egon.cola.component.yuheng.admin.exposure.support.outbox.GatewayUrlExposureOutboxDeliveryHandler;
 
 import java.util.List;
+import java.util.Map;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.Set;
@@ -105,6 +110,26 @@ class GatewayUrlExposurePublisherConfigurationTest {
             assertThat(context.containsBeanDefinition("gatewayHmacNonceReaper")).isFalse();
             assertThat(context.containsBeanDefinition("gatewayDefinitionLifecycleReconciler")).isFalse();
             assertThat(context.containsBeanDefinition("gatewayObservabilityRetentionReaper")).isFalse();
+        }
+    }
+
+    @Test
+    void managedProbeIsRegisteredOnlyForTheExplicitPublisher() {
+        assertThat(probeRegistered("PUBLISHER", true)).isTrue();
+        assertThat(probeRegistered("PUBLISHER", false)).isFalse();
+        assertThat(probeRegistered("ADMIN", true)).isFalse();
+    }
+
+    private static boolean probeRegistered(String role, boolean managed) {
+        try (var context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("role", Map.of(ROLE, role)));
+            context.getEnvironment().getPropertySources().addFirst(new SystemEnvironmentPropertySource(
+                    "stellar-systemEnvironment", Map.of("STELLAR_WORKER_PROBE_ENABLED", Boolean.toString(managed))));
+            context.register(GatewayUrlExposurePublisherConfiguration.class);
+            var processor = new ConfigurationClassPostProcessor();
+            processor.setEnvironment(context.getEnvironment());
+            processor.postProcessBeanDefinitionRegistry(context);
+            return context.containsBeanDefinition("stellarWorkerProbe");
         }
     }
 
