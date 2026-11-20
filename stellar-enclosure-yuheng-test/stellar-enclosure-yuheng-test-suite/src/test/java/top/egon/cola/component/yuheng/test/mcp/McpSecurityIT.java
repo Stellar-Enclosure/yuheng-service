@@ -4,14 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationBO;
+import top.egon.cola.component.yuheng.admin.catalog.domain.bo.GatewayOperationDefinitionBO;
 import top.egon.cola.component.yuheng.admin.catalog.repository.GatewayCatalogRepository;
 import top.egon.cola.component.yuheng.admin.mcp.domain.vo.McpValidationReportVO;
-import top.egon.cola.component.yuheng.admin.mcp.repository.McpArtifactMetadataRepository;
 import top.egon.cola.component.yuheng.admin.mcp.service.McpValidationService;
 import top.egon.cola.component.yuheng.contract.mcp.protocol.McpErrorCode;
 import top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeRemoteMount;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeRemoteProvider;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool;
@@ -38,6 +38,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -47,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Hostile-input gates that must hold before an MCP release is accepted.
@@ -113,16 +115,18 @@ class McpSecurityIT {
                 "type", "object",
                 "$ref", corpus().path("externalSchemaRef").asText()
         ));
-        McpRuntimeTool tool = tool("LOW", schema);
-        McpValidationService validator = new McpValidationService(
-                mock(GatewayCatalogRepository.class),
-                mock(McpArtifactMetadataRepository.class),
-                objectMapper
-        );
+        var tool = new McpRuntimeTool("tool-mapping", "billing", "read_invoice", "Read an invoice",
+                "LOCAL_OPERATION", "invoice-read", "HTTP", null, schema, "{\"type\":\"object\"}",
+                Map.of(), Set.of("invoice:read"), "LOW", true, true);
+        var catalog = mock(GatewayCatalogRepository.class);
+        var operation = mock(GatewayOperationBO.class);
+        when(operation.getId()).thenReturn("invoice-read");
+        when(catalog.findOperation("invoice-read")).thenReturn(Optional.of(operation));
+        when(catalog.loadDefinitions("invoice-read")).thenReturn(List.of(mock(GatewayOperationDefinitionBO.class)));
+        var validator = new McpValidationService(catalog, objectMapper);
 
-        McpValidationReportVO report = validator.validate(
-                remoteContent(tool)
-        );
+        McpValidationReportVO report = validator.validate(new McpRuleContent(List.of(server()), List.of(tool),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
         assertFalse(report.valid());
         assertEquals(
@@ -292,20 +296,6 @@ class McpSecurityIT {
         );
     }
 
-    private McpRuleContent remoteContent(McpRuntimeTool tool) {
-        return new McpRuleContent(
-                List.of(server()),
-                List.of(tool),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(provider()),
-                List.of(mount())
-        );
-    }
-
     private McpRuntimeServer server() {
         return new McpRuntimeServer(
                 "server-security",
@@ -316,36 +306,6 @@ class McpSecurityIT {
                 Set.of(McpProtocolDialect.STABLE_2025_11_25),
                 "https://resource.egon.top/yuheng-mcp",
                 30L,
-                true
-        );
-    }
-
-    private McpRuntimeRemoteProvider provider() {
-        return new McpRuntimeRemoteProvider(
-                "provider-security",
-                "remote-security",
-                "Remote security",
-                McpProtocolDialect.STABLE_2025_11_25,
-                "STREAMABLE_HTTP",
-                "https://remote.example/mcp",
-                null,
-                null,
-                "security-v1",
-                true
-        );
-    }
-
-    private McpRuntimeRemoteMount mount() {
-        return new McpRuntimeRemoteMount(
-                "mount-security",
-                "billing",
-                "remote-security",
-                "remote",
-                Set.of("TOOL"),
-                Map.of(),
-                "REJECT",
-                Set.of(),
-                "security-v1",
                 true
         );
     }

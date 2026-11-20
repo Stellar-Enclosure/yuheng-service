@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static top.egon.cola.component.yuheng.test.integration.XingyuanResourceAuthorizationIT.nativeResourceEndpoint;
 import static top.egon.cola.component.yuheng.test.integration.XingyuanResourceAuthorizationIT.transactionProofLong;
 import static top.egon.cola.component.yuheng.test.integration.XingyuanResourceAuthorizationIT.transactionProofInstant;
 import static top.egon.cola.component.yuheng.test.integration.XingyuanResourceAuthorizationIT.requireEvidenceDirectory;
@@ -305,6 +306,13 @@ class XingyuanFieldAuthorizationIT {
             throw new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE");
         }
         client.verifiedClaims(viewer);
+        var fieldOrigin = UnifiedIdentityLiveClient.ciliumOrigin(manifest, "native-light");
+        var writeEndpoint = nativeResourceEndpoint(manifest, "native-light", "POST", "/api/users");
+        assertThat(writeEndpoint).isEqualTo(fieldOrigin.resolve("/api/users"));
+        for (var reference : List.of(a, b, viewer)) {
+            assertThat(reference.getReadEndpoint().resolve("/")).isEqualTo(fieldOrigin.resolve("/"));
+            assertThat(reference.getResourceUri()).isEqualTo(a.getResourceUri());
+        }
         var rbac = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(root.resolve("evidence/db-rbac.json"), root.resolve("evidence"), 128 * 1024));
         if (!manifest.path("runId").asText().equals(ready.path("runId").asText()) || !digest.equals(ready.path("manifestSha256").asText())
                 || !"READY".equals(ready.path("status").asText()) || !"FIELD_RULE_OWNER_ONLY".equals(ready.path("scope").asText())
@@ -363,8 +371,8 @@ class XingyuanFieldAuthorizationIT {
             }
             if (createdA == null || createdB == null) { throw new IllegalStateException("XINGYUAN_PARTIAL"); }
             long idA = responseId(createdA), idB = responseId(createdB);
-            var readA = probe.request("GET", "/api/users/" + idA, a, null, null, 200);
-            var readB = probe.request("GET", "/api/users/" + idB, b, null, null, 200);
+            var readA = probe.request("GET", writeEndpoint.getRawPath() + '/' + idA, a, null, null, 200);
+            var readB = probe.request("GET", writeEndpoint.getRawPath() + '/' + idB, b, null, null, 200);
             assertThat(readA).isEqualTo(createdA); assertThat(readB).isEqualTo(createdB);
             var forged = probe.request("GET", "/api/users/" + idA, a, null, b.getTenantId(), 200); assertThat(forged).isEqualTo(readA);
             var foreign = probe.request("GET", "/api/users/" + idA, b, null, null, 400); assertThat(foreign.path("status").asText()).isEqualTo("USER_NOT_FOUND");

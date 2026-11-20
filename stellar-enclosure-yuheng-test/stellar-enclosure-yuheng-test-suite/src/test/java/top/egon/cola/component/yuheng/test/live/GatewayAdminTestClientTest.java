@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -29,7 +30,7 @@ class GatewayAdminTestClientTest {
     @Test
     void sendsBearerAuthenticatedTypedAdminRequests() throws Exception {
         AtomicReference<RequestCapture> request = new AtomicReference<>();
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> respond(exchange, request));
         server.start();
         GatewayAdminTestClient client = new GatewayAdminTestClient(
@@ -79,7 +80,7 @@ class GatewayAdminTestClientTest {
 
     @Test
     void reportsMethodUriStatusAndBodyForAdminFailure() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             byte[] body = "denied".getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(403, body.length);
@@ -97,6 +98,72 @@ class GatewayAdminTestClientTest {
                 .hasMessageContaining("POST")
                 .hasMessageContaining("403")
                 .hasMessageContaining("denied");
+    }
+
+    @Test
+    void exposureMethodsReturnTheActualFenceAndConvergenceOutcome() throws Exception {
+        var received = new AtomicReference<String>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/yuheng/admin/exposures/123", exchange -> {
+            var headers = exchange.getRequestHeaders();
+            var body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            received.set(String.join("\n", exchange.getRequestMethod(), exchange.getRequestURI().toString(),
+                    headers.getFirst("Authorization"), String.valueOf(headers.getFirst("If-Match")),
+                    String.valueOf(headers.getFirst("Idempotency-Key")), body));
+            String generation = "GET".equals(exchange.getRequestMethod()) ? "4" : "5";
+            byte[] json = ("{\"exposureId\":\"123\",\"desiredGeneration\":\"" + generation + "\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            String rowVersion = "GET".equals(exchange.getRequestMethod()) ? "34" : "35";
+            exchange.getResponseHeaders().set("ETag", "\"exposure-123-v" + rowVersion + "\"");
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+            if ("PUT".equals(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Location", "/api/v1/yuheng/admin/exposures/123");
+                exchange.getResponseHeaders().set("Retry-After", "2");
+            }
+            exchange.sendResponseHeaders("GET".equals(exchange.getRequestMethod()) ? 200 : 202, json.length);
+            exchange.getResponseBody().write(json);
+            exchange.close();
+        });
+        server.start();
+        var client = new GatewayAdminTestClient(baseUri(), "fixture-token");
+
+        var current = client.getExposure("123");
+        assertThat(current.status()).isEqualTo(200);
+        assertThat(current.etag()).isEqualTo("\"exposure-123-v34\"");
+        assertThat(received.get()).startsWith("GET\n/api/v1/yuheng/admin/exposures/123\nBearer fixture-token");
+        var next = client.replaceExposureState("123", current.etag(), "step52-closed", GatewayUrlExposureStateEnum.CLOSED, "staging closure");
+        assertThat(next.status()).isEqualTo(202);
+        assertThat(next.etag()).isEqualTo("\"exposure-123-v35\"");
+        assertThat(next.retryAfter()).isEqualTo("2");
+        assertThat(next.body().path("desiredGeneration").textValue()).isEqualTo("5");
+        assertThat(received.get()).contains(
+                "PUT\n/api/v1/yuheng/admin/exposures/123/state\nBearer fixture-token\n\"exposure-123-v34\"\nstep52-closed",
+                "\"state\":\"CLOSED\"", "\"changeReason\":\"staging closure\"");
+    }
+
+    @Test
+    void exposureMutationRejectsForeignPreconditionsAndReturnsRealStaleStatus() throws Exception {
+        var callCount = new java.util.concurrent.atomic.AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            callCount.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = "{\"code\":\"YUHENG_EXPOSURE_PRECONDITION_FAILED\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(412, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        var client = new GatewayAdminTestClient(baseUri(), "fixture-token");
+
+        assertThatThrownBy(() -> client.replaceExposureState("123", "\"exposure-999-v4\"", "step52-stale",
+                GatewayUrlExposureStateEnum.CLOSED, "staging closure")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(callCount).hasValue(0);
+        var stale = client.replaceExposureState("123", "\"exposure-123-v3\"", "step52-stale",
+                GatewayUrlExposureStateEnum.CLOSED, "staging closure");
+        assertThat(stale.status()).isEqualTo(412);
+        assertThat(stale.body().path("code").textValue()).isEqualTo("YUHENG_EXPOSURE_PRECONDITION_FAILED");
+        assertThat(callCount).hasValue(1);
     }
 
     private URI baseUri() {

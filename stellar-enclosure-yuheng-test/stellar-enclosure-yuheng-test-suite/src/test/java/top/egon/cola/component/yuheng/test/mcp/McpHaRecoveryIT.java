@@ -2,32 +2,15 @@ package top.egon.cola.component.yuheng.test.mcp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer;
-import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivation;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivationMode;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleContent;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleSnapshot;
-import top.egon.cola.component.yuheng.core.provider.ProviderCatalogSnapshot;
-import top.egon.cola.component.yuheng.core.provider.ProviderQuery;
-import top.egon.cola.component.yuheng.core.provider.ProviderServiceKey;
-import top.egon.cola.component.yuheng.core.provider.ProviderServiceRegistry;
-import top.egon.cola.component.yuheng.core.provider.ProviderServiceSnapshot;
-import top.egon.cola.component.yuheng.core.provider.ProviderSubscription;
-import top.egon.cola.component.yuheng.runtime.provider.service.ProviderDirectory;
 import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpEngineHttpHandler;
 import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpTaskWorker;
-import top.egon.cola.component.yuheng.mcp.engine.rule.domain.McpGatewayCompiledRulesDTO;
-import top.egon.cola.component.yuheng.mcp.engine.rule.service.McpGatewayRuleCompilerStrategy;
-import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
-import top.egon.cola.component.yuheng.runtime.rule.repository.GatewayRuleChunkStore;
-import top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec;
-import top.egon.cola.component.yuheng.runtime.rule.repository.GatewayRuleLkgRepository;
+import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpPublishedBindingLoader.BindingPinVO;
+import top.egon.cola.component.yuheng.mcp.engine.mcp.service.McpPublishedBindingLoader.SelectionVO;
 import top.egon.cola.component.yuheng.mcp.rule.service.McpRuleCompiler;
 import top.egon.cola.component.yuheng.mcp.server.service.McpMethodDispatcher;
 import top.egon.cola.component.yuheng.mcp.server.service.handler.McpDiscoverHandler;
@@ -36,6 +19,7 @@ import top.egon.cola.component.yuheng.mcp.server.service.handler.McpInitializedH
 import top.egon.cola.component.yuheng.mcp.server.service.handler.McpPingHandler;
 import top.egon.cola.component.yuheng.mcp.subscription.service.McpSubscriptionService;
 import top.egon.cola.component.yuheng.mcp.task.domain.McpTask;
+import top.egon.cola.component.yuheng.mcp.task.service.McpTaskBindingVO;
 import top.egon.cola.component.yuheng.mcp.task.service.McpTaskExecutor;
 import top.egon.cola.component.yuheng.mcp.task.service.McpTaskService;
 import top.egon.cola.component.yuheng.mcp.task.service.McpTaskStore;
@@ -45,7 +29,6 @@ import top.egon.cola.component.yuheng.mcp.common.transport.McpSessionStore;
 import top.egon.cola.component.yuheng.mcp.common.transport.McpSubscriptionEventStore;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -60,19 +43,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Shared-state, lease takeover and last-known-good recovery gates.
+ * Shared MCP protocol sessions and task lease takeover across independent replicas.
+ * Pinned catalogue restart recovery is exercised by the MCP Access module.
  */
 class McpHaRecoveryIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    @TempDir
-    Path dataDirectory;
 
     @Test
     void sessionCallAndSubscriptionCrossNodeBoundaries() {
@@ -160,16 +139,19 @@ class McpHaRecoveryIT {
         InMemoryTaskStore store = new InMemoryTaskStore();
         McpTaskService.Owner owner = new McpTaskService.Owner(
                 "subject-1",
-                "tenant-1",
+                "9001",
                 "client-1"
         );
+        var binding = new McpTaskBindingVO(new SelectionVO(9001L, "billing", "e".repeat(64)),
+                new BindingPinVO("binding-1", 1L, "11", "22", 1L,
+                        "b".repeat(64), "33", "c".repeat(64), "d".repeat(64)));
         McpTaskService nodeA = taskService(store, initial);
         McpTask created = Mono.from(nodeA.create(
                 new McpTaskService.CreateRequest(
                         "billing",
                         "export_invoice",
                         "a".repeat(64),
-                        Map.of("invoiceId", "invoice-1"),
+                        Map.of("invoiceId", "invoice-1", McpTaskBindingVO.PAYLOAD_KEY, binding.toPayload()),
                         Duration.ofMinutes(10),
                         Duration.ofHours(1),
                         3
@@ -201,35 +183,7 @@ class McpHaRecoveryIT {
         assertEquals(McpTask.State.COMPLETED, recovered.state());
         assertEquals("export-1", recovered.resultPayload().get("exportId"));
         assertEquals(2, recovered.attemptCount());
-    }
-
-    @Test
-    void invalidDdcReleaseKeepsActiveRulesAndRestartRestoresLkg() {
-        GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> running = applier();
-        TestRelease valid = release("release-1", validMcp());
-        running.apply(
-                GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY,
-                valid.activationJson(),
-                1L
-        );
-        McpGatewayCompiledRulesDTO before = running.active();
-
-        TestRelease invalid = release("release-2", invalidMcp());
-        assertThrows(IllegalArgumentException.class, () -> running.apply(
-                GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY,
-                invalid.activationJson(),
-                2L
-        ));
-        assertSame(before, running.active());
-        assertEquals("release-1", running.active().snapshot().releaseId());
-
-        GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> restarted = applier();
-        assertTrue(restarted.restoreLkg());
-        assertEquals("release-1", restarted.active().snapshot().releaseId());
-        assertTrue(restarted.active().mcpRules()
-                .server("developer")
-                .isPresent());
-        assertTrue(restarted.status().degraded());
+        assertEquals(binding, McpTaskBindingVO.require(recovered.inputPayload()));
     }
 
     private McpEngineHttpHandler handler(SharedTransportStore store) {
@@ -307,130 +261,6 @@ class McpHaRecoveryIT {
                 Clock.fixed(now, ZoneOffset.UTC),
                 Duration.ofSeconds(30)
         );
-    }
-
-    private GatewayRuleActivationApplier<McpGatewayCompiledRulesDTO> applier() {
-        Clock clock = Clock.systemUTC();
-        return new GatewayRuleActivationApplier<>(
-                new GatewayRuleJsonCodec(),
-                new McpGatewayRuleCompilerStrategy(),
-                new GatewayRuleChunkStore(),
-                new ProviderDirectory(new EmptyRegistry(), clock),
-                new GatewayRuleLkgRepository(dataDirectory, "developer"),
-                clock
-        );
-    }
-
-    private TestRelease release(String releaseId, McpRuleContent mcp) {
-        GatewayRuleContent content = new GatewayRuleContent(
-                "group-1",
-                "developer",
-                "local",
-                "default",
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                mcp
-        );
-        GatewayRuleJsonCodec codec = new GatewayRuleJsonCodec();
-        Instant generatedAt = Instant.parse("2026-08-03T00:00:00Z");
-        String contentSha = GatewayRuleJsonCodec.sha256(codec.write(content));
-        String artifactSha = GatewayRuleJsonCodec.sha256(codec.write(Map.of(
-                "content", content,
-                "generatedAt", generatedAt,
-                "releaseId", releaseId,
-                "ruleContentSha256", contentSha,
-                "ruleSchemaVersion", "v1"
-        )));
-        GatewayRuleSnapshot snapshot = new GatewayRuleSnapshot(
-                "v1",
-                releaseId,
-                generatedAt,
-                contentSha,
-                artifactSha,
-                content
-        );
-        byte[] snapshotJson = codec.write(snapshot);
-        GatewayRuleActivation activation = new GatewayRuleActivation(
-                "v1",
-                releaseId,
-                GatewayRuleActivationMode.INLINE,
-                "v1",
-                snapshotJson.length,
-                contentSha,
-                artifactSha,
-                new String(snapshotJson, StandardCharsets.UTF_8),
-                List.of()
-        );
-        return new TestRelease(new String(
-                codec.write(activation),
-                StandardCharsets.UTF_8
-        ));
-    }
-
-    private McpRuleContent validMcp() {
-        return new McpRuleContent(
-                List.of(server()),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-    }
-
-    private McpRuleContent invalidMcp() {
-        return new McpRuleContent(
-                List.of(server()),
-                List.of(new McpRuntimeTool(
-                        "tool-1",
-                        "missing-server",
-                        "orders.get",
-                        "Get an order",
-                        "LOCAL_OPERATION",
-                        "orders.query",
-                        "HTTP",
-                        null,
-                        "{}",
-                        "{}",
-                        Map.of(),
-                        Set.of(),
-                        "LOW",
-                        true,
-                        true
-                )),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-    }
-
-    private McpRuntimeServer server() {
-        return new McpRuntimeServer(
-                "server-1",
-                "developer",
-                "Developer",
-                "Developer capabilities",
-                "Use reviewed tools.",
-                Set.of(McpProtocolDialect.STABLE_2025_11_25),
-                "https://resource.egon.top/yuheng-mcp",
-                30L,
-                true
-        );
-    }
-
-    private record TestRelease(String activationJson) {
     }
 
     private static final class SharedTransportStore
@@ -685,49 +515,4 @@ class McpHaRecoveryIT {
         }
     }
 
-    private static final class EmptyRegistry
-            implements ProviderServiceRegistry {
-
-        @Override
-        public ProviderCatalogSnapshot getServiceKeys(ProviderQuery query) {
-            return new ProviderCatalogSnapshot(1L, Instant.now(), List.of());
-        }
-
-        @Override
-        public ProviderServiceSnapshot getInstances(ProviderServiceKey key) {
-            return new ProviderServiceSnapshot(
-                    key,
-                    1L,
-                    Instant.now(),
-                    List.of()
-            );
-        }
-
-        @Override
-        public ProviderSubscription subscribeServices(
-                ProviderQuery query,
-                ProviderCatalogListener listener) {
-            return subscription();
-        }
-
-        @Override
-        public ProviderSubscription subscribe(
-                ProviderServiceKey key,
-                ProviderSnapshotListener listener) {
-            return subscription();
-        }
-
-        private ProviderSubscription subscription() {
-            return new ProviderSubscription() {
-                @Override
-                public boolean active() {
-                    return true;
-                }
-
-                @Override
-                public void close() {
-                }
-            };
-        }
-    }
 }

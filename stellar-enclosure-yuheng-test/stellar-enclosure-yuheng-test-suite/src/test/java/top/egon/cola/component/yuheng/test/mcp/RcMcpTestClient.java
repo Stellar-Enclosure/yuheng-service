@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class RcMcpTestClient {
+public final class RcMcpTestClient implements AutoCloseable {
 
     private static final String VERSION = "2026-07-28";
 
@@ -55,5 +55,9 @@ public final class RcMcpTestClient {
             );
         }
         return response.body();
+    }
+    @Override
+    public void close() {
+        http.close();
     }
 }

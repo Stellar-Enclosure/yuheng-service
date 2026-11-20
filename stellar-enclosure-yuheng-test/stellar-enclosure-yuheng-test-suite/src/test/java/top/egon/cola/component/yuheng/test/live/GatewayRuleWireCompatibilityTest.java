@@ -1,281 +1,104 @@
 package top.egon.cola.component.yuheng.test.live;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import top.egon.cola.component.yuheng.engine.rule.service.ApiRpcGatewayRuleCompilerStrategy;
-import top.egon.cola.component.yuheng.engine.bootstrap.config.GatewayEngineConfiguration;
-import top.egon.cola.component.yuheng.mcp.engine.rule.service.McpGatewayRuleCompilerStrategy;
-import top.egon.cola.component.yuheng.mcp.engine.bootstrap.config.McpGatewayEngineConfiguration;
-import top.egon.cola.component.yuheng.runtime.provider.service.ProviderDirectory;
-import top.egon.cola.component.yuheng.runtime.rule.domain.GatewayCompiledRulesDTO;
-import top.egon.cola.component.yuheng.runtime.rule.repository.GatewayRuleChunkStore;
-import top.egon.cola.component.yuheng.runtime.rule.repository.GatewayRuleLkgRepository;
-import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleActivationApplier;
-import top.egon.cola.component.yuheng.runtime.rule.service.GatewayRuleCompilerStrategy;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCanonicalizer;
-import top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.BindingVO;
+import top.egon.cola.component.yuheng.admin.exposure.repository.GatewayUrlExposureRepository.PublicationDomainVO;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.AuthorizationBinding;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.BackendReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.ExposureInput;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.GatewayReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.GrantReference;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler.PublicationBinding;
 import top.egon.cola.component.yuheng.contract.protocol.AccessZone;
 import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRequestBodyMode;
-import top.egon.cola.component.yuheng.contract.rule.GatewayProviderServiceRef;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRouteProfile;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRouteTransportPolicy;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleContent;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeOperation;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy;
 import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeRoute;
-import top.egon.cola.component.yuheng.contract.rule.GatewayTransportProtocol;
-import top.egon.cola.component.yuheng.contract.rule.GatewayTransportResponseMode;
-import top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.time.Clock;
-import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GatewayRuleWireCompatibilityTest {
 
-    @TempDir
-    Path dataDirectory;
+    private static final String HOSTNAME = "public.apps.example.com";
+    private static final String PATH = "/api/orders";
+    private static final String ROUTE_NAMESPACE = "yuheng-routes";
+    private static final String BACKEND_NAMESPACE = "orders";
+
+    private final ObjectMapper json = new ObjectMapper();
+    private final GatewayHttpRouteCompiler compiler = new GatewayHttpRouteCompiler(json);
 
     @Test
-    void bothRolesActivateOneArtifactButKeepFailureAndLkgStateIndependent() {
-        var content = new GatewayRuleContent("group-1", "default", "test", "yuheng-live",
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        var publisher = new GatewayRuleCompiler(new GatewayRuleCanonicalizer());
-        var first = publisher.compile("release-1", Instant.parse("2026-09-05T00:00:00Z"), content);
-        var second = publisher.compile("release-2", Instant.parse("2026-09-05T00:01:00Z"), content);
-        var api = applier("api", new ApiRpcGatewayRuleCompilerStrategy());
-        var mcpCompiler = new McpGatewayRuleCompilerStrategy();
-        var mcp = applier("mcp", snapshot -> {
-            if ("release-2".equals(snapshot.releaseId())) {
-                throw new IllegalStateException("test-only MCP compiler failure");
-            }
-            return mcpCompiler.compile(snapshot);
-        });
-        api.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, first.activationJson(), 41);
-        mcp.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, first.activationJson(), 41);
-        var apiMetadata = new GatewayEngineConfiguration().gatewayRuntimeMetadata(api).metadata();
-        var mcpMetadata = new McpGatewayEngineConfiguration().gatewayRuntimeMetadata(mcp).metadata();
-        assertEquals("API_RPC", apiMetadata.get("yuheng.engine.role"));
-        assertEquals("MCP", mcpMetadata.get("yuheng.engine.role"));
-        for (String key : List.of("activeReleaseId", "activeRuleVersion", "activeRuleChecksum")) {
-            assertEquals(apiMetadata.get(key), mcpMetadata.get(key));
-        }
-        assertEquals(first.snapshot().artifactSha256(), api.active().ruleChecksum());
-        var previousMcp = mcp.active();
-        api.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, second.activationJson(), 42);
-        assertThrows(IllegalStateException.class, () ->
-                mcp.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, second.activationJson(), 42));
-        assertEquals("release-2", api.active().releaseId());
-        assertSame(previousMcp, mcp.active());
-        assertEquals(41, mcp.status().activeDdcVersion());
-        assertTrue(mcp.status().ready());
-        assertEquals("FAILED", mcp.status().lastStage().name());
-        assertFalse(mcp.status().degraded());
-        var restoredApi = applier("api", new ApiRpcGatewayRuleCompilerStrategy());
-        var restoredMcp = applier("mcp", new McpGatewayRuleCompilerStrategy());
-        restoredApi.restoreLkg();
-        restoredMcp.restoreLkg();
-        assertEquals("release-2", restoredApi.active().releaseId());
-        assertEquals("release-1", restoredMcp.active().releaseId());
-        assertEquals(0, restoredMcp.status().activeDdcVersion());
-        assertTrue(restoredMcp.status().ready());
-        assertTrue(restoredMcp.status().degraded());
-        restoredApi.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, second.activationJson(), 42);
-        restoredMcp.apply(GatewayRuleActivationApplier.ACTIVE_CONFIG_KEY, second.activationJson(), 42);
-        assertEquals(restoredApi.active().ruleChecksum(), restoredMcp.active().ruleChecksum());
-        assertEquals(restoredApi.status().activeDdcVersion(), restoredMcp.status().activeDdcVersion());
-        assertEquals(42, restoredMcp.status().activeDdcVersion());
-    }
+    void frozenReleaseBindsInertRouteAndApprovedParentToTheExactBackend() throws Exception {
+        var release = compiler.compile(input(GatewayProtocol.HTTP, true, draft()), binding());
 
-    private <T extends GatewayCompiledRulesDTO> GatewayRuleActivationApplier<T> applier(
-            String roleDirectory, GatewayRuleCompilerStrategy<T> compiler) {
-        return new GatewayRuleActivationApplier<>(new GatewayRuleJsonCodec(), compiler, new GatewayRuleChunkStore(),
-                mock(ProviderDirectory.class), new GatewayRuleLkgRepository(dataDirectory.resolve(roleDirectory), "default"),
-                Clock.systemUTC());
+        JsonNode wire = json.readTree(json.writeValueAsBytes(release.routeObject()));
+        assertThat(wire.path("apiVersion").asText()).isEqualTo("gateway.networking.k8s.io/v1");
+        assertThat(wire.path("kind").asText()).isEqualTo("HTTPRoute");
+        assertThat(wire.at("/metadata/namespace").asText()).isEqualTo(ROUTE_NAMESPACE);
+        assertThat(wire.at("/spec/parentRefs")).isEqualTo(json.createArrayNode());
+        assertThat(wire.at("/spec/hostnames/0").asText()).isEqualTo(HOSTNAME);
+        assertThat(wire.at("/spec/rules/0/matches/0/path/value").asText()).isEqualTo(PATH);
+        assertThat(wire.at("/spec/rules/0/matches/0/method").asText()).isEqualTo("GET");
+        assertThat(wire.at("/spec/rules/0/backendRefs/0").at("/port").asInt()).isEqualTo(80);
+        assertThat(wire.at("/spec/rules/0/backendRefs/0").at("/name").asText()).isEqualTo("orders-public");
+        assertThat(wire.at("/spec/rules/0/filters/0/requestHeaderModifier/remove"))
+                .isEqualTo(json.valueToTree(List.of("x-envoy-retry-on", "x-envoy-retry-grpc-on", "x-envoy-max-retries",
+                        "x-envoy-retriable-header-names", "x-envoy-retriable-status-codes",
+                        "x-envoy-hedge-on-per-try-timeout", "x-envoy-upstream-rq-per-try-timeout-ms")));
+        assertThat(wire.at("/spec/rules/0").has("retry")).isFalse();
+
+        JsonNode approvedParent = release.approvedParent();
+        assertThat(approvedParent.path("namespace").asText()).isEqualTo("edge-system");
+        assertThat(approvedParent.path("name").asText()).isEqualTo("public-apps");
+        assertThat(approvedParent.path("sectionName").asText()).isEqualTo("https-api");
+        assertThat(release.snapshotEntry().at("/routeObject/name").asText()).isEqualTo(wire.at("/metadata/name").asText());
+        assertThat(release.snapshotEntry().path("contentSha256").asText()).isEqualTo(compiler.contentDigest(release.canonicalContent()));
     }
 
     @Test
-    void engineVerifiesAdminSnapshotWithMultiZoneRouteAndTrafficPolicy() {
-        GatewayRuntimePolicy rateLimit = new GatewayRuntimePolicy(
-                "live-http-rate",
-                "RATE_LIMIT",
-                "OPERATION",
-                Map.of(
-                        "operationIds", List.of("orders"),
-                        "keyExpression", "${operationId}",
-                        "capacity", 1,
-                        "initialTokens", 1,
-                        "refillTokens", 1,
-                        "refillPeriod", "PT1H",
-                        "mode", "DISTRIBUTED"
-                )
-        );
-        GatewayRuntimeOperation operation = new GatewayRuntimeOperation(
-                "orders",
-                "GET /api/orders/{id}",
-                GatewayProtocol.HTTP,
-                "GET /api/orders/{id}",
-                "{}",
-                "{}",
-                true,
-                new GatewayProviderServiceRef(
-                        "test-biz",
-                        "test-app",
-                        "test",
-                        "yuheng-live",
-                        GatewayProtocol.HTTP,
-                        "orders-http-provider",
-                        "default",
-                        "1.0.0-live",
-                        "http"
-                ),
-                "TRANSPARENT",
-                Set.of(rateLimit.policyId()),
-                Map.of("framework", "mvc"),
-                false
-        );
-        GatewayRuntimeRoute route = new GatewayRuntimeRoute(
-                "live-http-order",
-                operation.operationId(),
-                "api.yuheng.test",
-                "GET",
-                "/api/orders/{id}",
-                Set.of(AccessZone.PUBLIC, AccessZone.INTERNAL),
-                0,
-                true
-        );
-        GatewayRuleContent content = new GatewayRuleContent(
-                "group-1",
-                "default",
-                "test",
-                "yuheng-live",
-                List.of(operation),
-                List.of(route),
-                List.of(),
-                List.of(rateLimit),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-        var release = new GatewayRuleCompiler(
-                new GatewayRuleCanonicalizer()
-        ).compile(
-                "release-1",
-                Instant.parse("2026-07-27T00:00:00Z"),
-                content
-        );
-        GatewayRuleJsonCodec engineCodec = new GatewayRuleJsonCodec();
-        var engineSnapshot = engineCodec.readSnapshot(
-                release.snapshotJson().getBytes(StandardCharsets.UTF_8)
-        );
+    void transportThatRequiresAnAdapterOrGatewayRetryFailsClosed() {
+        assertThatThrownBy(() -> compiler.compile(input(GatewayProtocol.RPC, true, draft()), binding()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("routeCapability");
+        assertThatThrownBy(() -> compiler.compile(input(GatewayProtocol.HTTP, false, draft()), binding()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("routeCapability");
 
-        assertNull(engineSnapshot.content().routes().getFirst()
-                .transportPolicy());
-        // Re-pinned for the gateway-to-yuheng rename: restoring the three renamed
-        // literals above reproduces the previous digest, so only the rename moved it.
-        assertEquals(
-                "110b8cc5f6821e338736c0f558bbd310e9bfbb8fcee6645445a1c4dd8df8eb59",
-                engineSnapshot.ruleContentSha256()
-        );
-        engineCodec.verify(engineSnapshot);
+        var retry = new LinkedHashMap<>(draft());
+        retry.put("transportPolicy", Map.of("retryEnabled", true));
+        assertThatThrownBy(() -> compiler.compile(input(GatewayProtocol.HTTP, true, retry), binding()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("transportPolicy");
     }
 
-    @Test
-    void engineVerifiesAdminSnapshotWithOpenAiTransportPolicy() {
-        GatewayRouteTransportPolicy transport =
-                new GatewayRouteTransportPolicy(
-                        GatewayRouteProfile.OPENAI_HTTP,
-                        GatewayTransportProtocol.HTTP,
-                        GatewayRequestBodyMode.STREAMING,
-                        GatewayTransportResponseMode.SSE,
-                        536_870_912L,
-                        10_000L,
-                        120_000L,
-                        90_000L,
-                        1_800_000L,
-                        null,
-                        null,
-                        false,
-                        false
-                );
-        GatewayRuntimeOperation operation = new GatewayRuntimeOperation(
-                "openai-responses",
-                "POST /v1/responses",
-                GatewayProtocol.HTTP,
-                "POST /v1/responses",
-                "{}",
-                "{}",
-                true,
-                new GatewayProviderServiceRef(
-                        "test-biz",
-                        "test-app",
-                        "test",
-                        "yuheng-live",
-                        GatewayProtocol.HTTP,
-                        "openai-compatible-provider",
-                        "default",
-                        "v1",
-                        "https"
-                ),
-                "TRANSPARENT",
-                Set.of(),
-                Map.of("framework", "webflux"),
-                false
-        );
-        GatewayRuntimeRoute route = new GatewayRuntimeRoute(
-                "openai-responses",
-                operation.operationId(),
-                "api.openai.example",
-                "POST",
-                "/v1/responses",
-                Set.of(AccessZone.PUBLIC),
-                0,
-                true,
-                transport
-        );
-        GatewayRuleContent content = new GatewayRuleContent(
-                "group-openai",
-                "default",
-                "test",
-                "yuheng-live",
-                List.of(operation),
-                List.of(route),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of()
-        );
-        var release = new GatewayRuleCompiler(
-                new GatewayRuleCanonicalizer()
-        ).compile(
-                "release-openai",
-                Instant.parse("2026-07-30T00:00:00Z"),
-                content
-        );
-        GatewayRuleJsonCodec engineCodec = new GatewayRuleJsonCodec();
-        var engineSnapshot = engineCodec.readSnapshot(
-                release.snapshotJson().getBytes(StandardCharsets.UTF_8)
-        );
+    private static Map<String, Object> draft() {
+        return Map.of("host", HOSTNAME, "httpMethod", "GET", "pathPattern", PATH,
+                "accessZones", List.of("PUBLIC"), "priority", 0);
+    }
 
-        assertEquals(
-                transport,
-                engineSnapshot.content().routes().getFirst()
-                        .transportPolicy()
-        );
-        engineCodec.verify(engineSnapshot);
+    private static ExposureInput input(GatewayProtocol protocol, boolean external, Map<String, Object> draft) {
+        var route = new GatewayRuntimeRoute("orders-read", "orders-get", HOSTNAME, "GET", PATH,
+                Set.of(AccessZone.PUBLIC), 0, true);
+        return new ExposureInput(7, 800001, "820001", 810001, 1, route, protocol, external,
+                draft, List.of(), List.of());
+    }
+
+    private static PublicationBinding binding() {
+        var gateway = new GatewayReference("edge-system", "public-apps", "gateway-uid", "https-api", true, true);
+        var domain = new PublicationDomainVO("cluster", "public-https", "topology-1",
+                List.of(new BindingVO(gateway.namespace(), gateway.name(), gateway.listenerName())), true);
+        var grant = new GrantReference(BACKEND_NAMESPACE, "allow-orders-public", "grant-uid", "4",
+                ROUTE_NAMESPACE, "orders-public");
+        var backend = new BackendReference(BACKEND_NAMESPACE, "orders-public", "service-uid", "11", 80, 8080, 1,
+                "HTTP_1_1", grant, "b".repeat(64), Set.of("pod-uid"), true);
+        var authorization = new AuthorizationBinding(GatewayHttpRouteCompiler.AUTHORIZATION_PROFILE,
+                "https://" + HOSTNAME + PATH, "1", "a".repeat(64), true, List.of());
+        return new PublicationBinding(7, 800001, "orders-read", "orders-get", "prod", "logical-prod", "binding-1", 1,
+                domain, gateway, ROUTE_NAMESPACE, Set.of(HOSTNAME), Set.of("GET"), Set.of(),
+                List.of(backend), authorization);
     }
 }

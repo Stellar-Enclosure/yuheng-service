@@ -15,12 +15,16 @@ class UnifiedIdentityRevocationIT {
         var client = UnifiedIdentityLiveClient.isolated();
         var reference = client.formal("default", client.resourceForProcess("native-light"), "admin");
         client.bindNativeTenantReadEndpoints(reference, client.formal("tenant-b", reference.getResourceKey(), "admin"));
+        var boundUrl = reference.getReadEndpoint();
+        var credentialDigest = reference.getTokenSha256();
         var jwt = client.verifiedClaims(reference);
         assertThat(reference.getExpiresAt().isAfter(Instant.now().plusSeconds(30))).isTrue();
         assertThat(client.read(reference)).isEqualTo(200);
-        // The original AS owner must confirm this exact PUBLIC family; BFF logout is not its revocation event.
+        // Wait for the authorization server to confirm revocation of this PUBLIC credential family.
         client.awaitFormalRevocation(reference, jwt);
         assertThat(reference.getExpiresAt().isAfter(Instant.now())).isTrue();
+        assertThat(reference.getReadEndpoint()).isEqualTo(boundUrl);
+        assertThat(reference.getTokenSha256()).isEqualTo(credentialDigest);
         assertThat(client.read(reference)).isEqualTo(401);
         assertThat(reference.getExpiresAt().isAfter(Instant.now())).isTrue();
     }

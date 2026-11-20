@@ -1,12 +1,20 @@
 [
   {
-    "applicationCode": "stellar-enclosure-yuheng-test-http-provider",
-    "displayName": "Yuheng Demo HTTP Providers",
-    "description": "MVC and WebFlux demo providers"
+    "fixture": "http-provider-mvc",
+    "transport": "HTTP",
+    "applicationPort": 18080,
+    "managementPort": 18081
   },
   {
-    "applicationCode": "stellar-enclosure-yuheng-test-rpc-provider",
-    "displayName": "Yuheng Demo RPC Provider",
-    "description": "Egon RPC demo provider"
+    "fixture": "http-provider-webflux",
+    "transport": "HTTP",
+    "applicationPort": 18080,
+    "managementPort": 18081
+  },
+  {
+    "fixture": "rpc-provider",
+    "transport": "h2c",
+    "applicationPort": 19091,
+    "managementPort": 18081
   }
 ]

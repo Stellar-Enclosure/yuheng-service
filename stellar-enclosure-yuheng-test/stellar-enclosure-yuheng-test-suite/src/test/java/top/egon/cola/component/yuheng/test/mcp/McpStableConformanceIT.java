@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.util.List;
 import java.util.Map;
@@ -31,8 +32,20 @@ class McpStableConformanceIT {
 
     @AfterAll
     void stopFixture() {
+        if (client != null) {
+            client.close();
+        }
         if (server != null) {
             server.close();
+        }
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = McpTestHttpClient.CILIUM_ENABLED, matches = "true")
+    void publishedStableMcpUsesTheApprovedCiliumEndpoint() throws Exception {
+        try (var live = new StableMcpTestClient(McpTestHttpClient.ciliumEndpoint("stable"), McpTestHttpClient.ciliumToken())) {
+            assertEquals("2025-11-25", result(live.initialize()).get("protocolVersion"));
+            assertNotNull(live.call("tools/list", Map.of()).get("result"));
         }
     }
 

@@ -53,40 +53,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import top.egon.cola.component.yuheng.openapi.config.GatewayOpenApiProperties;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties;
-import top.egon.cola.component.tianshu.model.lease.DdcLeaseOperationStatus;
-import top.egon.cola.component.tianshu.model.lease.DdcLeaseRole;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceCatalogSnapshot;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceKey;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceLeaseRequest;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceQuery;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceRegistration;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceSnapshot;
-import top.egon.cola.component.tianshu.model.lease.DdcLeaseOperationResult;
-import top.egon.cola.component.tianshu.model.lease.DdcLeaseSession;
-import top.egon.cola.component.tianshu.api.registry.DdcRegistrySubscription;
-import top.egon.cola.component.tianshu.service.registry.DdcServiceKeyFactory;
-import top.egon.cola.component.tianshu.api.client.DdcServiceRegistryClient;
-import top.egon.cola.component.tianshu.http.registration
-        .DdcHttpRegistrationContributor;
-import top.egon.cola.component.tianshu.http.registration.DdcHttpRegistrationRuntime;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonApiCatalog;
 import top.egon.cola.component.yuheng.openapi.annotation.EgonGatewayPolicy;
-import top.egon.cola.platform.tianquan.shoubing.starter.client.IdpServiceOAuth2Client;
-import top.egon.cola.platform.tianquan.shoubing.starter.client.IdpServiceTokenRequest;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -106,8 +87,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -127,10 +106,7 @@ import static org.mockito.Mockito.when;
 class WebFluxHttpProviderContractTest {
 
     @Autowired
-    private DdcHttpRegistrationRuntime runtime;
-
-    @Autowired
-    private RecordingRegistry registry;
+    private ApplicationContext context;
 
     @Autowired
     private WebTestClient webTestClient;
@@ -145,26 +121,12 @@ class WebFluxHttpProviderContractTest {
     private int port;
 
     @Test
-    void reportsAnnotatedMonoEndpointAndAutoRegisters() throws Exception {
-        assertNotNull(runtime);
-        assertEquals(1, registry.registrations.get());
-        assertEquals(
-                "stellar-enclosure-yuheng-test-http-provider",
-                registry.registration.serviceKey().serviceName()
-        );
-        assertEquals(
-                "1.0.0-live",
-                registry.registration.serviceKey().version()
-        );
-        assertEquals(
-                "webflux-http-provider-default",
-                registry.registration.instanceId()
-        );
-        assertEquals(
-                "zone-b",
-                registry.registration.metadata().get("yuheng.zone")
-        );
-        assertTrue(registry.registration.port() > 0);
+    void startsNativeProviderAndReportsTheAnnotatedMonoEndpoint() throws Exception {
+        var manifest = context.getBean(GatewayOpenApiProperties.class).groupManifest();
+        assertEquals("1.0.0-live", manifest.artifactVersion());
+        assertEquals(java.util.List.of("inventory-reactive"), manifest.groups());
+        assertTrue(port > 0);
+        assertFalse(context.getEnvironment().containsProperty("egon.cola.component.tianshu.registry.http.enabled"));
 
         webTestClient.mutate().defaultHeader("Authorization", "Bearer " + documentToken("yuheng.openapi.read")).build()
                 .get()
@@ -443,9 +405,6 @@ class WebFluxHttpProviderContractTest {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
-    @EnableConfigurationProperties({
-            DdcProperties.class
-    })
     static class ProviderTestConfiguration {
 
         @Bean
@@ -508,15 +467,6 @@ class WebFluxHttpProviderContractTest {
         }
 
 
-        @Bean
-        RecordingRegistry recordingRegistry() {
-            return new RecordingRegistry();
-        }
-
-        @Bean
-        DdcServiceKeyFactory ddcServiceKeyFactory(DdcProperties properties) {
-            return new DdcServiceKeyFactory(properties);
-        }
 
         @Bean
         @org.springframework.core.annotation.Order(
@@ -528,106 +478,6 @@ class WebFluxHttpProviderContractTest {
                     .authorizeExchange(authorize -> authorize
                             .anyExchange().permitAll())
                     .build();
-        }
-
-        @Bean
-        IdpServiceOAuth2Client idpServiceOAuth2Client() {
-            IdpServiceOAuth2Client client = mock(IdpServiceOAuth2Client.class);
-            Instant issuedAt = Instant.now();
-            when(client.authorize(any(IdpServiceTokenRequest.class)))
-                    .thenReturn(new OAuth2AccessToken(
-                            OAuth2AccessToken.TokenType.BEARER,
-                            "test-tianshu-token",
-                            issuedAt,
-                            issuedAt.plusSeconds(300)
-                    ));
-            return client;
-        }
-
-        @Bean
-        DdcHttpRegistrationContributor httpRegistrationContributor() {
-            return new DdcHttpRegistrationContributor() {
-                @Override
-                public String serviceVersion() {
-                    return "1.0.0-live";
-                }
-
-                @Override
-                public Map<String, String> metadata() {
-                    return Map.of(
-                            "yuheng.definition-set-id",
-                            "test-webflux-definition-set"
-                    );
-                }
-            };
-        }
-    }
-
-    static final class RecordingRegistry
-            implements DdcServiceRegistryClient {
-
-        private final AtomicInteger registrations = new AtomicInteger();
-
-        private volatile DdcServiceRegistration registration;
-
-        @Override
-        public DdcLeaseSession register(DdcServiceRegistration registration) {
-            this.registration = registration;
-            int sequence = registrations.incrementAndGet();
-            Instant now = Instant.now();
-            return new DdcLeaseSession(
-                    registration.instanceId(),
-                    "lease-" + sequence,
-                    DdcLeaseRole.HTTP_PROVIDER,
-                    registration.leaseSeconds(),
-                    registration.heartbeatIntervalSeconds(),
-                    now,
-                    now.plusSeconds(registration.leaseSeconds())
-            );
-        }
-
-        @Override
-        public DdcLeaseOperationResult heartbeat(
-                DdcServiceLeaseRequest request) {
-            return new DdcLeaseOperationResult(
-                    DdcLeaseOperationStatus.RENEWED,
-                    Instant.now().plusSeconds(30)
-            );
-        }
-
-        @Override
-        public DdcLeaseOperationResult deregister(
-                String instanceId,
-                String leaseId) {
-            return new DdcLeaseOperationResult(
-                    DdcLeaseOperationStatus.DELETED,
-                    Instant.now()
-            );
-        }
-
-        @Override
-        public DdcServiceSnapshot getInstances(DdcServiceKey serviceKey) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public DdcRegistrySubscription subscribe(
-                DdcServiceKey serviceKey,
-                Consumer<DdcServiceSnapshot> listener) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public DdcServiceCatalogSnapshot getServiceKeys(
-                DdcServiceQuery query) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public DdcRegistrySubscription subscribeServices(
-                DdcServiceQuery query,
-                Consumer<DdcServiceCatalogSnapshot> listener) {
-            throw new UnsupportedOperationException();
         }
     }
 

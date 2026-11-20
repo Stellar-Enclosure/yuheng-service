@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.io.InputStream;
 import java.util.List;
@@ -36,15 +37,30 @@ class McpRcConformanceIT {
 
     @AfterAll
     void stopFixture() {
+        if (client != null) {
+            client.close();
+        }
         if (server != null) {
             server.close();
         }
     }
 
     @Test
+    @EnabledIfSystemProperty(named = McpTestHttpClient.CILIUM_ENABLED, matches = "true")
+    void publishedDraftMcpUsesTheApprovedCiliumEndpoint() throws Exception {
+        try (var live = new RcMcpTestClient(McpTestHttpClient.ciliumEndpoint("rc"), McpTestHttpClient.ciliumToken())) {
+            verifyPinnedScenarios(live);
+        }
+    }
+
+    @Test
     void rcDialectPassesThePinnedScenarioCorpus() throws Exception {
+        verifyPinnedScenarios(client);
+    }
+
+    private void verifyPinnedScenarios(RcMcpTestClient target) throws Exception {
         for (Scenario scenario : scenarios()) {
-            Map<String, Object> response = client.call(
+            Map<String, Object> response = target.call(
                     scenario.method(),
                     scenario.params()
             );

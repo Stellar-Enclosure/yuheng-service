@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import top.egon.cola.component.yuheng.contract.runtime.GatewayEngineRoleEnum;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,78 +20,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class GatewayProcessHarnessTest {
 
     @Test
-    void engineSpecsCarryExplicitRoleArtifactAndSeparateEndpoints() {
-        assertThat(GatewayProcessSpec.class.getRecordComponents())
-                .extracting(java.lang.reflect.RecordComponent::getName)
-                .contains("engineRole", "artifactId", "dataPlaneBaseUri", "managementBaseUri");
-    }
-
-    @Test
-    void mapsEachExplicitRoleToItsOwnMainClassAndArtifact() {
-        var api = engine("api", GatewayEngineRoleEnum.API_RPC, 18081, 18083);
-        var mcp = engine("mcp", GatewayEngineRoleEnum.MCP, 18084, 18085);
-        assertThat(api.artifactId()).isEqualTo("stellar-enclosure-yuheng-biz-gateway");
-        assertThat(mcp.artifactId()).isEqualTo("stellar-enclosure-yuheng-mcp-gateway");
-        assertThat(api.mainClass()).isEqualTo("top.egon.cola.component.yuheng.engine.GatewayEngineApplication");
-        assertThat(mcp.mainClass()).isEqualTo("top.egon.cola.component.yuheng.mcp.engine.McpGatewayEngineApplication");
-        assertThat(api.dataPlaneBaseUri()).isNotEqualTo(mcp.dataPlaneBaseUri());
-        assertThat(api.managementBaseUri()).isNotEqualTo(mcp.managementBaseUri());
-        assertThatThrownBy(() -> GatewayProcessSpec.builder("mixed", api.mainClass()).build())
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("explicit role");
-        assertThatThrownBy(() -> new GatewayProcessSpec("bad", api.mainClass(), List.of(), Map.of(),
-                Duration.ofSeconds(30), GatewayEngineRoleEnum.MCP, api.artifactId(),
-                mcp.dataPlaneBaseUri(), mcp.managementBaseUri()))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must agree");
-    }
-
-    @Test
-    void rejectsDuplicatePortsUnsafeEndpointsAndRunningIdentities() {
-        assertThatThrownBy(() -> engine("same", GatewayEngineRoleEnum.MCP, 18084, 18084))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must differ");
-        for (String endpoint : List.of("relative", "http://user:secret@localhost:18084", "http://localhost",
-                "http://localhost:18084/path", "http://localhost:18084?token=secret")) {
-            assertThatThrownBy(() -> GatewayProcessSpec.engineBuilder("mcp", GatewayEngineRoleEnum.MCP,
-                    URI.create(endpoint), URI.create("http://localhost:18085")).build())
-                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dataPlaneBaseUri");
-        }
-        var api = engine("api", GatewayEngineRoleEnum.API_RPC, 18081, 18083);
-        var mcp = engine("mcp", GatewayEngineRoleEnum.MCP, 18081, 18085);
-        assertThatThrownBy(() -> GatewayProcessHarness.validateProcessIsolation(mcp, List.of(api)))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("collides");
-        assertThatThrownBy(() -> GatewayProcessHarness.validateProcessIsolation(api, List.of(api)))
+    void rejectsAnotherActiveProcessWithTheSameFixtureIdentity() {
+        var first = probeSpec("fixture", false, null);
+        assertThatThrownBy(() -> GatewayProcessHarness.validateProcessIsolation(first, List.of(first)))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("already running");
-        var sharedDirectory = GatewayProcessSpec.engineBuilder("other", GatewayEngineRoleEnum.MCP,
-                URI.create("http://127.0.0.1:18084"), URI.create("http://127.0.0.1:18085"))
-                .argument("egon.cola.component.yuheng.mcp-engine.data-directory",
-                        GatewayProcessHarness.runtimeDataDirectory(api, null)).build();
-        assertThatThrownBy(() -> GatewayProcessHarness.validateProcessIsolation(sharedDirectory, List.of(api)))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LKG directory");
     }
 
     @Test
-    void resolvesOnlyOneMatchingRoleExecutableAndNeverFallsBackToApiClasspath() throws Exception {
-        Path classes = Files.createDirectories(temporaryDirectory.resolve("target/classes"));
-        var api = engine("api", GatewayEngineRoleEnum.API_RPC, 18081, 18083);
-        var mcp = engine("mcp", GatewayEngineRoleEnum.MCP, 18084, 18085);
-        writeExecutable(classes.getParent().resolve(api.artifactId() + "-exec.jar"), api.mainClass());
-        assertThatThrownBy(() -> GatewayProcessHarness.resolveJar(mcp, classes))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("MCP").hasMessageContaining("found 0");
-        writeExecutable(classes.getParent().resolve(mcp.artifactId() + "-wrong-exec.jar"), api.mainClass());
-        assertThatThrownBy(() -> GatewayProcessHarness.resolveJar(mcp, classes))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("found 0");
-        Path valid = classes.getParent().resolve(mcp.artifactId() + "-exec.jar");
-        writeExecutable(valid, mcp.mainClass());
-        assertThat(GatewayProcessHarness.resolveJar(mcp, classes)).isEqualTo(valid);
-        writeExecutable(classes.getParent().resolve(mcp.artifactId() + "-duplicate-exec.jar"), mcp.mainClass());
-        assertThatThrownBy(() -> GatewayProcessHarness.resolveJar(mcp, classes))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("found 2");
-    }
+    void onlyTheRequestedFixtureExecutableMayReplaceItsRegularArchive() throws Exception {
+        Path regular = Files.createFile(temporaryDirectory.resolve("fixture.jar"));
+        Path executable = temporaryDirectory.resolve("fixture-exec.jar");
+        String mainClass = GatewayProcessProbe.class.getName();
 
-    private GatewayProcessSpec engine(String name, GatewayEngineRoleEnum role, int dataPort, int managementPort) {
-        return GatewayProcessSpec.engineBuilder(name, role, URI.create("http://127.0.0.1:" + dataPort),
-                URI.create("http://127.0.0.1:" + managementPort))
-                .argument("egon.cola.component.yuheng." + (role == GatewayEngineRoleEnum.MCP ? "mcp-engine" : "engine")
-                        + ".data-directory", temporaryDirectory.resolve(name)).build();
+        assertThat(GatewayProcessHarness.executableArchive(regular, mainClass)).isEmpty();
+        writeExecutable(executable, String.class.getName());
+        assertThatThrownBy(() -> GatewayProcessHarness.executableArchive(regular, mainClass))
+                .isInstanceOf(java.io.IOException.class).hasMessageContaining("unexpected launcher or start class");
+        writeExecutable(executable, mainClass);
+        assertThat(GatewayProcessHarness.executableArchive(regular, mainClass)).contains(executable);
     }
 
     private void writeExecutable(Path path, String mainClass) throws Exception {
@@ -144,31 +89,18 @@ class GatewayProcessHarnessTest {
 
     @Test
     void prioritizesTheMainApplicationClasspathEntry() {
-        Path gatewayEngine = temporaryDirectory.resolve("stellar-enclosure-yuheng-biz-gateway.jar");
-        Path ddcAdmin = temporaryDirectory.resolve("tianshu-admin.jar");
+        Path modelService = temporaryDirectory.resolve("stellar-enclosure-yuheng-biz-gateway.jar");
+        Path admin = temporaryDirectory.resolve("tianshu-admin.jar");
         String classPath = String.join(
                 File.pathSeparator,
-                gatewayEngine.toString(),
-                ddcAdmin.toString()
+                modelService.toString(),
+                admin.toString()
         );
 
         assertThat(GatewayProcessHarness.prioritizeClassPath(
                 classPath,
-                ddcAdmin
-        )).startsWith(ddcAdmin + File.pathSeparator);
-    }
-
-    @Test
-    void resolvesAnAttachedExecutableArchive() throws Exception {
-        Path thinArchive = temporaryDirectory.resolve("stellar-enclosure-yuheng-admin.jar");
-        Path executableArchive = temporaryDirectory.resolve(
-                "stellar-enclosure-yuheng-admin-exec.jar"
-        );
-        Files.createFile(thinArchive);
-        Files.createFile(executableArchive);
-
-        assertThat(GatewayProcessHarness.executableArchive(thinArchive))
-                .contains(executableArchive);
+                admin
+        )).startsWith(admin + File.pathSeparator);
     }
 
     @Test
@@ -177,33 +109,33 @@ class GatewayProcessHarnessTest {
                 temporaryDirectory.resolve("restart"),
                 Duration.ofSeconds(2),
                 Duration.ofSeconds(2))) {
-            GatewayProcessHarness.ChildProcess engineOne = harness.start(
+            GatewayProcessHarness.ChildProcess fixtureOne = harness.start(
                     probeSpec("stellar-enclosure-yuheng-biz-gateway-1", false, null)
             );
-            GatewayProcessHarness.ChildProcess engineTwo = harness.start(
+            GatewayProcessHarness.ChildProcess fixtureTwo = harness.start(
                     probeSpec("stellar-enclosure-yuheng-biz-gateway-2", false, null)
             );
-            awaitReady(harness, engineOne);
-            awaitReady(harness, engineTwo);
+            awaitReady(harness, fixtureOne);
+            awaitReady(harness, fixtureTwo);
 
-            assertThat(engineOne.logFile())
-                    .isNotEqualTo(engineTwo.logFile());
-            assertThat(engineOne.manifestFile())
-                    .isNotEqualTo(engineTwo.manifestFile());
-            assertThat(engineOne.lkgDirectory())
-                    .isNotEqualTo(engineTwo.lkgDirectory());
+            assertThat(fixtureOne.logFile())
+                    .isNotEqualTo(fixtureTwo.logFile());
+            assertThat(fixtureOne.manifestFile())
+                    .isNotEqualTo(fixtureTwo.manifestFile());
+            assertThat(fixtureOne.dataDirectory())
+                    .isNotEqualTo(fixtureTwo.dataDirectory());
 
-            long firstPid = engineOne.process().pid();
-            Path firstLog = engineOne.logFile();
-            harness.kill(engineOne);
+            long firstPid = fixtureOne.process().pid();
+            Path firstLog = fixtureOne.logFile();
+            harness.kill(fixtureOne);
             GatewayProcessHarness.ChildProcess restarted =
-                    harness.restart(engineOne);
+                    harness.restart(fixtureOne);
             awaitReady(harness, restarted);
 
             assertThat(restarted.process().pid()).isNotEqualTo(firstPid);
             assertThat(restarted.logFile()).isNotEqualTo(firstLog);
-            assertThat(restarted.lkgDirectory())
-                    .isEqualTo(engineOne.lkgDirectory());
+            assertThat(restarted.dataDirectory())
+                    .isEqualTo(fixtureOne.dataDirectory());
             assertThat(firstLog).exists();
             assertThat(restarted.logFile()).exists();
         }

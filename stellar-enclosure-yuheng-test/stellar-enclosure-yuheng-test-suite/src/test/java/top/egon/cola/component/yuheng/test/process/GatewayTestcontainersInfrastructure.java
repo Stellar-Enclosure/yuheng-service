@@ -17,11 +17,7 @@ final class GatewayTestcontainersInfrastructure
     private final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16.6-alpine");
 
-    private final GenericContainer<?> ddcRedis =
-            new GenericContainer<>("redis:7.4-alpine")
-                    .withExposedPorts(6379);
-
-    private final GenericContainer<?> rateLimitRedis =
+    private final GenericContainer<?> accessGuardRedis =
             new GenericContainer<>("redis:7.4-alpine")
                     .withExposedPorts(6379);
 
@@ -48,8 +44,7 @@ final class GatewayTestcontainersInfrastructure
         }
         try {
             postgres.start();
-            ddcRedis.start();
-            rateLimitRedis.start();
+            accessGuardRedis.start();
             kafka.start();
             started = true;
         } catch (RuntimeException failure) {
@@ -119,23 +114,13 @@ final class GatewayTestcontainersInfrastructure
     }
 
     @Override
-    public String ddcRedisHost() {
-        return ddcRedis.getHost();
+    public String accessGuardRedisHost() {
+        return accessGuardRedis.getHost();
     }
 
     @Override
-    public int ddcRedisPort() {
-        return ddcRedis.getMappedPort(6379);
-    }
-
-    @Override
-    public String rateLimitRedisHost() {
-        return rateLimitRedis.getHost();
-    }
-
-    @Override
-    public int rateLimitRedisPort() {
-        return rateLimitRedis.getMappedPort(6379);
+    public int accessGuardRedisPort() {
+        return accessGuardRedis.getMappedPort(6379);
     }
 
     @Override
@@ -150,8 +135,7 @@ final class GatewayTestcontainersInfrastructure
         }
         closed = true;
         stopIfRunning(kafka);
-        stopIfRunning(rateLimitRedis);
-        stopIfRunning(ddcRedis);
+        stopIfRunning(accessGuardRedis);
         stopIfRunning(postgres);
         started = false;
     }

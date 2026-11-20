@@ -24,6 +24,7 @@ final class RemoteMcpFixtureServer implements AutoCloseable {
         ConfigurableApplicationContext context = new SpringApplicationBuilder(
                 StableRemoteMcpApplication.class
         ).logStartupInfo(false).run(
+                "--server.address=127.0.0.1",
                 "--server.port=0",
                 "--spring.application.name=stellar-enclosure-yuheng-test-mcp-remote",
                 "--spring.config.name=yuheng-mcp-fixture",
@@ -33,12 +34,20 @@ final class RemoteMcpFixtureServer implements AutoCloseable {
                         + "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
                         + "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration,"
                         + "org.redisson.spring.starter.RedissonAutoConfigurationV4,"
+                        + "top.egon.cola.component.common.mybatis.autoconfigure.EgonColaShardingAutoConfiguration,"
                         + "org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration,"
-                        + "org.springframework.boot.security.autoconfigure.web.servlet.UserDetailsServiceAutoConfiguration,"
+                        + "org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration,"
+                        + "org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration,"
                         + "org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterAutoConfiguration,"
                         + "org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration,"
                         + "org.springframework.boot.security.autoconfigure.actuate.web.servlet.ManagementWebSecurityAutoConfiguration",
-                "--egon.cola.component.id.machine-id=0",
+                "--egon.cola.component.id.enabled=false",
+                "--egon.cola.component.rpc.enabled=false",
+                "--egon.cola.component.cache.enabled=false",
+                "--egon.cola.component.transactional-outbox.enabled=false",
+                "--egon.cola.component.transactional-outbox.mybatis-plus.enabled=false",
+                "--egon.cola.component.mybatis-plus.enabled=false",
+                "--egon.cola.component.mybatis-plus.sharding.enabled=false",
                 "--egon.cola.component.tianshu.enabled=false",
                 "--management.endpoints.enabled-by-default=false"
         );

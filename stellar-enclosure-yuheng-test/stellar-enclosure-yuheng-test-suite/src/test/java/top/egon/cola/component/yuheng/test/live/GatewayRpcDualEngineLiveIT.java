@@ -6,9 +6,9 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 class GatewayRpcDualEngineLiveIT {
 
     @Test
-    @EnabledIfSystemProperty(named = "yuheng.live.test", matches = "true")
-    void verifiesRpcConsumerAndHttpRoutingAcrossTwoEngines()
+    @EnabledIfSystemProperty(named = GatewayLiveEnvironment.ENABLED, matches = "true")
+    void verifiesStableRpcServiceAndMethodWeights()
             throws Exception {
-        new GatewayLiveTopologyIT().verifyRpcDualEngineLifecycle();
+        new GatewayLiveTopologyIT().verifyRpcServiceLifecycle();
     }
 }

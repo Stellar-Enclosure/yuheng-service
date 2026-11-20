@@ -14,13 +14,9 @@ interface GatewayInfrastructureBackend extends AutoCloseable {
 
     String postgresPassword();
 
-    String ddcRedisHost();
+    String accessGuardRedisHost();
 
-    int ddcRedisPort();
-
-    String rateLimitRedisHost();
-
-    int rateLimitRedisPort();
+    int accessGuardRedisPort();
 
     String kafkaBootstrapServers();
 

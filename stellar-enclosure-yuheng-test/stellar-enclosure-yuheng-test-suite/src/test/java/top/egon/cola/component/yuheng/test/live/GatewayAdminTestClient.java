@@ -3,6 +3,7 @@ package top.egon.cola.component.yuheng.test.live;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.MissingNode;
+import top.egon.cola.component.yuheng.admin.exposure.domain.enums.GatewayUrlExposureStateEnum;
 
 import java.io.IOException;
 import java.net.URI;
@@ -12,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
 
 public final class GatewayAdminTestClient {
@@ -26,12 +28,17 @@ public final class GatewayAdminTestClient {
 
     private final HttpClient httpClient;
 
+    public static URI reviewedServiceOrigin(String value) {
+        return GatewayLiveEnvironment.eastWest(value);
+    }
+
     public GatewayAdminTestClient(URI baseUri, String bearerToken) {
         this(
                 baseUri,
                 bearerToken,
                 new ObjectMapper(),
                 HttpClient.newBuilder()
+                        .proxy(HttpClient.Builder.NO_PROXY)
                         .connectTimeout(Duration.ofSeconds(3))
                         .build()
         );
@@ -195,6 +202,59 @@ public final class GatewayAdminTestClient {
                 + "&traceId=" + query(traceId));
     }
 
+    public ExposureExchange getExposure(String exposureId) throws IOException, InterruptedException {
+        String path = exposurePath(exposureId);
+        return exposureExchange(exposureId, send("GET", path, null, Map.of()), path, false);
+    }
+
+    public ExposureExchange replaceExposureState(String exposureId, String etag, String idempotencyKey,
+            GatewayUrlExposureStateEnum state, String reason) throws IOException, InterruptedException {
+        String path = exposurePath(exposureId);
+        if (!matchesExposureEtag(exposureId, etag) || idempotencyKey == null || !idempotencyKey.matches("[A-Za-z0-9._-]{1,128}")
+                || reason == null || reason.isBlank() || reason.trim().length() > 1024) {
+            throw new IllegalArgumentException("Invalid exposure state precondition");
+        }
+        var headers = Map.of("If-Match", etag, "Idempotency-Key", idempotencyKey);
+        var body = Map.of("state", Objects.requireNonNull(state, "state").name(), "changeReason", reason);
+        return exposureExchange(exposureId, send("PUT", path + "/state", body, headers), path, true);
+    }
+
+    private ExposureExchange exposureExchange(String exposureId, HttpResponse<String> response, String path, boolean mutation)
+            throws IOException {
+        String etag = response.headers().firstValue("ETag").orElse(null);
+        String retryAfter = response.headers().firstValue("Retry-After").orElse(null);
+        int status = response.statusCode();
+        JsonNode body = responseBody(response);
+        if (status >= 200 && status < 300) {
+            if (!(status == 200 || mutation && status == 202)
+                    || response.headers().allValues("ETag").size() != 1 || !matchesExposureEtag(exposureId, etag)
+                    || !exposureId.equals(body.path("exposureId").textValue())
+                    || !body.path("desiredGeneration").asText().matches("(0|[1-9][0-9]{0,18})")
+                    || !body.path("desiredGeneration").isTextual()
+                    || !"no-store".equals(response.headers().firstValue("Cache-Control").orElse(""))
+                    || mutation && !response.headers().allValues("Location").equals(java.util.List.of(path))
+                    || status == 202 && !"2".equals(retryAfter)) {
+                throw new IOException("Exposure response did not satisfy the management API contract");
+            }
+        }
+        return new ExposureExchange(status, etag, retryAfter, body);
+    }
+
+    private static String exposurePath(String exposureId) {
+        if (exposureId == null || !exposureId.matches("[1-9][0-9]{0,18}")) {
+            throw new IllegalArgumentException("Invalid exposure ID");
+        }
+        Long.parseLong(exposureId);
+        return API + "/exposures/" + exposureId;
+    }
+
+    private static boolean matchesExposureEtag(String exposureId, String value) {
+        return value != null && value.matches("\"exposure-" + exposureId + "-v(0|[1-9][0-9]{0,18})\"");
+    }
+
+    public record ExposureExchange(int status, String etag, String retryAfter, JsonNode body) {
+    }
+
     JsonNode get(String path) throws IOException, InterruptedException {
         return exchange("GET", path, null);
     }
@@ -213,32 +273,31 @@ public final class GatewayAdminTestClient {
             String method,
             String path,
             Object body) throws IOException, InterruptedException {
-        HttpRequest.BodyPublisher publisher = body == null
-                ? HttpRequest.BodyPublishers.noBody()
-                : HttpRequest.BodyPublishers.ofString(
-                        objectMapper.writeValueAsString(body)
-                );
-        URI uri = baseUri.resolve(path);
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(15))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + bearerToken)
-                .method(method, publisher)
-                .build();
-        HttpResponse<String> response = httpClient.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
+        var response = send(method, path, body, Map.of());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException(
-                    method + " " + uri + " returned "
-                            + response.statusCode() + ": " + response.body()
-            );
+            throw new IOException(method + " " + baseUri.resolve(path) + " returned "
+                    + response.statusCode() + ": " + response.body());
         }
+        return responseBody(response);
+    }
+
+    private JsonNode responseBody(HttpResponse<String> response) throws IOException {
         if (response.body() == null || response.body().isBlank()) {
             return MissingNode.getInstance();
         }
         return objectMapper.readTree(response.body());
+    }
+
+    private HttpResponse<String> send(String method, String path, Object body, Map<String, String> headers)
+            throws IOException, InterruptedException {
+        var publisher = body == null ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body));
+        var request = HttpRequest.newBuilder(baseUri.resolve(path)).timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + bearerToken)
+                .method(method, publisher);
+        headers.forEach(request::header);
+        return httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private String draft(String groupId) {

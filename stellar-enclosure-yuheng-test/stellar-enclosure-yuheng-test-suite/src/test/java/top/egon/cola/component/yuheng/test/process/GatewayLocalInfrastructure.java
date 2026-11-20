@@ -34,17 +34,15 @@ final class GatewayLocalInfrastructure
 
     private Process postgres;
 
-    private Process ddcRedis;
 
-    private Process rateLimitRedis;
+    private Process accessGuardRedis;
 
     private EmbeddedKafkaBroker kafka;
 
     private int postgresPort;
 
-    private int ddcRedisPort;
 
-    private int rateLimitRedisPort;
+    private int accessGuardRedisPort;
 
     private boolean started;
 
@@ -72,15 +70,12 @@ final class GatewayLocalInfrastructure
                     "egon-yuheng-live-infrastructure-"
             );
             startPostgres();
-            ddcRedisPort = GatewayProcessHarness.availablePort();
-            ddcRedis = startRedis("tianshu-redis", ddcRedisPort);
-            awaitRedis(ddcRedis, ddcRedisPort);
-            rateLimitRedisPort = GatewayProcessHarness.availablePort();
-            rateLimitRedis = startRedis(
-                    "rate-limit-redis",
-                    rateLimitRedisPort
+            accessGuardRedisPort = GatewayProcessHarness.availablePort();
+            accessGuardRedis = startRedis(
+                    "access-guard-redis",
+                    accessGuardRedisPort
             );
-            awaitRedis(rateLimitRedis, rateLimitRedisPort);
+            awaitRedis(accessGuardRedis, accessGuardRedisPort);
             startKafka();
             started = true;
         } catch (IOException | RuntimeException failure) {
@@ -132,23 +127,13 @@ final class GatewayLocalInfrastructure
     }
 
     @Override
-    public String ddcRedisHost() {
+    public String accessGuardRedisHost() {
         return HOST;
     }
 
     @Override
-    public int ddcRedisPort() {
-        return ddcRedisPort;
-    }
-
-    @Override
-    public String rateLimitRedisHost() {
-        return HOST;
-    }
-
-    @Override
-    public int rateLimitRedisPort() {
-        return rateLimitRedisPort;
+    public int accessGuardRedisPort() {
+        return accessGuardRedisPort;
     }
 
     @Override
@@ -166,8 +151,7 @@ final class GatewayLocalInfrastructure
         if (kafka != null) {
             kafka.destroy();
         }
-        stop(rateLimitRedis);
-        stop(ddcRedis);
+        stop(accessGuardRedis);
         stop(postgres);
         deleteRootDirectory();
         started = false;

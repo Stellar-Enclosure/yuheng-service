@@ -2,201 +2,146 @@ package top.egon.cola.component.yuheng.test.deployment;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GatewayDemoScriptContractTest {
 
-    private static final Path DEPLOYMENT = projectFile(Path.of(
-            "deployment"
-    ));
-
     @TempDir
     private Path temporaryDirectory;
 
     @Test
-    void helpPublishesTheCompleteOperatorCommandSurface() throws Exception {
-        ProcessResult result = run("--help", false);
-
-        assertThat(result.exitCode()).isZero();
-        assertThat(result.output()).contains(
-                "doctor",
-                "build",
-                "up-control",
-                "init",
-                "up-providers",
-                "publish",
-                "up-consumer",
-                "verify",
-                "logs",
-                "down",
-                "purge"
-        );
+    void helpDescribesFixtureCommandsAndExplicitPublicProbes() throws Exception {
+        var result = run("demo.sh", Map.of(), "--help");
+        assertThat(result.code()).isZero();
+        assertThat(result.output()).contains("config", "up", "down", "verify", "exposure-get", "exposure-state")
+                .doesNotContain("up-control", "purge");
     }
 
     @Test
-    void downPreservesVolumesAndPurgeRequiresLocalMarker()
-            throws Exception {
-        Path commandLog = temporaryDirectory.resolve("docker.log");
-        ProcessResult down = run("down", true, commandLog);
-
-        assertThat(down.exitCode()).isZero();
-        assertThat(Files.readString(commandLog))
-                .contains("down --remove-orphans")
-                .doesNotContain("--volumes", " -v");
-
-        Files.delete(commandLog);
-        ProcessResult refused = run("purge", true, commandLog);
-        assertThat(refused.exitCode()).isEqualTo(1);
-        assertThat(refused.output()).contains("local demo marker is missing");
-        assertThat(commandLog).doesNotExist();
-
-        Path runtime = temporaryDirectory.resolve("runtime");
-        Files.createDirectories(runtime);
-        Files.createFile(runtime.resolve(".local-demo-marker"));
-        ProcessResult purge = run("purge", true, commandLog);
-        assertThat(purge.exitCode()).isZero();
-        assertThat(Files.readString(commandLog))
-                .contains("down --volumes --remove-orphans");
-    }
-
-    @Test
-    void composeDemoUsesResolvableServiceNamesAndSeparateProviderImages()
-            throws IOException {
-        Map<String, Object> compose = yaml("compose.demo.yml");
-        Map<String, Object> services = map(compose.get("services"));
-
-        assertThat(services).containsKeys(
-                "http-provider-mvc",
-                "http-provider-webflux",
-                "rpc-provider",
-                "rpc-consumer"
-        );
-        assertThat(environment(services, "http-provider-mvc"))
-                .containsEntry(
-                        "YUHENG_TEST_ADVERTISED_HOST",
-                        "http-provider-mvc"
-                );
-        assertThat(environment(services, "http-provider-webflux"))
-                .containsEntry(
-                        "YUHENG_TEST_ADVERTISED_HOST",
-                        "http-provider-webflux"
-                );
-        assertThat(environment(services, "rpc-provider"))
-                .containsEntry(
-                        "EGON_COLA_COMPONENT_RPC_PROVIDER_ADVERTISED_HOST",
-                        "rpc-provider"
-                );
-    }
-
-    @Test
-    void tokenScriptSupportsSecretsWithRepeatedByteLines() throws Exception {
-        String secret = Base64.getEncoder().encodeToString(
-                "0123456789abcdef0123456789abcdef"
-                        .getBytes(StandardCharsets.UTF_8)
-        );
-        Process process = new ProcessBuilder(
-                "bash",
-                DEPLOYMENT.resolve("scripts/demo-token.sh").toString(),
-                secret
-        ).redirectErrorStream(true).start();
-        String output = new String(
-                process.getInputStream().readAllBytes(),
-                StandardCharsets.UTF_8
-        ).trim();
-
-        assertThat(process.waitFor()).isZero();
-        assertThat(output).matches("[^.]+\\.[^.]+\\.[^.]+");
-    }
-
-    private ProcessResult run(String command, boolean fakeDocker)
-            throws Exception {
-        return run(
-                command,
-                fakeDocker,
-                temporaryDirectory.resolve("docker.log")
-        );
-    }
-
-    private ProcessResult run(
-            String command,
-            boolean fakeDocker,
-            Path commandLog) throws Exception {
-        Path bin = temporaryDirectory.resolve("bin");
-        Files.createDirectories(bin);
-        if (fakeDocker) {
-            Path docker = bin.resolve("docker");
-            Files.writeString(
-                    docker,
-                    "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >>\"$YUHENG_DEMO_COMMAND_LOG\"\n"
-            );
-            docker.toFile().setExecutable(true);
+    void rejectsCleartextAndEmbeddedCredentialsBeforeCallingCurl() throws Exception {
+        installCurlStub();
+        for (String url : List.of("http://gateway.example.test/test/demo", "https://user@gateway.example.test/")) {
+            var result = run("demo.sh", Map.of(), "verify", url, "200");
+            assertThat(result.code()).isEqualTo(2);
+            assertThat(temporaryDirectory.resolve("curl-called")).doesNotExist();
         }
-        ProcessBuilder builder = new ProcessBuilder(
-                "bash",
-                DEPLOYMENT.resolve("scripts/demo.sh").toString(),
-                command
-        ).redirectErrorStream(true);
-        Map<String, String> environment = builder.environment();
-        environment.put(
-                "PATH",
-                bin + ":" + environment.getOrDefault("PATH", "")
-        );
-        environment.put(
-                "YUHENG_DEMO_RUNTIME_DIR",
-                temporaryDirectory.resolve("runtime").toString()
-        );
-        environment.put(
-                "YUHENG_DEMO_ENV_FILE",
-                DEPLOYMENT.resolve(".env.example").toString()
-        );
-        environment.put("YUHENG_DEMO_PROJECT", "stellar-enclosure-yuheng-demo-test");
-        environment.put("YUHENG_DEMO_COMMAND_LOG", commandLog.toString());
+    }
+
+    @Test
+    void verifiesExactPublicResponseUsingTheSuppliedBearer() throws Exception {
+        installCurlStub();
+        Path token = Files.writeString(temporaryDirectory.resolve("token"), "example.service.token\n");
+
+        var result = run("demo.sh", Map.of("YUHENG_DEMO_BEARER_FILE", token.toString()),
+                "verify", "https://gateway.example.test/api/providers/demo", "200");
+
+        assertThat(result.code()).isZero();
+        assertThat(result.output()).contains("200").doesNotContain("example.service.token");
+        assertThat(Files.readString(temporaryDirectory.resolve("curl-called")))
+                .contains("https://gateway.example.test/api/providers/demo")
+                .doesNotContain("example.service.token", "127.0.0.1", "Host:");
+    }
+
+    @Test
+    void doesNotForgeOrAcceptAHeaderFromASecretFile() throws Exception {
+        Path token = Files.writeString(temporaryDirectory.resolve("token"), "sample\nx-other: injected\n");
+        var result = run("demo-token.sh", Map.of(), token.toString());
+        assertThat(result.code()).isEqualTo(2);
+        assertThat(result.output()).doesNotContain("sample", "injected");
+    }
+
+    @Test
+    void requiresAnExactExposurePreconditionBeforeCallingTheManagementApi() throws Exception {
+        installCurlStub();
+        Path command = Files.writeString(temporaryDirectory.resolve("close.json"),
+                "{\"state\":\"CLOSED\",\"changeReason\":\"local contract check\"}");
+        var result = run("demo.sh", Map.of(),
+                "exposure-state", "http://yuheng-admin.fixture.svc.cluster.local:18080", "123", "\"exposure-456-v4\"", "check-1", command.toString());
+        assertThat(result.code()).isEqualTo(2);
+        assertThat(temporaryDirectory.resolve("curl-called")).doesNotExist();
+    }
+
+    @Test
+    void writesTheReviewedStateWithStrongEtagAndIdempotencyKey() throws Exception {
+        installCurlStub();
+        Path token = Files.writeString(temporaryDirectory.resolve("token"), "example.service.token\n");
+        Path command = Files.writeString(temporaryDirectory.resolve("close.json"),
+                "{\"state\":\"CLOSED\",\"changeReason\":\"local contract check\"}");
+
+        var result = run("demo.sh", Map.of("YUHENG_DEMO_BEARER_FILE", token.toString()),
+                "exposure-state", "http://yuheng-admin.fixture.svc.cluster.local:18080/", "123", "\"exposure-123-v4\"", "check-2",
+                command.toString());
+
+        assertThat(result.code()).isZero();
+        assertThat(Files.readAllLines(temporaryDirectory.resolve("curl-called")))
+                .containsSubsequence("--noproxy", "*", "--proto", "=http", "--url", "http://yuheng-admin.fixture.svc.cluster.local:18080/api/v1/yuheng/admin/exposures/123/state",
+                        "--request", "PUT", "--header", "If-Match: \"exposure-123-v4\"",
+                        "--header", "Idempotency-Key: check-2", "--header", "Content-Type: application/json",
+                        "--data-binary", "@" + command)
+                .noneMatch(argument -> argument.contains("example.service.token"));
+    }
+
+    @Test
+    void withholdsManagementBearerFromOtherOrigins() throws Exception {
+        installCurlStub();
+        Path token = Files.writeString(temporaryDirectory.resolve("token"), "example.service.token\n");
+        for (String origin : List.of("https://admin.example.test", "http://admin.example.test:18080",
+                "http://yuheng-admin.fixture.svc.cluster.local:19099", "http://yuheng-admin.fixture.svc.cluster.local:65536")) {
+            var result = run("demo.sh", Map.of("YUHENG_DEMO_BEARER_FILE", token.toString()), "exposure-get", origin, "123");
+            assertThat(result.code()).isEqualTo(2);
+            assertThat(temporaryDirectory.resolve("curl-called")).doesNotExist();
+        }
+    }
+
+    private void installCurlStub() throws IOException {
+        Path executable = Files.writeString(temporaryDirectory.resolve("curl"), """
+                #!/usr/bin/env bash
+                set -eu
+                printf '%s\\n' "$@" > "$DEMO_CURL_LOG"
+                IFS= read -r header
+                [[ "$header" == "Authorization: Bearer example.service.token" ]]
+                printf '200'
+                """);
+        assertThat(executable.toFile().setExecutable(true)).isTrue();
+    }
+
+    private Result run(String script, Map<String, String> environment, String... arguments) throws Exception {
+        Path deployment = deploymentDirectory();
+        var command = new ArrayList<>(List.of("bash", deployment.resolve("scripts").resolve(script).toString()));
+        command.addAll(List.of(arguments));
+        var builder = new ProcessBuilder(command).redirectErrorStream(true);
+        builder.environment().remove("YUHENG_DEMO_BEARER_FILE");
+        builder.environment().putAll(environment);
+        builder.environment().put("PATH", temporaryDirectory + ":" + builder.environment().get("PATH"));
+        builder.environment().put("DEMO_CURL_LOG", temporaryDirectory.resolve("curl-called").toString());
         Process process = builder.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        return new ProcessResult(process.waitFor(), output);
-    }
-
-    private Map<String, Object> environment(
-            Map<String, Object> services,
-            String service) {
-        return map(map(services.get(service)).get("environment"));
-    }
-
-    private Map<String, Object> yaml(String file) throws IOException {
-        try (var input = Files.newInputStream(DEPLOYMENT.resolve(file))) {
-            return map(new Yaml().load(input));
+        try {
+            assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+            return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+        } finally {
+            process.destroyForcibly();
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> map(Object value) {
-        return (Map<String, Object>) value;
-    }
-
-    private static Path projectFile(Path projectPath) {
-        Path current = Path.of(System.getProperty("user.dir"))
-                .toAbsolutePath();
-        while (current != null) {
-            Path candidate = current.resolve(projectPath);
-            if (Files.isDirectory(candidate)) {
-                return candidate;
+    private Path deploymentDirectory() {
+        for (Path path = Path.of("").toAbsolutePath(); path != null; path = path.getParent()) {
+            if (Files.isRegularFile(path.resolve("deployment/compose.yml"))) {
+                return path.resolve("deployment");
             }
-            current = current.getParent();
         }
-        throw new IllegalStateException(
-                "cannot locate project directory " + projectPath
-        );
+        throw new IllegalStateException("Yuheng deployment directory not found");
     }
 
-    private record ProcessResult(int exitCode, String output) {
+    private record Result(int code, String output) {
     }
 }

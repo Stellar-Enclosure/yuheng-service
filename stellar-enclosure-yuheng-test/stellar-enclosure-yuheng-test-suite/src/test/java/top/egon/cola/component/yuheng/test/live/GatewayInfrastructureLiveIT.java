@@ -2,36 +2,22 @@ package top.egon.cola.component.yuheng.test.live;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import top.egon.cola.component.yuheng.test.process.GatewayTestInfrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GatewayInfrastructureLiveIT {
 
     @Test
-    @EnabledIfSystemProperty(named = "yuheng.live.test", matches = "true")
-    void provisionsPhysicallySeparatedStateAndEventInfrastructure() {
-        try (GatewayLiveEnvironment environment =
-                     new GatewayLiveEnvironment("infrastructure")) {
-            environment.startInfrastructure();
-            GatewayTestInfrastructure infrastructure =
-                    environment.infrastructure();
-
-            assertThat(infrastructure.ddcRedisHost()
-                    + ":"
-                    + infrastructure.ddcRedisPort())
-                    .isNotEqualTo(infrastructure.rateLimitRedisHost()
-                            + ":"
-                            + infrastructure.rateLimitRedisPort());
-            assertThat(infrastructure.jdbcUrl("postgres"))
-                    .startsWith("jdbc:postgresql://");
-            assertThat(infrastructure.kafkaBootstrapServers())
-                    .isNotBlank();
-        } catch (java.io.IOException failure) {
-            throw new IllegalStateException(
-                    "cannot create isolated live environment",
-                    failure
-            );
+    @EnabledIfSystemProperty(named = GatewayLiveEnvironment.ENABLED, matches = "true")
+    void readinessLivesOnTheApprovedInClusterManagementPort() throws Exception {
+        var internal = GatewayLiveEnvironment.eastWest(GatewayLiveEnvironment.required("management-origin"));
+        var publicUrl = GatewayLiveEnvironment.northbound(GatewayLiveEnvironment.required("mvc-provider-url"));
+        var readiness = "/actuator/health/readiness";
+        try (var environment = new GatewayLiveEnvironment()) {
+            var management = environment.probe(internal.resolve(readiness), "GET", null);
+            assertThat(management.status()).isEqualTo(200);
+            assertThat(management.json().path("status").textValue()).isEqualTo("UP");
+            assertThat(environment.probe(publicUrl.resolve(readiness), "GET", null).status()).isEqualTo(404);
         }
     }
 }

@@ -22,10 +22,20 @@ class GatewayTestApplicationPackagingTest {
                 "stellar-enclosure-yuheng-test-http-provider",
                 "stellar-enclosure-yuheng-test-webflux-http-provider",
                 "stellar-enclosure-yuheng-test-rpc-provider",
-                "stellar-enclosure-yuheng-test-rpc-consumer")) {
+                "stellar-enclosure-yuheng-test-rpc-consumer",
+                "stellar-enclosure-yuheng-test-mcp-provider",
+                "stellar-enclosure-yuheng-test-mcp-remote")) {
             assertThat(Files.readString(projectFile(
                     TEST_MODULES.resolve(module).resolve("pom.xml")
             ))).as(module).contains("<classifier>exec</classifier>");
+        }
+    }
+
+    @Test
+    void protocolAccessWorkloadsArePublishedAsIndependentExecutables() throws IOException {
+        for (String module : List.of("stellar-enclosure-model-access-service", "stellar-enclosure-mcp-access-service")) {
+            String modulePom = Files.readString(projectFile(Path.of(module, "pom.xml")));
+            assertThat(modulePom).as(module).contains("<classifier>exec</classifier>", "<goal>repackage</goal>");
         }
     }
 

@@ -43,23 +43,28 @@ import top.egon.cola.platform.tianquan.shoubing.starter.security.TenantIssuerAut
 import top.egon.cola.platform.tianquan.shoubing.starter.security.VerifiedPrincipalConverter;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.rpc.IdpRpcClientCredentialInterceptorFactory;
 import top.egon.cola.platform.tianquan.shoubing.starter.security.rpc.IdpRpcSecurityContext;
+import top.egon.cola.component.rpc.common.exception.EgonRpcException;
 import top.egon.cola.component.rpc.config.EgonRpcProperties;
 import top.egon.cola.component.rpc.config.RpcTransportSecurity;
-import top.egon.cola.component.rpc.consumer.direct.RpcDirectClientFactory;
-import top.egon.cola.component.rpc.consumer.direct.RpcDirectClientSettings;
+import top.egon.cola.component.rpc.consumer.channel.RpcChannelLease;
+import top.egon.cola.component.rpc.consumer.channel.RpcConsumerChannelFactory;
+import top.egon.cola.component.rpc.consumer.channel.RpcConsumerChannelPool;
+import top.egon.cola.component.rpc.consumer.interceptor.RpcClientInterceptorFactory;
+import top.egon.cola.component.rpc.consumer.invocation.RpcInvocationExecutor;
+import top.egon.cola.component.rpc.consumer.proxy.RpcConsumerProxyFactory;
+import top.egon.cola.component.rpc.consumer.reference.KubernetesServiceRpcReferenceStrategy;
+import top.egon.cola.component.rpc.consumer.reference.RpcReferenceDefinition;
+import top.egon.cola.component.rpc.consumer.reference.RpcReferenceDefinitionResolver;
+import top.egon.cola.component.rpc.consumer.reference.RpcReferencePolicy;
+import top.egon.cola.component.rpc.consumer.reference.RpcReferenceStrategy;
+import top.egon.cola.component.rpc.consumer.reference.RpcServiceTargetVO;
+import top.egon.cola.component.rpc.context.identity.RpcProcessIdentity;
+import top.egon.cola.component.rpc.contract.identity.RpcServiceIdentity;
+import top.egon.cola.component.rpc.exception.RpcStatusExceptionMapper;
 import top.egon.cola.component.rpc.context.identity.RpcProcessIdentityFactory;
 import top.egon.cola.component.rpc.contract.validation.RpcContractValidator;
 import top.egon.cola.component.rpc.contract.descriptor.RpcContractDescriptor;
 import top.egon.cola.component.rpc.contract.descriptor.RpcMethodDescriptor;
-import top.egon.cola.component.rpc.tianshu.client.DdcRpcClientFactory;
-import top.egon.cola.component.rpc.tianshu.autoconfigure.DdcRpcProperties;
-import top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties;
-import top.egon.cola.component.tianshu.autoconfigure.properties.DdcTenantProperties;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceKey;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceKind;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceSnapshot;
-import top.egon.cola.component.tianshu.model.registry.DdcServiceInstance;
-import top.egon.cola.component.tianshu.model.management.DdcInstanceStatus;
 import com.google.protobuf.Message;
 
 import java.net.URI;
@@ -255,6 +260,10 @@ class XingyuanNativeAuthenticationIT {
                                  @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) Instant expiresAt) { }
 
     static JsonNode validateRuntimeProbeResult(RuntimeProbeRequestVO request, JsonNode value, Instant now) {
+        return validateRuntimeProbeResult(request, value, now, null);
+    }
+
+    private static JsonNode validateRuntimeProbeResult(RuntimeProbeRequestVO request, JsonNode value, Instant now, URI expectedIssuer) {
         Set<String> fields = Set.of("schemaVersion", "runId", "manifestSha256", "role", "fixtureSha256", "artifactSha256", "nonce", "operation", "status", "completedAt", "result");
         var actual = new HashSet<String>(); value.fieldNames().forEachRemaining(actual::add);
         if (!value.isObject() || !actual.equals(fields) || !value.path("schemaVersion").isIntegralNumber() || !value.path("schemaVersion").canConvertToInt() || value.path("schemaVersion").intValue() != 1
@@ -333,7 +342,7 @@ class XingyuanNativeAuthenticationIT {
         } else if ("SERVICE_AUTHORIZATION".equals(request.operation())) {
             if (!resultFields.equals(Set.of("tokenReference", "clientReference", "issuer", "expiresAt"))
                     || !result.path("tokenReference").asText().matches("[0-9a-f]{64}") || !result.path("clientReference").asText().matches("[0-9a-f]{64}")
-                    || !result.path("issuer").asText().startsWith("https://127.0.0.1:28443/tenants/")
+                    || expectedIssuer == null || !expectedIssuer.toASCIIString().equals(result.path("issuer").textValue())
                     || !result.path("expiresAt").asText().endsWith("Z") || !Instant.parse(result.path("expiresAt").asText()).isAfter(completed)) {
                 throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
             }
@@ -371,6 +380,14 @@ class XingyuanNativeAuthenticationIT {
 
     static JsonNode invokeApplicationProbe(Path root, Path evidence, Path manifestFile, JsonNode manifest, String digest,
                                                    String role, String tenant, String operation, String entity) throws Exception {
+        return invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, role, tenant, operation, entity, null);
+    }
+
+    private static JsonNode invokeApplicationProbe(Path root, Path evidence, Path manifestFile, JsonNode manifest, String digest,
+            String role, String tenant, String operation, String entity, URI issuer) throws Exception {
+        if ("SERVICE_AUTHORIZATION".equals(operation) && issuer == null) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        }
         XingyuanResourceAuthorizationIT.requireRunningProcesses(root, manifestFile, manifest, digest, evidence, Set.of(role));
         Path fixture = root.resolve("artifacts/task-runtime-probe.jar");
         byte[] fixtureBytes = UnifiedIdentityLiveClient.protectedBytes(fixture, root.resolve("artifacts"), 2 * 1024 * 1024);
@@ -406,7 +423,7 @@ class XingyuanNativeAuthenticationIT {
             Thread.sleep(100);
         }
         byte[] resultBytes = UnifiedIdentityLiveClient.protectedBytes(resultFile, root.resolve("evidence"), 128 * 1024);
-        var envelope = mapper.readTree(resultBytes); var result = validateRuntimeProbeResult(request, envelope, Instant.now());
+        var envelope = mapper.readTree(resultBytes); var result = validateRuntimeProbeResult(request, envelope, Instant.now(), issuer);
         XingyuanResourceAuthorizationIT.requireRunningProcesses(root, manifestFile, manifest, digest, evidence, Set.of(role));
         var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", request.runId()).put("manifestSha256", digest)
                 .put("scope", "ACTUAL_APP_OWNER_ONLY").put("role", role).put("operation", operation).put("tenantCode", tenant).put("nonce", request.nonce())
@@ -431,7 +448,7 @@ class XingyuanNativeAuthenticationIT {
                     Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()));
             for (String tenant : List.of("default", "tenant-b")) {
                 var reference = client.formal(tenant, client.resourceForProcess("native-web"), "admin"); client.verifiedClaims(reference);
-                var initialAuthorization = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-service", tenant, "SERVICE_AUTHORIZATION", null);
+                var initialAuthorization = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-service", tenant, "SERVICE_AUTHORIZATION", null, reference.getIssuer());
                 String name = "xingyuan-it-" + manifest.path("runId").asText() + '-' + tenant + '-' + java.util.UUID.randomUUID();
                 var user = web.request("POST", "/api/v1/users", reference, mapper.createObjectNode().put("name", name).put("email", name + "@xingyuan.invalid"), null, 201);
                 String userId = Long.toString(XingyuanResourceAuthorizationIT.responseId(user));
@@ -441,7 +458,7 @@ class XingyuanNativeAuthenticationIT {
                 var createdCourse = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-service", tenant, "COURSE_CREATE", null);
                 var readCourse = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-web", tenant, "WEB_COURSE_READ", createdCourse.path("entityId").asText());
                 if (!createdCourse.equals(readCourse)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var authorization = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-service", tenant, "SERVICE_AUTHORIZATION", null);
+                var authorization = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-service", tenant, "SERVICE_AUTHORIZATION", null, reference.getIssuer());
                 if (!initialAuthorization.path("tokenReference").equals(authorization.path("tokenReference"))) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                 var snapshot = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "native-web", tenant, "PLATFORM_SNAPSHOT", null);
                 proofs.add(mapper.createObjectNode().put("tenantCode", tenant).put("userReadReference", observedUser.path("dataSha256").asText())
@@ -461,6 +478,26 @@ class XingyuanNativeAuthenticationIT {
         publishNewNativeEvidence(root, output, proof);
     }
 
+
+    @Test
+    void serviceOwnerProofRequiresTheExactlyBoundCiliumIssuer() {
+        Instant now = Instant.parse("2026-11-19T00:00:00Z");
+        var expected = URI.create("https://login.apps.example.test/tenants/101");
+        var request = new RuntimeProbeRequestVO(1, "controlled-run", "a".repeat(64), "native-service", "b".repeat(64),
+                "c".repeat(64), UUID.randomUUID().toString(), "SERVICE_AUTHORIZATION", "default", null, now, now.plusSeconds(60));
+        var envelope = UnifiedIdentityLiveClient.strictJson().createObjectNode().put("schemaVersion", 1).put("runId", request.runId())
+                .put("manifestSha256", request.manifestSha256()).put("role", request.role()).put("fixtureSha256", request.fixtureSha256())
+                .put("artifactSha256", request.artifactSha256()).put("nonce", request.nonce()).put("operation", request.operation())
+                .put("status", "COMPLETED").put("completedAt", now.plusSeconds(1).toString());
+        var result = envelope.putObject("result").put("tokenReference", "d".repeat(64)).put("clientReference", "e".repeat(64))
+                .put("expiresAt", now.plusSeconds(50).toString()).put("issuer", expected.toString());
+        assertThat(validateRuntimeProbeResult(request, envelope, now.plusSeconds(2), expected)).isEqualTo(result);
+        for (String issuer : List.of("https://login.apps.example.test/tenants/102", "https://127.0.0.1:28443/tenants/101")) {
+            result.put("issuer", issuer);
+            assertThatThrownBy(() -> validateRuntimeProbeResult(request, envelope, now.plusSeconds(2), expected))
+                    .hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        }
+    }
 
     @Test
     void applicationProbeProofsRequireTheExactOwnerCommandAndRetainUnknownCommits() throws Exception {
@@ -663,13 +700,16 @@ class XingyuanNativeAuthenticationIT {
         var registry = mapper.createObjectNode(); registry.putObject("tenantIds").put("default", "1001").put("tenant-b", "1002");
         var constructor = UnifiedIdentityLiveClient.IsolatedResourceProbe.class.getDeclaredConstructors()[0]; constructor.setAccessible(true);
         var client = (UnifiedIdentityLiveClient.IsolatedResourceProbe) constructor.newInstance(root, manifest, registry, mapper.createObjectNode(), "a".repeat(64), null, Duration.ofSeconds(30), null);
-        Instant now = Instant.now(); var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", "controlled").put("manifestSha256", "a".repeat(64))
+        Instant now = Instant.now(); var proof = mapper.createObjectNode().put("schemaVersion", 2).put("runId", "controlled").put("manifestSha256", "a".repeat(64))
                 .put("status", "PASSED").put("scope", "STANDALONE_SERVICE_TO_WEB_DATA").put("recordedAt", now.toString()).put("crossTenantIsolationConfirmed", true);
+        var approved = manifest.putObject("nativeRpcServices").putObject("native-web").put("bindingId", "organization")
+                .put("bindingVersion", 1).put("namespace", "xingyuan-it").put("service", "organization").put("port", 19090);
         var items = proof.putArray("proofs"); int index = 0;
         for (String tenant : List.of("1001", "1002")) {
             var item = items.addObject().put("consumerRole", "native-service").put("providerRole", "native-web").put("tenantId", tenant)
-                    .put("methodReference", "b".repeat(64)).put("descriptorReference", "c".repeat(64)).put("leaseReference", "d".repeat(64))
-                    .put("leaseRevision", 1).put("leaseExpiresAt", now.plusSeconds(60).toString()).put("businessStatus", "USER_DATA_MATCHED")
+                    .put("methodReference", "b".repeat(64)).put("descriptorReference", "c".repeat(64))
+                    .put("bindingReference", UnifiedIdentityLiveClient.nativeRpcBindingReference(approved))
+                    .put("bindingVersion", 1).put("businessStatus", "USER_DATA_MATCHED")
                     .put("missingTokenStatus", "UNAUTHENTICATED").put("responseReference", "e".repeat(64)).put("httpReference", "f".repeat(64));
             item.putObject("beforeBusiness").putObject("counts").put("createUser", 0).put("getUser", 0);
             item.putObject("successfulBusiness").putObject("counts").put("createUser", 0).put("getUser", 1);
@@ -681,12 +721,14 @@ class XingyuanNativeAuthenticationIT {
             item.putObject("missingTokenRequest").put("traceId", String.format(java.util.Locale.ROOT, "%032x", ++index)).put("status", "UNAUTHENTICATED")
                     .put("startedAt", now.minusSeconds(1).toString()).put("completedAt", now.toString());
         }
-        for (String fault : List.of("missing", "duplicate", "status", "future", "secret")) {
+        for (String fault : List.of("missing", "duplicate", "status", "future", "foreign-binding", "stale-binding", "secret")) {
             var invalid = proof.deepCopy(); var first = (com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("proofs").get(0);
             if (fault.equals("missing")) { first.remove("successfulRequest"); }
             else if (fault.equals("duplicate")) { ((com.fasterxml.jackson.databind.node.ObjectNode) invalid.path("proofs").get(1).path("missingTokenRequest")).put("traceId", "0".repeat(31) + '1'); }
             else if (fault.equals("status")) { first.withObject("missingTokenRequest").put("status", "OK"); }
             else if (fault.equals("future")) { first.withObject("successfulRequest").put("completedAt", now.plusSeconds(1).toString()); }
+            else if (fault.equals("foreign-binding")) { first.put("bindingReference", "0".repeat(64)); }
+            else if (fault.equals("stale-binding")) { first.put("bindingVersion", 2); }
             else { first.withObject("successfulRequest").put("token", "untrusted"); }
             assertThatThrownBy(() -> client.publishNativeRpcProtocolProof(evidence, invalid)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
         }
@@ -709,21 +751,37 @@ class XingyuanNativeAuthenticationIT {
     }
 
     @Test
-    void peerLeaseRejectsForeignAddressExpiredAndAmbiguousInstancesBeforeAChannelExists() {
-        Instant now = Instant.parse("2026-10-15T00:00:00Z");
-        var key = new DdcServiceKey("owned-biz", "test", "owned-app", DdcServiceKind.RPC_PROVIDER, "owned.Service", "course", "1.0.0", "grpc");
-        java.util.function.Function<String, DdcServiceInstance> endpoint = host -> new DdcServiceInstance("owned-instance", "owned-lease", key,
-                host, 29312, true, Map.of(), 60, 20, now.minusSeconds(10), now.minusSeconds(1), now.plusSeconds(60), "ONLINE", 1,
-                "owned-resource", 0L, "owned-credential", now.plusSeconds(300));
-        var valid = new DdcServiceSnapshot(key, 1, List.of(endpoint.apply("127.0.0.1")), now);
-        assertThat(requirePeerLease(valid, key, 29312, "owned-resource", now)).isEqualTo(valid.instances().getFirst());
-        assertThatThrownBy(() -> requirePeerLease(new DdcServiceSnapshot(key, 1, List.of(endpoint.apply("192.0.2.1")), now), key, 29312, "owned-resource", now))
+    void peerReferenceOnlyUsesTheReviewedStableH2cServiceAndNativeMethod() throws Exception {
+        var core = new EgonRpcProperties();
+        var method = String.class.getMethod("length");
+        var nativeMethod = "owned.v1.CourseService/GetCourse";
+        var identity = new RpcServiceIdentity("owned.v1.CourseService", "course", "1.0.0");
+        var binding = new EgonRpcProperties.RpcServiceBindingConfig().setVersion(2).setNamespace("xingyuan-it")
+                .setService("courses").setPort(19090).setMethods(Set.of(nativeMethod));
+        core.getConsumer().setBindings(Map.of("reviewed-course", binding));
+        var reviewed = UnifiedIdentityLiveClient.strictJson().createObjectNode().put("bindingId", "reviewed-course")
+                .put("bindingVersion", 2).put("namespace", "xingyuan-it").put("service", "courses").put("port", 19090);
+
+        var definition = approvedPeerReference(core, reviewed, identity, Map.of(method, nativeMethod), 1000);
+        assertThat(definition.target().dnsTarget()).isEqualTo("dns:///courses.xingyuan-it.svc.cluster.local:19090");
+        assertThat(definition.policyFor(method).retries()).isZero();
+
+        for (var entry : Map.of("namespace", "other", "service", "courses-canary", "bindingId", "foreign").entrySet()) {
+            var changed = reviewed.deepCopy().put(entry.getKey(), entry.getValue());
+            assertThatThrownBy(() -> approvedPeerReference(core, changed, identity, Map.of(method, nativeMethod), 1000))
+                    .hasMessage("XINGYUAN_TARGET_UNSAFE");
+        }
+        for (var changed : List.of(reviewed.deepCopy().put("bindingVersion", 3),
+                reviewed.deepCopy().put("port", 19091), reviewed.deepCopy().put("port", "19090"),
+                reviewed.deepCopy().put("authority", "127.0.0.1:19090"))) {
+            assertThatThrownBy(() -> approvedPeerReference(core, changed, identity, Map.of(method, nativeMethod), 1000))
+                    .hasMessage("XINGYUAN_TARGET_UNSAFE");
+        }
+        assertThatThrownBy(() -> approvedPeerReference(core, reviewed, identity, Map.of(method, "owned.v1.CourseService/Write"), 1000))
                 .hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> requirePeerLease(valid, key, 29311, "owned-resource", now)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> requirePeerLease(valid, key, 29312, "foreign-resource", now)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> requirePeerLease(valid, key, 29312, "owned-resource", now.plusSeconds(61))).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> requirePeerLease(new DdcServiceSnapshot(key, 1, List.of(endpoint.apply("127.0.0.1"), endpoint.apply("127.0.0.1")), now),
-                key, 29312, "owned-resource", now)).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        core.setTransport("tls");
+        assertThatThrownBy(() -> approvedPeerReference(core, reviewed, identity, Map.of(method, nativeMethod), 1000))
+                .hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
     @Test
@@ -747,27 +805,33 @@ class XingyuanNativeAuthenticationIT {
             assertThat(method.requestType().isInstance(request)).isTrue();
             assertThat(request.getDescriptorForType().getFullName()).isEqualTo(method.protoMethod().getInputType().getFullName());
             assertThat(method.fullMethodName()).isEqualTo(contract.contract.serviceName() + "/" + operation);
-            var noTransport = new top.egon.cola.component.rpc.consumer.channel.RpcInvocationChannelProvider() {
-                @Override public io.grpc.ManagedChannel currentChannel(Set<io.grpc.ManagedChannel> excluded) { throw new AssertionError("Offline contract check must not acquire a Channel"); }
-                @Override public void recordFailure(io.grpc.ManagedChannel channel) { throw new AssertionError("Offline contract check must not invoke transport"); }
-                @Override public int maxAttempts() { return 1; }
+            var methods = nativeMethods(contract.contract);
+            var target = new RpcServiceTargetVO("offline-contract", 1, "fixture", "contract", 19090, Set.copyOf(methods.values()));
+            var definition = peerReference(contract.contract, target, 1000);
+            var noTransport = new RpcReferenceStrategy() {
+                @Override public RpcServiceTargetVO target() { return target; }
+                @Override public String queryIdentity() { return definition.queryIdentity(); }
+                @Override public long revision() { return target.version(); }
+                @Override public RpcChannelLease acquire() { throw new AssertionError("Offline contract check must not acquire a Channel"); }
+                @Override public void close() { }
             };
-            var proxy = new top.egon.cola.component.rpc.consumer.proxy.RpcConsumerProxyFactory(
-                    new RpcContractValidator(new top.egon.cola.component.common.core.validation.ValidationUtils(factory.getValidator())), noTransport,
-                    new top.egon.cola.component.rpc.context.identity.RpcProcessIdentity("controlled-offline-proxy", "test", "127.0.0.1", ProcessHandle.current().pid(), "controlled"),
-                    new top.egon.cola.component.rpc.exception.RpcStatusExceptionMapper(), 1000).create(contract.contract.contractType(), 1000);
-            assertThat(contract.contract.contractType().isInstance(proxy)).isTrue();
+            try (var executor = new RpcInvocationExecutor(new RpcStatusExceptionMapper())) {
+                var identity = new RpcProcessIdentity("controlled-offline-proxy", "test", "127.0.0.1",
+                        ProcessHandle.current().pid(), "controlled");
+                var proxy = new RpcConsumerProxyFactory(executor, identity, List.of()).create(contract.contract, definition, noTransport);
+                assertThat(contract.contract.contractType().isInstance(proxy)).isTrue();
+            }
         }
     }
 
     record RpcProbeTargetVO(@NotBlank @Pattern(regexp = "native-web|native-service") String consumerRole,
                             @NotBlank @Pattern(regexp = "native-web|native-service") String providerRole,
                             @NotBlank String facadeSuffix, @NotBlank String operation, @NotBlank String idField,
-                            @NotBlank String notFoundCode, @NotBlank String targetPrefix, @Min(29311) @Max(29312) int port) { }
+                            @NotBlank String notFoundCode) { }
 
     @Test
     @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
-    void actualGeneratedPeerContractsUseHmacDiscoveryAndServiceCredentials() throws Exception {
+    void actualGeneratedPeerContractsUseStableServicesAndOAuthCredentials() throws Exception {
         probeGeneratedPeerContracts(false);
     }
 
@@ -793,44 +857,30 @@ class XingyuanNativeAuthenticationIT {
         var registry = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(root.resolve("secrets/runtime-registry.json"), root.resolve("secrets"), 2 * 1024 * 1024));
         var proofs = mapper.createArrayNode();
         for (var target : List.of(
-                new RpcProbeTargetVO("native-web", "native-service", "/facade/course/CourseFacade.class", "GetCourse", "course_id", "COURSE_NOT_FOUND", "organization.integrations.evaluation", 29312),
-                new RpcProbeTargetVO("native-service", "native-web", "/facade/user/UserFacade.class", "GetUser", "user_id", "ORG_NOT_FOUND", "app.integrations.organization", 29311))) {
+                new RpcProbeTargetVO("native-web", "native-service", "/facade/course/CourseFacade.class", "GetCourse", "course_id", "COURSE_NOT_FOUND"),
+                new RpcProbeTargetVO("native-service", "native-web", "/facade/user/UserFacade.class", "GetUser", "user_id", "ORG_NOT_FOUND"))) {
             if (createWebUsers && !target.providerRole().equals("native-web")) { continue; }
             String namespace = client.nativeApplicationCode(target.providerRole());
             var properties = XingyuanResourceAuthorizationIT.verifiedProfile(root, manifest, digest, target.consumerRole());
             var flat = new LinkedHashMap<String, Object>(); properties.forEach((key, value) -> flat.put(key.toString(), value)); properties.clear();
             var binder = new Binder(new MapConfigurationPropertySource(flat));
             var core = binder.bind("egon.cola.component.rpc", Bindable.of(EgonRpcProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
-            var ddc = binder.bind("egon.cola.component.tianshu", Bindable.of(DdcProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
-            var storage = binder.bind("egon.cola.component.tianshu", Bindable.of(DdcTenantProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
-            var transport = binder.bind("egon.cola.component.tianshu.rpc", Bindable.of(DdcRpcProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
-            if (!transport.getAuth().isEnabled() || !transport.getTls().isEnabled() || !"127.0.0.1:29080".equals(transport.requireTarget())) {
-                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-            }
-            requireTaskRpcTls(root, manifest, transport.transportSecurity());
             var environment = new org.springframework.core.env.StandardEnvironment();
             environment.getPropertySources().remove(org.springframework.core.env.StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
             environment.getPropertySources().remove(org.springframework.core.env.StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
             environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("reviewed-native-profile", flat));
             core.getIdentity().setInstanceId("xingyuan-it-probe-" + java.util.UUID.randomUUID());
             var identity = new RpcProcessIdentityFactory(environment, core).create();
-            var tls = new RpcTransportSecurity(core.getTls().isEnabled(), core.getTls().isDevelopmentPlaintext(), core.getTls().getCertificateChainPath(),
-                    core.getTls().getPrivateKeyPath(), core.getTls().getTrustCertificateCollectionPath());
-            requireTaskRpcTls(root, manifest, tls);
             var resources = java.util.stream.StreamSupport.stream(registry.path("resources").spliterator(), false)
                     .filter(value -> namespace.equals(value.path("rbacApplicationCode").asText()) && "ACTIVE".equals(value.path("status").asText())).toList();
             if (resources.size() != 1) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
-            var providerProfile = XingyuanResourceAuthorizationIT.verifiedProfile(root, manifest, digest, target.providerRole());
-            String registrationUri = providerProfile.getProperty("egon.cola.component.tianshu.registration-resource-uri",
-                    resources.getFirst().path("resourceUri").asText());
-            providerProfile.clear();
-            var registrationResources = java.util.stream.StreamSupport.stream(registry.path("resources").spliterator(), false)
-                    .filter(value -> registrationUri.equals(value.path("resourceUri").asText()) && "ACTIVE".equals(value.path("status").asText())).toList();
-            if (registrationResources.size() != 1) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
             try (var validators = Validation.buildDefaultValidatorFactory();
-                 var source = serviceContext(root, manifest, digest, registry, target.consumerRole());
+                 var source = serviceContext(root, manifest, digest, registry, target.consumerRole(), reviewedServiceIssuers(manifest, digest, registry));
                  var contract = generatedContract(root, manifest, target.providerRole(), namespace, target.facadeSuffix(), validators.getValidator());
-                 var directory = new DdcRpcClientFactory(transport, ddc, storage, identity).registryClient()) {
+                 var executor = new RpcInvocationExecutor(new RpcStatusExceptionMapper());
+                 var channels = new RpcConsumerChannelPool(new RpcConsumerChannelFactory(
+                         core.getConsumer().getMaxInboundMessageSize(), core.getConsumer().getConnectTimeoutMs()),
+                         core.getConsumer().getChannelDrainTimeoutMs())) {
                 new top.egon.cola.component.common.core.validation.ValidationUtils(validators.getValidator()).validate(target);
                 var methods = contract.contract.methods().stream().filter(value -> target.operation().equals(value.methodName())).toList();
                 if (methods.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
@@ -848,54 +898,55 @@ class XingyuanNativeAuthenticationIT {
                         || !binding.getResourceUri().toASCIIString().equals(resources.getFirst().path("resourceUri").asText())) {
                     throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
                 }
-                String biz = environment.getProperty(target.targetPrefix() + ".biz-code");
-                String app = environment.getProperty(target.targetPrefix() + ".app-code");
-                var key = new DdcServiceKey(biz, identity.env(), app, DdcServiceKind.RPC_PROVIDER, contract.contract.serviceName(), binding.getGroup(), binding.getVersion(), "grpc");
-                var snapshot = directory.client().getInstances(key);
-                var endpoint = requirePeerLease(snapshot, key, target.port(), registrationResources.getFirst().path("resourceServerId").asText(), Instant.now());
-                var settings = RpcDirectClientSettings.defaults(endpoint.host() + ":" + endpoint.port(), identity, tls,
-                        Math.min(Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()).toMillis(), core.getConsumer().getDefaultTimeoutMs()));
+                var approved = manifest.path("nativeRpcServices").path(target.providerRole());
+                long budgetMs = Math.min(Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()).toMillis(),
+                        core.getConsumer().getDefaultTimeoutMs());
+                var definition = approvedPeerReference(core, approved, RpcServiceIdentity.from(contract.contract),
+                        nativeMethods(contract.contract), budgetMs);
                 var interceptor = IdpRpcClientCredentialInterceptorFactory.createConfigured(source.client, source.properties, validators.getValidator());
-                JsonNode firstWebUser = null;
-                for (String realm : List.of("default", "tenant-b")) {
-                    String tenant = registry.path("tenantIds").path(realm).asText();
-                    JsonNode created = null;
-                    long requestedId = Long.MAX_VALUE;
-                    if (createWebUsers) {
-                        var reference = client.formal(realm, client.resourceForProcess("native-web"), "admin");
-                        client.verifiedClaims(reference);
-                        try (var transportHttp = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()))
-                                .followRedirects(HttpClient.Redirect.NEVER).build()) {
-                            var http = new XingyuanResourceAuthorizationIT.NativeResourceHttpProbe("native-web", root, manifestFile, digest,
-                                    transportHttp, Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()));
-                            String marker = "xingyuan-it-" + manifest.path("runId").asText() + "-" + realm + "-" + java.util.UUID.randomUUID();
-                            var body = mapper.createObjectNode().put("name", marker).put("email", marker + "@xingyuan.invalid");
-                            created = http.request("POST", "/api/v1/users", reference, body, null, 201);
-                            if (!body.path("name").asText().equals(created.path("name").asText()) || !body.path("email").asText().equals(created.path("email").asText())) {
-                                throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+                try (var strategy = new KubernetesServiceRpcReferenceStrategy(definition, channels)) {
+                    var connection = new RpcProbeConnection(definition, strategy, executor, identity);
+                    Object authenticatedClient = connection.client(contract.contract, List.of(interceptor));
+                    Object anonymousClient = connection.client(contract.contract, List.of());
+                    JsonNode firstWebUser = null;
+                    for (String realm : List.of("default", "tenant-b")) {
+                        String tenant = registry.path("tenantIds").path(realm).asText();
+                        JsonNode created = null;
+                        long requestedId = Long.MAX_VALUE;
+                        if (createWebUsers) {
+                            var reference = client.formal(realm, client.resourceForProcess("native-web"), "admin");
+                            client.verifiedClaims(reference);
+                            try (var transportHttp = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()))
+                                    .followRedirects(HttpClient.Redirect.NEVER).build()) {
+                                var http = new XingyuanResourceAuthorizationIT.NativeResourceHttpProbe("native-web", root, manifestFile, digest,
+                                        transportHttp, Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()));
+                                String marker = "xingyuan-it-" + manifest.path("runId").asText() + "-" + realm + "-" + java.util.UUID.randomUUID();
+                                var body = mapper.createObjectNode().put("name", marker).put("email", marker + "@xingyuan.invalid");
+                                created = http.request("POST", "/api/v1/users", reference, body, null, 201);
+                                if (!body.path("name").asText().equals(created.path("name").asText()) || !body.path("email").asText().equals(created.path("email").asText())) {
+                                    throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+                                }
+                                requestedId = XingyuanResourceAuthorizationIT.responseId(created);
+                                assertThat(http.request("GET", "/api/v1/users/" + requestedId, reference, null, null, 200)).isEqualTo(created);
                             }
-                            requestedId = XingyuanResourceAuthorizationIT.responseId(created);
-                            assertThat(http.request("GET", "/api/v1/users/" + requestedId, reference, null, null, 200)).isEqualTo(created);
                         }
-                    }
-                    var message = rpcIdRequest(method, target.idField(), requestedId);
-                    String registration = binding.getTenantRegistrationIds().get(tenant);
-                    var request = new IdpServiceTokenRequest(registration, binding.getAppId(), binding.getResourceUri(), ServiceTokenContext.TENANT, tenant, binding.getScopes());
-                    var token = source.client.authorize(request);
-                    var tokenFacts = java.util.stream.StreamSupport.stream(registry.path("clients").spliterator(), false)
+                        var message = rpcIdRequest(method, target.idField(), requestedId);
+                        String registration = binding.getTenantRegistrationIds().get(tenant);
+                        var request = new IdpServiceTokenRequest(registration, binding.getAppId(), binding.getResourceUri(), ServiceTokenContext.TENANT, tenant, binding.getScopes());
+                        var token = source.client.authorize(request);
+                        var tokenFacts = java.util.stream.StreamSupport.stream(registry.path("clients").spliterator(), false)
                             .filter(value -> registration.equals(value.path("registrationId").asText())).toList();
-                    if (tokenFacts.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                    verifyServiceClaims(source, ServiceProbeBO.builder().context(source).request(request).fact(tokenFacts.getFirst())
+                        if (tokenFacts.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
+                        verifyServiceClaims(source, ServiceProbeBO.builder().context(source).request(request).fact(tokenFacts.getFirst())
                             .key(keyReference(request, source.registrations.get(registration), source.properties)).build(), token);
-                    var verified = source.verifier.authenticate(token.getTokenValue());
-                    if (!tenant.equals(verified.getTenantId()) || !"SERVICE".equals(verified.getPrincipalType().name())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                    var principal = org.mapstruct.factory.Mappers.getMapper(VerifiedPrincipalConverter.class).toServicePrincipal(verified.getJwt(), binding.getResourceUri());
-                    try (var direct = new RpcDirectClientFactory().create(contract.contract.contractType(), settings, List.of(interceptor))) {
+                        var verified = source.verifier.authenticate(token.getTokenValue());
+                        if (!tenant.equals(verified.getTenantId()) || !"SERVICE".equals(verified.getPrincipalType().name())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
+                        var principal = org.mapstruct.factory.Mappers.getMapper(VerifiedPrincipalConverter.class).toServicePrincipal(verified.getJwt(), binding.getResourceUri());
                         String businessMethod = target.providerRole().equals("native-web") ? "getUser" : "get";
                         var beforeBusiness = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
                         var priorPrincipal = IdpRpcSecurityContext.currentPrincipalOrNull();
                         var observed = observeRpcCall(() -> IdpRpcSecurityContext.with(principal, token.getTokenValue(), null, null)
-                                .call(() -> (Message) method.javaMethod().invoke(direct.client(), message)), io.grpc.Status.Code.OK);
+                                .call(() -> (Message) method.javaMethod().invoke(authenticatedClient, message)), io.grpc.Status.Code.OK);
                         var response = observed.response();
                         assertThat(IdpRpcSecurityContext.currentPrincipalOrNull() == priorPrincipal).isTrue();
                         var successfulBusiness = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
@@ -906,29 +957,27 @@ class XingyuanNativeAuthenticationIT {
                             else {
                                 var foreign = rpcIdRequest(method, target.idField(), XingyuanResourceAuthorizationIT.responseId(firstWebUser));
                                 var rejected = IdpRpcSecurityContext.with(principal, token.getTokenValue(), null, null)
-                                        .call(() -> invokeGeneratedRpc(method, direct.client(), foreign));
+                                        .call(() -> invokeGeneratedRpc(method, authenticatedClient, foreign));
                                 requireNotFoundResponse(rejected, "ORG_NOT_FOUND");
                             }
                         } else { requireNotFoundResponse(response, target.notFoundCode()); }
                         var beforeAnonymous = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
-                        RpcAuditObservationVO anonymousObservation;
-                        try (var anonymous = new RpcDirectClientFactory().create(contract.contract.contractType(), settings, List.of())) {
-                            anonymousObservation = observeRpcCall(() -> (Message) method.javaMethod().invoke(anonymous.client(), message), io.grpc.Status.Code.UNAUTHENTICATED).observation();
-                        }
+                        var anonymousObservation = observeRpcCall(() -> (Message) method.javaMethod().invoke(anonymousClient, message),
+                                io.grpc.Status.Code.UNAUTHENTICATED).observation();
                         var afterAnonymous = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
                         requireOnlyBusinessMethodDelta(beforeAnonymous, afterAnonymous, businessMethod, 0);
                         var outcome = mapper.createObjectNode().put("consumerRole", target.consumerRole()).put("providerRole", target.providerRole()).put("tenantId", tenant)
                                 .put("methodReference", UnifiedIdentityLiveClient.sha256(method.fullMethodName().getBytes(StandardCharsets.UTF_8)))
                                 .put("descriptorReference", UnifiedIdentityLiveClient.sha256(method.protoMethod().getFile().toProto().toByteArray()))
-                                .put("leaseReference", UnifiedIdentityLiveClient.sha256(endpoint.leaseId().getBytes(StandardCharsets.UTF_8)))
-                                .put("leaseRevision", snapshot.revision()).put("leaseExpiresAt", endpoint.leaseExpireAt().toString())
+                                .put("bindingReference", UnifiedIdentityLiveClient.nativeRpcBindingReference(approved))
+                                .put("bindingVersion", definition.target().version())
                                 .put("businessStatus", createWebUsers ? "USER_DATA_MATCHED" : target.notFoundCode()).put("missingTokenStatus", "UNAUTHENTICATED")
                                 .put("responseReference", UnifiedIdentityLiveClient.sha256(response.toByteArray()));
                         outcome.set("beforeBusiness", beforeBusiness); outcome.set("successfulBusiness", successfulBusiness);
                         outcome.set("beforeMissingToken", beforeAnonymous); outcome.set("afterMissingToken", afterAnonymous);
                         outcome.set("successfulRequest", mapper.valueToTree(observed.observation())); outcome.set("missingTokenRequest", mapper.valueToTree(anonymousObservation));
                         if (!createWebUsers) {
-                            outcome.set("serviceSecurity", actualServiceRpcDenials(root, evidence, manifestFile, manifest, digest, registry, target, contract.contract, settings, method, message, token, verified));
+                            outcome.set("serviceSecurity", actualServiceRpcDenials(root, evidence, manifestFile, manifest, digest, registry, target, contract.contract, connection, method, message, token, verified));
                         }
                         if (created != null) { outcome.put("httpReference", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(created))); }
                         proofs.add(outcome);
@@ -936,7 +985,7 @@ class XingyuanNativeAuthenticationIT {
                 }
             } finally { flat.clear(); }
         }
-        var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
+        var proof = mapper.createObjectNode().put("schemaVersion", 2).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
                 .put("status", "PASSED").put("scope", createWebUsers ? "STANDALONE_SERVICE_TO_WEB_DATA" : "STANDALONE_NOT_FOUND_PROTOCOL").put("recordedAt", Instant.now().toString());
         proof.set("proofs", proofs);
         if (createWebUsers) { proof.put("crossTenantIsolationConfirmed", true); }
@@ -983,7 +1032,7 @@ class XingyuanNativeAuthenticationIT {
         assertThatCode(() -> requireStandaloneRpcIdSeparation(Map.of("edge", profile))).doesNotThrowAnyException();
     }
 
-    private static top.egon.cola.component.rpc.consumer.interceptor.RpcClientInterceptorFactory actualBearerFactory(String bearer) {
+    private static RpcClientInterceptorFactory actualBearerFactory(String bearer) {
         if (bearer == null || bearer.isBlank() || bearer.length() > 8192 || bearer.chars().anyMatch(Character::isISOControl)) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         return invocation -> {
             var headers = new io.grpc.Metadata(); headers.put(io.grpc.Metadata.Key.of("authorization", io.grpc.Metadata.ASCII_STRING_MARSHALLER), "Bearer " + bearer);
@@ -992,7 +1041,7 @@ class XingyuanNativeAuthenticationIT {
     }
 
     private static JsonNode actualServiceRpcDenials(Path root, Path evidence, Path manifestFile, JsonNode manifest, String digest, JsonNode registry,
-            RpcProbeTargetVO target, RpcContractDescriptor contract, RpcDirectClientSettings settings, RpcMethodDescriptor read, Message message,
+            RpcProbeTargetVO target, RpcContractDescriptor contract, RpcProbeConnection connection, RpcMethodDescriptor read, Message message,
             OAuth2AccessToken token, top.egon.cola.platform.tianquan.shoubing.starter.security.domain.VerifiedJwtBO verified) throws Exception {
         var mapper = UnifiedIdentityLiveClient.strictJson(); String realm = registry.path("tenantIds").path("default").asText().equals(verified.getTenantId()) ? "default" : "tenant-b";
         String writeName = target.providerRole().equals("native-service") ? "CreateCourse" : "CreateUser";
@@ -1001,10 +1050,9 @@ class XingyuanNativeAuthenticationIT {
         RpcMethodDescriptor write = writes.getFirst(); var empty = (Message) write.requestType().getMethod("getDefaultInstance").invoke(null);
         var source = actualBearerFactory(token.getTokenValue());
         var beforeScope = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
-        RpcAuditObservationVO scopeObservation;
-        try (var direct = new RpcDirectClientFactory().create(contract.contractType(), settings, List.of(source))) {
-            scopeObservation = observeRpcCall(() -> (Message) write.javaMethod().invoke(direct.client(), empty), io.grpc.Status.Code.PERMISSION_DENIED).observation();
-        }
+        Object client = connection.client(contract, List.of(source));
+        RpcAuditObservationVO scopeObservation = observeRpcCall(() -> (Message) write.javaMethod().invoke(client, empty),
+                io.grpc.Status.Code.PERMISSION_DENIED).observation();
         var afterScope = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
         String method = target.providerRole().equals("native-web") ? "getUser" : "get"; requireOnlyBusinessMethodDelta(beforeScope, afterScope, method, 0);
         var request = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest).put("status", "READY")
@@ -1035,10 +1083,8 @@ class XingyuanNativeAuthenticationIT {
             throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
         }
         var beforeRevoked = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
-        RpcAuditObservationVO revokedObservation;
-        try (var direct = new RpcDirectClientFactory().create(contract.contractType(), settings, List.of(source))) {
-            revokedObservation = observeRpcCall(() -> (Message) read.javaMethod().invoke(direct.client(), message), io.grpc.Status.Code.UNAUTHENTICATED).observation();
-        }
+        RpcAuditObservationVO revokedObservation = observeRpcCall(() -> (Message) read.javaMethod().invoke(client, message),
+                io.grpc.Status.Code.UNAUTHENTICATED).observation();
         var afterRevoked = invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, target.providerRole(), realm, "BUSINESS_COUNTS", null);
         requireOnlyBusinessMethodDelta(beforeRevoked, afterRevoked, method, 0);
         if (!verified.getJwt().getExpiresAt().isAfter(Instant.now())) { throw new IllegalStateException("XINGYUAN_INPUT_EXPIRED"); }
@@ -1129,29 +1175,52 @@ class XingyuanNativeAuthenticationIT {
         }
     }
 
-    static DdcServiceInstance requirePeerLease(DdcServiceSnapshot snapshot, DdcServiceKey expected, int port, String resourceId, Instant now) {
-        if (snapshot == null || !expected.equals(snapshot.serviceKey()) || snapshot.instances().size() != 1 || snapshot.revision() < 1) {
+    static RpcReferenceDefinition approvedPeerReference(EgonRpcProperties properties, JsonNode approval,
+            RpcServiceIdentity identity, Map<java.lang.reflect.Method, String> methods, long deadlineMs) {
+        if (!RpcTransportSecurity.H2C.equals(properties.getTransport())) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        var instance = snapshot.instances().getFirst();
-        if (!expected.equals(instance.serviceKey()) || !"127.0.0.1".equals(instance.host()) || instance.port() != port || !instance.secure()
-                || !DdcInstanceStatus.fromWire(instance.status()).isAvailable(now, instance.leaseExpireAt())
-                || !resourceId.equals(instance.resourceServerId()) || instance.resourceVersion() == null || instance.resourceVersion() < 0
-                || instance.credentialId() == null || instance.credentialId().isBlank()) {
+        UnifiedIdentityLiveClient.nativeRpcBindingReference(approval);
+        var resolver = new RpcReferenceDefinitionResolver(properties);
+        RpcServiceTargetVO target;
+        try {
+            target = resolver.resolve(approval.path("bindingId").textValue(), identity, Set.copyOf(methods.values())).target();
+        } catch (EgonRpcException unsafe) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE", unsafe);
+        }
+        if (!target.namespace().equals(approval.path("namespace").textValue())
+                || !target.service().equals(approval.path("service").textValue())
+                || target.port() != approval.path("port").intValue()
+                || target.version() != approval.path("bindingVersion").longValue()) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        return instance;
+        return peerReference(identity, methods.keySet(), target, deadlineMs);
     }
 
-    static void requireTaskRpcTls(Path root, JsonNode manifest, RpcTransportSecurity tls) throws Exception {
-        var secrets = manifest.path("secretFiles");
-        if (!tls.enabled() || tls.developmentPlaintext() || !secrets.path("tls-server-cert").asText().equals(tls.certificateChainPath())
-                || !secrets.path("tls-server-key").asText().equals(tls.privateKeyPath())
-                || !secrets.path("tls-ca-cert").asText().equals(tls.trustCertificateCollectionPath())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+    private static RpcReferenceDefinition peerReference(RpcContractDescriptor contract, RpcServiceTargetVO target, long timeoutMs) {
+        return peerReference(RpcServiceIdentity.from(contract), nativeMethods(contract).keySet(), target, timeoutMs);
+    }
+
+    private static RpcReferenceDefinition peerReference(RpcServiceIdentity identity, Set<java.lang.reflect.Method> methods,
+            RpcServiceTargetVO target, long timeoutMs) {
+        var policy = new RpcReferencePolicy(timeoutMs);
+        var policies = new LinkedHashMap<java.lang.reflect.Method, RpcReferencePolicy>();
+        methods.forEach(method -> policies.put(method, policy));
+        return new RpcReferenceDefinition(target, identity, policies);
+    }
+
+    private static Map<java.lang.reflect.Method, String> nativeMethods(RpcContractDescriptor contract) {
+        var methods = new LinkedHashMap<java.lang.reflect.Method, String>();
+        for (var method : contract.methods()) {
+            methods.put(method.javaMethod(), method.fullMethodName());
         }
-        for (String file : List.of(tls.certificateChainPath(), tls.privateKeyPath(), tls.trustCertificateCollectionPath())) {
-            UnifiedIdentityLiveClient.protectedBytes(Path.of(file), root.resolve("secrets"), 64 * 1024);
+        return Map.copyOf(methods);
+    }
+
+    private record RpcProbeConnection(RpcReferenceDefinition definition, RpcReferenceStrategy strategy,
+            RpcInvocationExecutor executor, RpcProcessIdentity identity) {
+        Object client(RpcContractDescriptor contract, List<RpcClientInterceptorFactory> interceptors) {
+            return new RpcConsumerProxyFactory(executor, identity, interceptors).create(contract, definition, strategy);
         }
     }
 
@@ -1297,7 +1366,8 @@ class XingyuanNativeAuthenticationIT {
         @Override public void close() throws java.io.IOException { loader.close(); }
     }
 
-    static void requireServiceRegistration(ClientRegistration registration, JsonNode fact, IdpStarterProperties properties) {
+    static void requireServiceRegistration(ClientRegistration registration, JsonNode fact, IdpStarterProperties properties,
+            Set<String> approvedIssuers) {
         if (registration == null || fact == null || properties == null) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         if (!AuthorizationGrantType.CLIENT_CREDENTIALS.equals(registration.getAuthorizationGrantType())
                 || !ClientAuthenticationMethod.CLIENT_SECRET_BASIC.equals(registration.getClientAuthenticationMethod())
@@ -1309,7 +1379,7 @@ class XingyuanNativeAuthenticationIT {
                 || !java.util.Objects.equals(properties.getServiceClient().getAppId(), fact.path("appId").asText())
                 || !fact.path("issuer").asText().equals(registration.getProviderDetails().getIssuerUri())
                 || !(fact.path("issuer").asText() + "/oauth2/token").equals(registration.getProviderDetails().getTokenUri())
-                || !fact.path("issuer").asText().matches("https://127\\.0\\.0\\.1:28443/(platform|tenants/[1-9][0-9]{0,18})")
+                || !approvedIssuers.contains(fact.path("issuer").asText())
                 || !fact.path("refreshTokenTtlSeconds").isIntegralNumber() || !fact.path("refreshTokenTtlSeconds").canConvertToInt()
                 || fact.path("refreshTokenTtlSeconds").intValue() != 0
                 || !fact.path("accessTokenTtlSeconds").isIntegralNumber() || !fact.path("accessTokenTtlSeconds").canConvertToInt()
@@ -1365,6 +1435,7 @@ class XingyuanNativeAuthenticationIT {
         XingyuanResourceAuthorizationIT.requireEvidenceDirectory(root, evidence);
         if (Files.exists(evidence.resolve("native-service-cache.json"))) { throw new IllegalStateException("XINGYUAN_STATE_CONFLICT"); }
         var registry = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(root.resolve("secrets/runtime-registry.json"), root.resolve("secrets"), 2 * 1024 * 1024));
+        Set<String> issuers = reviewedServiceIssuers(manifest, digest, registry);
         JsonNode recipe = reviewedIdentityRecipe(root, manifest);
         var contexts = new ArrayList<NativeServiceContext>();
         var probes = new ArrayList<ServiceProbeBO>();
@@ -1373,9 +1444,9 @@ class XingyuanNativeAuthenticationIT {
         try {
             var owners = new LinkedHashMap<String, String>();
             for (String role : activeNativeRuntimeRoles(root, manifest, digest)) {
-                var context = serviceContext(root, manifest, digest, registry, role);
+                var context = serviceContext(root, manifest, digest, registry, role, issuers);
                 contexts.add(context);
-                probes.addAll(serviceProbes(context, registry, recipe, owners));
+                probes.addAll(serviceProbes(context, registry, recipe, owners, issuers));
             }
             if (probes.isEmpty() || probes.size() > 192) { throw new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE"); }
             var warmed = new ArrayList<Future<OAuth2AccessToken>>();
@@ -1505,14 +1576,14 @@ class XingyuanNativeAuthenticationIT {
         return recipe;
     }
 
-    static List<ServiceProbeBO> serviceProbes(NativeServiceContext context, JsonNode registry, JsonNode recipe, Map<String, String> owners) {
+    static List<ServiceProbeBO> serviceProbes(NativeServiceContext context, JsonNode registry, JsonNode recipe, Map<String, String> owners, Set<String> issuers) {
         var probes = new ArrayList<ServiceProbeBO>(); var keys = new HashSet<String>();
         for (var registration : context.registrations.values()) {
             if (!AuthorizationGrantType.CLIENT_CREDENTIALS.equals(registration.getAuthorizationGrantType())) { continue; }
             var facts = java.util.stream.StreamSupport.stream(registry.path("clients").spliterator(), false)
                     .filter(value -> registration.getRegistrationId().equals(value.path("registrationId").asText())).toList();
             if (facts.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            var fact = facts.getFirst(); requireServiceRegistration(registration, fact, context.properties);
+            var fact = facts.getFirst(); requireServiceRegistration(registration, fact, context.properties, issuers);
             if (!fact.path("issuer").asText().equals(registry.path("realms").path(fact.path("realmCode").asText()).path("issuer").asText())) {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
@@ -1556,15 +1627,39 @@ class XingyuanNativeAuthenticationIT {
         return UnifiedIdentityLiveClient.sha256(key.principalName().getBytes(StandardCharsets.UTF_8));
     }
 
-    static NativeServiceContext serviceContext(Path root, JsonNode manifest, String digest, JsonNode registry, String role) throws Exception {
+    static Set<String> reviewedServiceIssuers(JsonNode manifest, String digest, JsonNode registry) {
+        String origin = UnifiedIdentityLiveClient.ciliumOrigin(manifest, "shoubing").toASCIIString();
+        if (!digest.equals(registry.path("manifestSha256").asText()) || !origin.equals(registry.path("publicOrigin").asText())
+                || !manifest.path("runId").asText().equals(registry.path("runId").asText())) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        }
+        Set<String> issuers = new HashSet<>();
+        for (String realm : List.of("platform", "default", "tenant-b")) {
+            String suffix = realm.equals("platform") ? "/platform" : "/tenants/" + registry.path("tenantIds").path(realm).asText();
+            String issuer = origin + suffix;
+            if (!suffix.matches("/platform|/tenants/[1-9][0-9]{0,18}") || !issuers.add(issuer)
+                    || !issuer.equals(registry.path("realms").path(realm).path("issuer").asText())) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
+        }
+        return Set.copyOf(issuers);
+    }
+
+    static NativeServiceContext serviceContext(Path root, JsonNode manifest, String digest, JsonNode registry, String role, Set<String> issuers) throws Exception {
         var profile = XingyuanResourceAuthorizationIT.verifiedProfile(root, manifest, digest, role);
         var flat = new LinkedHashMap<String, Object>(); profile.forEach((key, value) -> flat.put(key.toString(), value)); profile.clear();
         var binder = new Binder(new MapConfigurationPropertySource(flat));
         var properties = binder.bind("egon.cola.platform.tianquan.shoubing", Bindable.of(IdpStarterProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
         var oauth = binder.bind("spring.security.oauth2.client", Bindable.of(OAuth2ClientProperties.class)).orElseThrow(() -> new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"));
         for (var provider : oauth.getProvider().values()) {
-            if (provider.getIssuerUri() == null || !provider.getIssuerUri().matches("https://127\\.0\\.0\\.1:28443/(platform|tenants/[1-9][0-9]{0,18})")
+            if (provider.getIssuerUri() == null || !issuers.contains(provider.getIssuerUri())
                     || !(provider.getIssuerUri() + "/oauth2/token").equals(provider.getTokenUri())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
+        }
+        for (var trust : properties.getTrustedIssuers().values()) {
+            if (trust.getIssuer() == null || !issuers.contains(trust.getIssuer())
+                    || !(trust.getIssuer() + "/.well-known/jwks.json").equals(trust.getJwksUri())) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
         }
         var registrations = new OAuth2ClientPropertiesMapper(oauth).asClientRegistrations();
         flat.clear();
@@ -1573,7 +1668,7 @@ class XingyuanNativeAuthenticationIT {
             var facts = java.util.stream.StreamSupport.stream(registry.path("clients").spliterator(), false)
                     .filter(value -> registration.getRegistrationId().equals(value.path("registrationId").asText())).toList();
             if (facts.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            requireServiceRegistration(registration, facts.getFirst(), properties);
+            requireServiceRegistration(registration, facts.getFirst(), properties, issuers);
             byte[] secret = UnifiedIdentityLiveClient.protectedBytes(Path.of(facts.getFirst().path("credentialFile").asText()), root.resolve("secrets"), 4096);
             try {
                 String expected = new String(secret, StandardCharsets.UTF_8);
@@ -1667,7 +1762,7 @@ class XingyuanNativeAuthenticationIT {
 
     @Test
     void configuredServiceRegistrationRejectsUserPurposeAndForeignIdentityBeforeAnyRequest() {
-        String issuer = "https://127.0.0.1:28443/tenants/101";
+        String issuer = "https://login.apps.example.test/tenants/101";
         var registration = ClientRegistration.withRegistrationId("controlled-native-a").clientId("controlled-client")
                 .clientSecret("controlled-secret-not-live").clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS).scope(Set.of("native:user:read"))
@@ -1680,11 +1775,11 @@ class XingyuanNativeAuthenticationIT {
                 .put("purpose", "SERVICE").put("clientType", "CONFIDENTIAL").put("status", "ACTIVE").put("issuer", issuer)
                 .put("refreshTokenTtlSeconds", 0).put("accessTokenTtlSeconds", 300);
         fact.putArray("allowedScopes").add("native:user:read");
-        fact.putArray("resourceUris").add("https://127.0.0.1:28443/resources/native");
-        assertThatCode(() -> requireServiceRegistration(registration, fact, properties)).doesNotThrowAnyException();
+        fact.putArray("resourceUris").add("https://resource.apps.example.test/resources/native");
+        assertThatCode(() -> requireServiceRegistration(registration, fact, properties, Set.of(issuer))).doesNotThrowAnyException();
         for (String field : java.util.List.of("purpose", "clientId", "appId", "issuer")) {
             var foreign = fact.deepCopy().put(field, "foreign");
-            assertThatThrownBy(() -> requireServiceRegistration(registration, foreign, properties)).hasMessage("XINGYUAN_TARGET_UNSAFE");
+            assertThatThrownBy(() -> requireServiceRegistration(registration, foreign, properties, Set.of(issuer))).hasMessage("XINGYUAN_TARGET_UNSAFE");
         }
     }
 

@@ -30,4 +30,13 @@ class GatewayTestInfrastructureTest {
         assertThat(new GatewayTestInfrastructure().type())
                 .isEqualTo("local");
     }
+
+    @Test
+    void localFixtureUsesADedicatedLoopbackAccessGuardRedis() {
+        System.setProperty("yuheng.live.infrastructure", "local");
+
+        try (var infrastructure = new GatewayTestInfrastructure()) {
+            assertThat(infrastructure.accessGuardRedisHost()).isEqualTo("127.0.0.1");
+        }
+    }
 }

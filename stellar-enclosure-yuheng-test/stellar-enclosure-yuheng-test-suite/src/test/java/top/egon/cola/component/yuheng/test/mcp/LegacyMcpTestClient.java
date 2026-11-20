@@ -4,7 +4,7 @@ import java.net.URI;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class LegacyMcpTestClient {
+public final class LegacyMcpTestClient implements AutoCloseable {
 
     private final McpTestHttpClient http = new McpTestHttpClient();
 
@@ -56,5 +56,9 @@ public final class LegacyMcpTestClient {
 
     public String sessionId() {
         return sessionId;
+    }
+    @Override
+    public void close() {
+        http.close();
     }
 }

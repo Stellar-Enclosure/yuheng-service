@@ -14,8 +14,21 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class McpFixtureContractTest {
+
+    @Test
+    void onlyExplicitPublishedMcpPathsAreEligibleForCiliumConformance() {
+        var publicUrl = "https://public.apps.example.test/mcp/commerce";
+        assertEquals(publicUrl, McpTestHttpClient.reviewedCiliumUrl(publicUrl).toASCIIString());
+        for (var invalid : java.util.List.of("http://public.apps.example.test/mcp/commerce",
+                "https://127.0.0.1:28185/mcp/commerce", "https://mcp-access.fixture.svc.cluster.local/mcp/commerce",
+                "https://public.apps.example.test/legacy/mcp/commerce", publicUrl + "?unapproved=true",
+                "https://actor@public.apps.example.test/mcp/commerce")) {
+            assertThrows(IllegalArgumentException.class, () -> McpTestHttpClient.reviewedCiliumUrl(invalid));
+        }
+    }
 
     @Test
     void fixturesExposeHttpRpcJobStableRcAndAppCapabilities() {

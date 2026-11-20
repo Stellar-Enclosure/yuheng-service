@@ -2,16 +2,19 @@ package top.egon.cola.component.yuheng.test.mcp;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import top.egon.cola.component.yuheng.test.tianquan.shoubing.UnifiedIdentityLiveClient;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-final class McpTestHttpClient {
+final class McpTestHttpClient implements AutoCloseable {
 
     private static final TypeReference<Map<String, Object>> MAP =
             new TypeReference<>() {
@@ -19,9 +22,52 @@ final class McpTestHttpClient {
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
+            .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    static final String CILIUM_ENABLED = "yuheng.live.cilium.mcp.enabled";
+    private static final String CILIUM_PREFIX = "yuheng.live.cilium.mcp.";
+
+    static URI ciliumEndpoint(String dialect) {
+        return reviewedCiliumUrl(System.getProperty(CILIUM_PREFIX + dialect + "-url", ""));
+    }
+
+    static URI reviewedCiliumUrl(String value) {
+        var endpoint = URI.create(value);
+        var host = endpoint.getHost();
+        if (!"https".equals(endpoint.getScheme()) || host == null || host.endsWith(".svc.cluster.local")
+                || !host.matches("[a-z][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+")
+                || endpoint.getPort() != -1 && endpoint.getPort() != 443
+                || !endpoint.getRawPath().matches("/mcp/[a-z0-9][a-z0-9._-]{0,127}")
+                || endpoint.getRawUserInfo() != null || endpoint.getRawQuery() != null || endpoint.getRawFragment() != null) {
+            throw new IllegalArgumentException("Expected an approved Cilium HTTPS MCP endpoint");
+        }
+        return endpoint;
+    }
+
+    static String ciliumToken() throws Exception {
+        var file = System.getProperty(CILIUM_PREFIX + "token-file");
+        if (file == null || file.isBlank()) {
+            throw new IllegalArgumentException("Provide the approved MCP OAuth credential file");
+        }
+        var bytes = UnifiedIdentityLiveClient.protectedBytes(Path.of(file), null, 16_384);
+        try {
+            var token = new String(bytes, StandardCharsets.UTF_8).strip();
+            if (!token.matches("[A-Za-z0-9._~+/=-]+")) {
+                throw new IllegalArgumentException("Invalid MCP OAuth credential fixture");
+            }
+            return token;
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
+    @Override
+    public void close() {
+        http.close();
+    }
 
     Response post(
             URI endpoint,

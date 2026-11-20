@@ -45,20 +45,12 @@ public final class GatewayTestInfrastructure implements AutoCloseable {
         return backend.postgresPassword();
     }
 
-    public String ddcRedisHost() {
-        return backend.ddcRedisHost();
+    public String accessGuardRedisHost() {
+        return backend.accessGuardRedisHost();
     }
 
-    public int ddcRedisPort() {
-        return backend.ddcRedisPort();
-    }
-
-    public String rateLimitRedisHost() {
-        return backend.rateLimitRedisHost();
-    }
-
-    public int rateLimitRedisPort() {
-        return backend.rateLimitRedisPort();
+    public int accessGuardRedisPort() {
+        return backend.accessGuardRedisPort();
     }
 
     public String kafkaBootstrapServers() {

@@ -8,11 +8,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import com.fasterxml.jackson.databind.JsonNode;
+import top.egon.cola.component.yuheng.admin.exposure.service.GatewayHttpRouteCompiler;
+import top.egon.cola.component.yuheng.test.live.GatewayAdminTestClient;
 import top.egon.cola.component.yuheng.test.tianquan.shoubing.UnifiedIdentityLiveClient;
 import top.egon.cola.component.yuheng.test.tianquan.shoubing.UnifiedIdentityLiveClient.HttpAuditObservationVO;
 import top.egon.cola.component.yuheng.test.tianquan.shoubing.UnifiedIdentityLiveClient.FormalReferenceDTO;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,7 +29,9 @@ import java.sql.DriverManager;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -174,13 +179,20 @@ class XingyuanResourceAuthorizationIT {
         XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, output, proof);
     }
 
-    record GatewayTaskScopeVO(@NotBlank String groupCode, @NotBlank String env, @NotBlank String namespace) { }
-
     private static JsonNode requireFullPhase(Path root, Path evidence, JsonNode manifest, String digest, String filename, String status) throws Exception {
+        return requireFullPhase(root, evidence, manifest, digest, filename, status, null);
+    }
+
+    private static JsonNode requireFullPhase(Path root, Path evidence, JsonNode manifest, String digest, String filename,
+            String status, String expectedSha256) throws Exception {
         requireEvidenceDirectory(root, evidence); Path relative = Path.of(filename);
         if (relative.isAbsolute() || !relative.normalize().equals(relative) || relative.startsWith("..")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         var mapper = UnifiedIdentityLiveClient.strictJson();
-        var value = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(evidence.resolve(relative), evidence, 128 * 1024));
+        byte[] proofBytes = UnifiedIdentityLiveClient.protectedBytes(evidence.resolve(relative), evidence, 128 * 1024);
+        if (expectedSha256 != null && !expectedSha256.equals(UnifiedIdentityLiveClient.sha256(proofBytes))) {
+            throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+        }
+        var value = mapper.readTree(proofBytes);
         var intent = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(evidence.resolve("intent.json"), evidence, 128 * 1024));
         if (!value.path("schemaVersion").isInt() || value.path("schemaVersion").intValue() != 1 || !manifest.path("runId").asText().equals(value.path("runId").asText())
                 || !digest.equals(value.path("manifestSha256").asText()) || !status.equals(value.path("status").asText())
@@ -201,7 +213,10 @@ class XingyuanResourceAuthorizationIT {
         var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", runId).put("manifestSha256", digest).put("status", "PASSED").put("recordedAt", now.toString());
         XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve("intent.json"), intent);
         Path path = evidence.resolve("controlled.json"); XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, path, proof);
-        assertThatCode(() -> requireFullPhase(root, evidence, manifest, digest, "controlled.json", "PASSED")).doesNotThrowAnyException();
+        String proofSha256 = UnifiedIdentityLiveClient.sha256(Files.readAllBytes(path));
+        assertThatCode(() -> requireFullPhase(root, evidence, manifest, digest, "controlled.json", "PASSED", proofSha256)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> requireFullPhase(root, evidence, manifest, digest, "controlled.json", "PASSED", "0".repeat(64)))
+                .hasMessage("XINGYUAN_VERIFICATION_FAILED");
         for (String fault : List.of("foreignRun", "foreignDigest", "oldAttempt", "future", "skipped", "schemaBoolean")) {
             var wrong = proof.deepCopy();
             if (fault.equals("foreignRun")) { wrong.put("runId", UUID.randomUUID().toString()); }
@@ -218,66 +233,68 @@ class XingyuanResourceAuthorizationIT {
         assertThatThrownBy(() -> requireFullPhase(root, evidence, manifest, digest, "../controlled.json", "PASSED")).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
-    private static List<String> requireBrowserAndOraclePhases(Path root, Path evidence, JsonNode manifest, String digest) throws Exception {
+    private static final String CILIUM_BROWSER_PROOF = "browser-cilium-direct.json";
+    private static final Set<String> CILIUM_BROWSER_CASES = Set.of(
+            "PORTAL_SIGN_IN", "STANDALONE_SIGN_IN", "DIRECT_REST", "SSE_RESUME", "ACCESS_REAUTHORIZE", "WRONG_AUDIENCE",
+            "WRONG_TENANT", "TENANT_SWITCH", "LOCAL_LOGOUT", "GLOBAL_LOGOUT", "BROWSER_CREDENTIAL_BOUNDARY");
+
+    private static List<String> requireCiliumBrowserPhases(Path root, Path evidence, JsonNode manifest, String digest) throws Exception {
+        var proof = requireFullPhase(root, evidence, manifest, digest, CILIUM_BROWSER_PROOF, "PASSED");
         var files = new ArrayList<String>();
-        var execution = requireFullPhase(root, evidence, manifest, digest, "browser-BROWSER_EXECUTION.json", "PASSED");
-        if (!"passed".equals(execution.path("expectedStatus").asText()) || !"passed".equals(execution.path("actualStatus").asText())
-                || transactionProofLong(execution, "retry") != 0 || transactionProofLong(execution, "executedTestCount") != 1
-                || !execution.path("titleReference").asText().matches("[0-9a-f]{64}")) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-        requireFullPhase(root, evidence, manifest, digest, "browser-AB_BROWSER.json", "PASSED");
-        files.add("browser-BROWSER_EXECUTION.json"); files.add("browser-AB_BROWSER.json");
-        var mapper = UnifiedIdentityLiveClient.strictJson(); var registry = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(root.resolve("secrets/runtime-registry.json"), root.resolve("secrets"), 2 * 1024 * 1024));
-        JsonNode first = null;
-        for (String realm : List.of("TENANT_A", "TENANT_B")) {
-            var canonical = requireFullPhase(root, evidence, manifest, digest, "browser-" + realm + "_CANONICAL.json", "PASSED");
-            var value = canonical.path("canonical");
-            if (!value.path("bindingReference").asText().matches("[0-9a-f]{64}") || !canonical.path("proofs").isArray() || canonical.path("proofs").size() != 7
-                    || !transactionProofInstant(value, "absoluteExpiresAt").isAfter(transactionProofInstant(value, "originalCreatedAt"))) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-            String realmCode = realm.equals("TENANT_A") ? "default" : "tenant-b";
-            if (!registry.path("realms").path(realmCode).path("issuer").equals(value.path("issuer")) || !registry.path("tenantIds").path(realmCode).equals(value.path("tenantId"))) {
+        files.add(CILIUM_BROWSER_PROOF);
+        for (var entry : browserEvidenceEntries(proof)) {
+            String name = entry.path("path").textValue();
+            var caseProof = requireFullPhase(root, evidence, manifest, digest, name, "PASSED", entry.path("sha256").textValue());
+            if (!entry.path("caseId").equals(caseProof.path("caseId"))
+                    || !"DIRECT_CILIUM_BROWSER".equals(caseProof.path("scope").textValue())) {
                 throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
             }
-            var phases = new java.util.HashSet<String>();
-            for (var reference : canonical.path("proofs")) {
-                String nonce = reference.path("nonce").asText(), phase = reference.path("phase").asText();
-                if (!nonce.matches("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}") || !phases.add(phase)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                Path file = root.resolve("evidence/runtime-probe/edge/results/" + nonce + ".json"); byte[] bytes = UnifiedIdentityLiveClient.protectedBytes(file, root.resolve("evidence"), 16 * 1024);
-                var original = mapper.readTree(bytes);
-                if (!UnifiedIdentityLiveClient.sha256(bytes).equals(reference.path("ownerProofSha256").asText()) || !manifest.path("runId").equals(original.path("runId"))
-                        || !digest.equals(original.path("manifestSha256").asText()) || !"EDGE_BINDING".equals(original.path("operation").asText()) || !"edge".equals(original.path("role").asText())
-                        || !nonce.equals(original.path("nonce").asText()) || !"COMPLETED".equals(original.path("status").asText()) || !value.equals(original.path("result"))) {
-                    throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
-                }
-            }
-            if (!phases.equals(java.util.Set.of("PORTAL", "edge-shoubing", "edge-jianshen", "edge-yuheng", "edge-tianshu", "REFRESH", "STEP_UP"))) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-            if (first == null) { first = value; }
-            else if (first.path("issuer").equals(value.path("issuer")) || first.path("tenantId").equals(value.path("tenantId")) || first.path("bindingReference").equals(value.path("bindingReference"))) {
-                throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
-            }
-            files.add("browser-" + realm + "_CANONICAL.json");
-            for (String phase : List.of("REFRESH", "STEP_UP", "HOLD", "REPLAY")) {
-                String filename = "oracle-" + realm + '_' + phase + ".json";
-                var proof = requireFullPhase(root, evidence, manifest, digest, filename, phase.equals("HOLD") ? "READY" : "PASSED");
-                int count = phase.equals("REFRESH") ? 4 : phase.equals("STEP_UP") ? 1 : 5;
-                if (!(realm + '_' + phase).equals(proof.path("phase").asText()) || !proof.path("proofs").isArray() || proof.path("proofs").size() != count) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                files.add(filename);
-            }
+            files.add(name);
         }
-        for (String phase : List.of("HOLD", "REPLAY")) {
-            String filename = "oracle-TENANT_A_FAULT_" + phase + ".json";
-            var proof = requireFullPhase(root, evidence, manifest, digest, filename, phase.equals("HOLD") ? "READY" : "PASSED");
-            if (!proof.path("proofs").isArray() || proof.path("proofs").size() != 5) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-            files.add(filename);
-        }
-        requireFullPhase(root, evidence, manifest, digest, "oracle-COMPLETE.json", "PASSED"); files.add("oracle-COMPLETE.json");
-        var pending = requireFullPhase(root, evidence, manifest, digest, "browser-AS_REVOCATION_PENDING.json", "PASSED");
-        var recovered = requireFullPhase(root, evidence, manifest, digest, "browser-AS_REVOCATION_RECOVERED.json", "PASSED");
-        if (transactionProofLong(pending, "responseStatus") != 503 || !"PENDING".equals(pending.path("remoteState").asText()) || !pending.path("localLoggedOut").isBoolean() || !pending.path("localLoggedOut").booleanValue()
-                || transactionProofLong(pending, "durableIntentCount") != 5 || !pending.path("lateCallbackObserved").isBoolean() || !pending.path("lateCallbackObserved").booleanValue() || transactionProofLong(pending, "lateCallbackSessionStatus") != 401
-                || pending.path("proofs").size() != 3 || transactionProofLong(recovered, "queuedCount") != 0 || transactionProofLong(recovered, "pendingCount") != 0
-                || transactionProofLong(recovered, "sessionStatus") != 401 || recovered.path("proofs").size() != 5) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-        files.add("browser-AS_REVOCATION_PENDING.json"); files.add("browser-AS_REVOCATION_RECOVERED.json");
         return List.copyOf(files);
+    }
+
+    static List<JsonNode> browserEvidenceEntries(JsonNode proof) {
+        var cases = proof.path("cases");
+        if (!"DIRECT_CILIUM_BROWSER".equals(proof.path("scope").textValue())
+                || !cases.isArray() || cases.size() != CILIUM_BROWSER_CASES.size()) {
+            throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+        }
+        var result = new ArrayList<JsonNode>();
+        var seen = new HashSet<String>();
+        for (JsonNode entry : cases) {
+            String caseId = entry.path("caseId").asText();
+            String name = "browser-cilium-" + caseId.toLowerCase(java.util.Locale.ROOT).replace('_', '-') + ".json";
+            if (!entry.isObject() || entry.size() != 3 || !CILIUM_BROWSER_CASES.contains(caseId) || !seen.add(caseId)
+                    || !name.equals(entry.path("path").textValue()) || !entry.path("sha256").asText().matches("[0-9a-f]{64}")) {
+                throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+            }
+            result.add(entry);
+        }
+        return List.copyOf(result);
+    }
+
+    @Test
+    void directBrowserReceiptRejectsLegacyAndMissingOrDuplicateCases() {
+        var mapper = UnifiedIdentityLiveClient.strictJson();
+        var proof = mapper.createObjectNode().put("scope", "DIRECT_CILIUM_BROWSER");
+        var cases = proof.putArray("cases");
+        for (String id : CILIUM_BROWSER_CASES.stream().sorted().toList()) {
+            cases.addObject().put("caseId", id).put("path", "browser-cilium-" + id.toLowerCase(java.util.Locale.ROOT).replace('_', '-') + ".json")
+                    .put("sha256", "a".repeat(64));
+        }
+        assertThat(browserEvidenceEntries(proof)).hasSize(11);
+        var older = proof.deepCopy().put("scope", "EDGE_BINDING");
+        assertThatThrownBy(() -> browserEvidenceEntries(older)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        var incomplete = proof.deepCopy();
+        incomplete.withArray("cases").remove(0);
+        assertThatThrownBy(() -> browserEvidenceEntries(incomplete)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        var duplicate = proof.deepCopy();
+        duplicate.withArray("cases").set(0, cases.get(1));
+        assertThatThrownBy(() -> browserEvidenceEntries(duplicate)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        var foreign = proof.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) foreign.path("cases").get(0)).put("path", "../browser-cilium.json");
+        assertThatThrownBy(() -> browserEvidenceEntries(foreign)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
     }
 
     @Test
@@ -293,7 +310,6 @@ class XingyuanResourceAuthorizationIT {
         if (!manifest.path("runId").asText().equals(intent.path("runId").asText()) || !digest.equals(intent.path("manifestSha256").asText())
                 || !"full".equals(intent.path("caseSet").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         nativeUserHttpTargetsCannotChooseAnUnreviewedHostOrMutation(); nativeSqlTargetsRejectForeignReceiptsAndIdentifiersBeforeConnecting();
-        gatewayOwnerCallsStayOnTheOriginalTaskManagementMethodsAndPaths(); mcpOwnerBoundaryOnlyAllowsTheOriginalServerAndResourceMethods();
         Path guards = evidence.resolve("resource-live-guards.json");
         var guard = new ProcessBuilder("python3", "-I", Path.of(manifest.path("repoRoot").asText()).resolve("scripts/unified-xingyuan/lib/isolated_integration.py").toString(),
                 "observe-live-guards", manifestFile.toString(), guards.toString()).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
@@ -310,7 +326,7 @@ class XingyuanResourceAuthorizationIT {
         XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, "LIVE-002", "resource", "verifyResourceAuthorization", transactionFiles, false);
         threeIssuerMetadataUsesDistinctPublicKeysAndRetiresTheRoot();
         XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, "LIVE-003", "resource", "verifyResourceAuthorization", List.of("resource-issuer-discovery.json"), false);
-        var browser = requireBrowserAndOraclePhases(root, evidence, manifest, digest);
+        var browser = requireCiliumBrowserPhases(root, evidence, manifest, digest);
         for (String id : List.of("LIVE-004", "LIVE-005", "LIVE-008", "LIVE-018", "LIVE-019", "LIVE-020")) {
             XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, id, "resource", "verifyResourceAuthorization", browser, false);
         }
@@ -324,7 +340,7 @@ class XingyuanResourceAuthorizationIT {
         if (!"ACTUAL_RESOURCE_GRANT_REMOVAL_AND_RESTORE_ONLY".equals(grant.path("scope").asText()) || grant.path("proofs").size() != 3
                 || transactionProofLong(grant.path("proofs").get(1), "status") != 403 || transactionProofLong(grant.path("proofs").get(2), "status") != 200) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
         platformHostsRejectTamperingAndForeignAudienceBeforeTheirOriginalBusiness();
-        actualBizGatewayRejectsInvalidPublishedScopesAndRecoversThroughTheOriginalOwners();
+        actualCiliumReadRequiresTheOriginalApplicationAuthorization();
         actualMcpResourceReadEnforcesPublishedScopeAndExactFinePermission();
         var platforms = requireFullPhase(root, evidence, manifest, digest, "resource-platform-http-boundaries.json", "PASSED");
         if (platforms.path("observations").size() != 8) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
@@ -348,54 +364,39 @@ class XingyuanResourceAuthorizationIT {
                 List.of("resource-native-userinfo.json", "resource-platform-http-boundaries.json", "native-rpc-contract-probe.json", "resource-mcp-boundaries.json", "protocol-platform-http-audits.json", "protocol-native-userinfo-audits.json", "protocol-native-rpc-audits.json", "protocol-mcp-audits.json", "resource-formal-family-revocation.json"), false);
         actualYuhengSpoolFaultsFailClosedAndRecoverWithoutEnteringBusiness();
         XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, "LIVE-022", "resource", "verifyResourceAuthorization", List.of("resource-spool-readiness.json", "resource-shared-state-metrics.json"), false);
-        var faults = requireFullPhase(root, evidence, manifest, digest, "resource-biz-gateway-policy-rejection.json", "PASSED");
-        if (faults.path("faults").size() != 6) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
+        var cilium = requireFullPhase(root, evidence, manifest, digest, CILIUM_AUTHORIZATION_PROOF, "PASSED");
+        if (cilium.path("identities").size() != 2) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
         XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, "LIVE-024", "resource", "verifyResourceAuthorization",
-                List.of("resource-platform-http-boundaries.json", "resource-biz-gateway-policy-rejection.json", "resource-mcp-boundaries.json", "mcp-publication.json", "mcp-authorization.json", "mcp-authorization-execution.json", "native-resource-grant.json", "resource-llm-protocol-guards.json", "resource-knowledge-management.json"), false);
+                List.of("resource-platform-http-boundaries.json", CILIUM_AUTHORIZATION_PROOF, "resource-mcp-boundaries.json", "mcp-publication.json", "mcp-authorization.json", "mcp-authorization-execution.json", "native-resource-grant.json", "resource-llm-protocol-guards.json", "resource-knowledge-management.json"), false);
         actualOwnedStopRetainsTheOriginalCohortAndBoundedPreservationEvidence();
         XingyuanNativeAuthenticationIT.publishLiveCase(root, evidence, manifest, digest, "LIVE-023", "resource", "verifyResourceAuthorization", List.of("resource-owned-stop-preservation.json"), false);
     }
 
-    static GatewayTaskScopeVO gatewayTaskScope(Properties biz, Properties mcp, String runId) {
-        try { if (!UUID.fromString(runId).toString().equals(runId)) { throw new IllegalArgumentException(); } }
-        catch (IllegalArgumentException invalid) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var source = new java.util.LinkedHashMap<String, Object>(); biz.forEach((key, value) -> source.put(key.toString(), value));
-        var engine = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(source))
-                .bind("egon.cola.component.yuheng.engine", top.egon.cola.component.yuheng.engine.common.config.GatewayEngineRuntimeProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE"));
-        var bizDdc = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(source))
-                .bind("egon.cola.component.tianshu", top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE"));
-        source.clear(); mcp.forEach((key, value) -> source.put(key.toString(), value));
-        var protocol = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(source))
-                .bind("egon.cola.component.yuheng.mcp-engine", top.egon.cola.component.yuheng.mcp.engine.config.McpGatewayEngineProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE"));
-        var mcpDdc = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(source))
-                .bind("egon.cola.component.tianshu", top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE"));
-        source.clear(); String expected = "xingyuan-it-" + runId;
-        if (!expected.equals(engine.getGatewayGroupCode()) || !expected.equals(protocol.yuhengGroupCode())
-                || !"local".equals(engine.getEnv()) || !engine.getEnv().equals(protocol.env()) || !engine.getEnv().equals(bizDdc.getEnv()) || !protocol.env().equals(mcpDdc.getEnv())
-                || !expected.equals(engine.getNamespace()) || !expected.equals(protocol.namespace())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+    @Test
+    void ciliumExposureEvidenceRequiresTheExactUrlAndCurrentObserverConditions() {
+        var mapper = UnifiedIdentityLiveClient.strictJson();
+        URI url = URI.create("https://public.apps.example.test/api/v1/yuheng/admin/scopes");
+        var receipt = mapper.createObjectNode().put("exposureId", "912").put("url", url.toASCIIString()).put("method", "GET")
+                .put("desiredState", "OPEN").put("observedState", "OPEN").put("reconcileStatus", "SYNCED")
+                .put("desiredGeneration", "8").put("observedGeneration", "8");
+        receipt.putObject("kubernetesRoute").put("namespace", "yuheng-routes").put("name", "yuheng-exposure-912")
+                .put("kind", "HTTPRoute").put("uid", "route-uid").put("attached", true)
+                .put("controllerName", "io.cilium/gateway-controller")
+                .put("metadataGeneration", "12").put("conditionObservedGeneration", "12");
+        for (String condition : List.of("Accepted", "ResolvedRefs", "Programmed", "DataplaneConverged")) {
+            receipt.withArray("conditions").addObject().put("type", condition).put("status", "True").put("observedGeneration", "8");
         }
-        return new GatewayTaskScopeVO(expected, engine.getEnv(), expected);
-    }
-
-    static java.util.Map<String, Object> gatewayProtectedReadPolicy(String requiredScope, String operationId) {
-        if (requiredScope == null || !requiredScope.matches("[A-Za-z0-9._-]+(?::[A-Za-z0-9._-]+){1,3}") || requiredScope.length() > 128
-                || operationId == null || !operationId.matches("[A-Za-z0-9_-]{1,128}")) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        assertThatCode(() -> requireCurrentCiliumExposure(receipt, "912", url)).doesNotThrowAnyException();
+        for (var changed : List.of(receipt.deepCopy().put("observedGeneration", "7"), receipt.deepCopy().put("reconcileStatus", "PENDING"),
+                receipt.deepCopy().put("url", "https://foreign.example.test/api/v1/yuheng/admin/scopes"))) {
+            assertThatThrownBy(() -> requireCurrentCiliumExposure(changed, "912", url)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
         }
-        return java.util.Map.ofEntries(
-                java.util.Map.entry("authenticationMode", "REQUIRED"),
-                java.util.Map.entry("credentialExtractorIds", List.of(top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpUserCookieCredentialExtractor.EXTRACTOR_ID)),
-                java.util.Map.entry("authenticationProviderIds", List.of(top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpIdentityAuthenticationProvider.PROVIDER_ID)),
-                java.util.Map.entry("authorizationProviderIds", List.of(top.egon.cola.platform.tianquan.jianshen.yuheng.security.Rbac3BizAppScopeAuthorizationProvider.PROVIDER_ID)),
-                java.util.Map.entry("decisionMode", "ALL_ALLOW"), java.util.Map.entry("failureMode", "FAIL_CLOSED"),
-                java.util.Map.entry("providerTimeoutMs", 1000), java.util.Map.entry("credentialForwardingMode", "ORIGINAL_BEARER"),
-                java.util.Map.entry("routeSecurityType", "BUSINESS_PROTECTED"), java.util.Map.entry("operationIds", List.of(operationId)),
-                java.util.Map.entry("requiredOAuthScopes", List.of(requiredScope)));
+        var parent = receipt.deepCopy();
+        parent.withObject("kubernetesRoute").put("conditionObservedGeneration", "11");
+        assertThatThrownBy(() -> requireCurrentCiliumExposure(parent, "912", url)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        var duplicate = receipt.deepCopy();
+        duplicate.withArray("conditions").add(duplicate.path("conditions").get(0));
+        assertThatThrownBy(() -> requireCurrentCiliumExposure(duplicate, "912", url)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
     }
 
     static String mcpTaskServerCode(String runId) {
@@ -403,208 +404,51 @@ class XingyuanResourceAuthorizationIT {
         return "xingyuan-it-" + runId;
     }
 
-    static java.util.Map<String, Object> mcpTaskReadPolicy(String runId) {
-        String code = mcpTaskServerCode(runId);
-        var policy = new java.util.LinkedHashMap<>(gatewayProtectedReadPolicy("yuheng:read", "123"));
-        policy.put("operationIds", List.of("yuheng.mcp." + code));
-        policy.put("authorizationProviderIds", List.of());
-        policy.put("routeSecurityType", "IDENTITY_PROTECTED");
-        return java.util.Map.copyOf(policy);
-    }
-
-    @Test
-    void taskMcpPolicyBindsThePublishedServerAndKeepsTheCapabilityPdpSeparate() {
-        String runId = UUID.randomUUID().toString(), code = mcpTaskServerCode(runId);
-        var policy = mcpTaskReadPolicy(runId);
-        assertThat(policy.get("operationIds")).isEqualTo(List.of("yuheng.mcp." + code));
-        assertThat(policy.get("requiredOAuthScopes")).isEqualTo(List.of("yuheng:read"));
-        assertThat(policy.get("routeSecurityType")).isEqualTo("IDENTITY_PROTECTED");
-        assertThat(policy.get("authorizationProviderIds")).isEqualTo(List.of());
-        assertThat(policy).doesNotContainKey("identityMapperId");
-        assertThatThrownBy(() -> mcpTaskReadPolicy("other-run")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-    }
-
-    static JsonNode mcpTaskServerRequest(String runId, String groupId, URI resourceUri, long revision) {
-        String code = mcpTaskServerCode(runId);
-        if (groupId == null || !groupId.matches("[A-Za-z0-9_-]{1,128}") || resourceUri == null || !"https".equals(resourceUri.getScheme())
-                || resourceUri.getUserInfo() != null || resourceUri.getFragment() != null || resourceUri.getQuery() != null || revision < 0) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var request = new top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpServerRequestDTO(groupId, code, code,
-                "XINGYUAN_TASK:" + runId, "Read the approved scope catalog only", java.util.Set.of("STABLE_2025_11_25"),
-                resourceUri.toASCIIString(), 0, true, 0, revision, "Task protected MCP scope read");
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            new top.egon.cola.component.common.core.validation.ValidationUtils(validators.getValidator()).validate(request);
-        }
-        return UnifiedIdentityLiveClient.strictJson().valueToTree(request);
-    }
-
-    static java.util.Map<String, Object> mcpTaskResourceContent(String runId, String operationId) {
-        mcpTaskServerCode(runId);
-        if (operationId == null || !operationId.matches("[A-Za-z0-9_-]{1,128}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        return java.util.Map.of("uri", "egon://" + mcpTaskServerCode(runId) + "/scopes", "mimeType", "application/json",
-                "driverType", "LOCAL_OPERATION", "operationId", operationId, "configuration", java.util.Map.of(), "requiredPermissions", List.of(), "maxBytes", 65536);
-    }
-
-    static JsonNode mcpTaskCapabilityRequest(String runId, String groupId, String serverId, String operationId, long revision) {
-        mcpTaskServerCode(runId);
-        if (groupId == null || !groupId.matches("[A-Za-z0-9_-]{1,128}") || serverId == null || !serverId.matches("[A-Za-z0-9_-]{1,128}") || revision < 0) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var request = new top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpCapabilityRequestDTO(groupId, serverId, "scopes",
-                mcpTaskResourceContent(runId, operationId), true, 0, revision, "Task original scope catalog read");
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            new top.egon.cola.component.common.core.validation.ValidationUtils(validators.getValidator()).validate(request);
-        }
-        return UnifiedIdentityLiveClient.strictJson().valueToTree(request);
-    }
-
-    @Test
-    void taskMcpCommandsKeepTheOriginalDtosDriverAndExactServerOperationBinding() throws Exception {
-        String runId = UUID.randomUUID().toString(); var mapper = UnifiedIdentityLiveClient.strictJson();
-        var body = mcpTaskServerRequest(runId, "group-1", URI.create("https://resource.example/yuheng"), 7);
-        var server = mapper.treeToValue(body, top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpServerRequestDTO.class);
-        assertThat(server.serverCode()).isEqualTo(mcpTaskServerCode(runId)); assertThat(server.expectedDraftRevision()).isEqualTo(7);
-        var capability = mapper.treeToValue(mcpTaskCapabilityRequest(runId, "group-1", "server-1", "123", 8), top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpCapabilityRequestDTO.class);
-        assertThat(capability.serverId()).isEqualTo("server-1"); assertThat(capability.expectedDraftRevision()).isEqualTo(8);
-        var value = capability.content();
-        assertThat(new top.egon.cola.component.yuheng.mcp.resource.domain.McpResourceUriValidator().validate(value.get("uri").toString()).getScheme()).isEqualTo("egon");
-        var resource = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeResource("resource-1", server.serverCode(), "scopes",
-                value.get("uri").toString(), null, "application/json", value.get("driverType").toString(), "123", null, java.util.Map.of(), java.util.Set.of(), 65536, true);
-        var runtime = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer("server-1", server.serverCode(), server.displayName(), server.description(), server.instructions(),
-                java.util.Set.of(top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect.STABLE_2025_11_25), server.resourceUri(), 0, true);
-        var content = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent(List.of(runtime), List.of(), List.of(resource), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        var compiled = new top.egon.cola.component.yuheng.mcp.rule.service.McpRuleCompiler().compile(content, java.util.Set.of("123"));
-        assertThat(compiled.resourcesByQualifiedName()).hasSize(1);
-        assertThatThrownBy(() -> mcpTaskCapabilityRequest(runId, "group-1", "server-1", "foreign/path", 8)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> mcpTaskServerRequest(runId, "group-1", URI.create("https://user:secret@resource.example"), 7)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> mcpTaskServerRequest("foreign-run", "group-1", URI.create("https://resource.example"), 7)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-    }
-
-    record GatewayReadOperationVO(String applicationId, String operationId, String definitionId, long definitionVersion,
-                                  String definitionSha256, top.egon.cola.component.yuheng.contract.rule.GatewayProviderServiceRef provider) { }
-
-    static void requireTaskMcpPreview(JsonNode preview, String runId, String serverId, String resourceId, String operationId, URI resourceUri) throws Exception {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); String code = mcpTaskServerCode(runId);
-        var content = preview.path("content");
-        if (!preview.path("validation").path("valid").isBoolean() || !preview.path("validation").path("valid").booleanValue()) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var fields = new java.util.HashSet<String>(); content.fieldNames().forEachRemaining(fields::add);
-        if (!fields.equals(java.util.Set.of("servers", "tools", "resources", "resourceTemplates", "prompts", "taskPolicies", "apps", "remoteProviders", "remoteMounts"))) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        for (String field : fields) {
-            if (!content.path(field).isArray() || content.path(field).size() != (java.util.Set.of("servers", "resources").contains(field) ? 1 : 0)) {
+    private record CiliumMcpFixture(URI endpoint, String serverCode, String publicationId, String catalogSha256,
+            String bindingsSha256, String resourceKey, String foreignResourceKey) {
+        static CiliumMcpFixture from(JsonNode manifest) {
+            String server = mcpTaskServerCode(manifest.path("runId").textValue());
+            var entry = manifest.path("ciliumMcp");
+            var publication = entry.path("publicationId").textValue();
+            var catalog = entry.path("catalogSha256").textValue();
+            var bindings = entry.path("bindingsSha256").textValue();
+            if (!positiveDecimal(publication) || catalog == null || !catalog.matches("[0-9a-f]{64}")
+                    || bindings == null || !bindings.matches("[0-9a-f]{64}")) {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
+            return new CiliumMcpFixture(reviewedHttps(entry.path("endpoint").asText(), "/mcp/" + server), server,
+                    publication, catalog, bindings, XingyuanResourceAuthorizationIT.resourceKey(entry, "resourceKey"),
+                    XingyuanResourceAuthorizationIT.resourceKey(entry, "foreignResourceKey"));
         }
-        var original = mcpTaskServerRequest(runId, "group", resourceUri, 0);
-        var expectedServer = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer(serverId, code, code, original.path("description").asText(),
-                original.path("instructions").asText(), java.util.Set.of(top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect.STABLE_2025_11_25), resourceUri.toASCIIString(), 0, true);
-        var expectedResource = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeResource(resourceId, code, "scopes", "egon://" + code + "/scopes",
-                null, "application/json", "LOCAL_OPERATION", operationId, null, java.util.Map.of(), java.util.Set.of(), 65536, true);
-        if (!mapper.valueToTree(expectedServer).equals(content.path("servers").get(0)) || !mapper.valueToTree(expectedResource).equals(content.path("resources").get(0))) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+
+        void requirePublication(JsonNode proof) {
+            if (!"TIANSHU_SI_AND_YUHENG_MCP_MAPPING".equals(proof.path("scope").textValue())
+                    || !serverCode.equals(proof.path("serverCode").textValue())
+                    || !endpoint.toASCIIString().equals(proof.path("endpoint").textValue())
+                    || !publicationId.equals(proof.path("publicationId").textValue())
+                    || !catalogSha256.equals(proof.path("catalogSha256").textValue())
+                    || !bindingsSha256.equals(proof.path("bindingsSha256").textValue())) {
+                throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
+            }
         }
-        new top.egon.cola.component.yuheng.mcp.resource.domain.McpResourceUriValidator().validate(expectedResource.uri());
-        new top.egon.cola.component.yuheng.mcp.rule.service.McpRuleCompiler().compile(mapper.treeToValue(content,
-                top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent.class), java.util.Set.of(operationId));
     }
 
     @Test
-    void taskMcpPreviewRequiresOneOriginalServerResourceAndNoOtherCapabilities() throws Exception {
-        String runId = UUID.randomUUID().toString(); var mapper = UnifiedIdentityLiveClient.strictJson();
-        var request = mapper.treeToValue(mcpTaskServerRequest(runId, "group", URI.create("https://resource.example/yuheng"), 0),
-                top.egon.cola.component.yuheng.admin.mcp.domain.dto.McpServerRequestDTO.class);
-        var server = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer("server-1", request.serverCode(), request.displayName(), request.description(), request.instructions(),
-                java.util.Set.of(top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect.STABLE_2025_11_25), request.resourceUri(), 0, true);
-        var resource = new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeResource("resource-1", request.serverCode(), "scopes", "egon://" + request.serverCode() + "/scopes", null,
-                "application/json", "LOCAL_OPERATION", "123", null, java.util.Map.of(), java.util.Set.of(), 65536, true);
-        var preview = mapper.createObjectNode(); preview.putObject("validation").put("valid", true);
-        preview.set("content", mapper.valueToTree(new top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent(List.of(server), List.of(), List.of(resource), List.of(), List.of(), List.of(), List.of(), List.of(), List.of())));
-        assertThatCode(() -> requireTaskMcpPreview(preview, runId, "server-1", "resource-1", "123", URI.create(request.resourceUri()))).doesNotThrowAnyException();
-        for (String field : List.of("servers", "resources", "tools", "remoteProviders")) {
-            var changed = preview.deepCopy(); ((com.fasterxml.jackson.databind.node.ArrayNode) changed.path("content").path(field)).add(mapper.createObjectNode());
-            assertThatThrownBy(() -> requireTaskMcpPreview(changed, runId, "server-1", "resource-1", "123", URI.create(request.resourceUri()))).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        }
-        assertThatThrownBy(() -> requireTaskMcpPreview(preview, UUID.randomUUID().toString(), "server-1", "resource-1", "123", URI.create(request.resourceUri()))).hasMessage("XINGYUAN_TARGET_UNSAFE");
-    }
-
-    @Test
-    @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
-    void publishTaskMcpServerAndResourceThroughOriginalOwners() throws Exception {
-        var client = UnifiedIdentityLiveClient.isolated(); var mapper = UnifiedIdentityLiveClient.strictJson();
-        Path manifestFile = Path.of(System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST")));
-        byte[] raw = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024); var manifest = mapper.readTree(raw);
-        String digest = UnifiedIdentityLiveClient.sha256(raw), runId = manifest.path("runId").asText(); Path root = Path.of(manifest.path("runtimeRoot").asText());
-        Path evidence = Path.of(System.getProperty("xingyuan.isolated.evidence-directory", root.resolve("evidence").toString())); requireEvidenceDirectory(root, evidence);
-        var initialBytes = UnifiedIdentityLiveClient.protectedBytes(root.resolve("evidence/gateway-publication.json"), root.resolve("evidence"), 128 * 1024);
-        var initial = mapper.readTree(initialBytes); requireGatewayPublicationReceipt(initial, manifest, digest, initial.path("inputSha256").asText());
-        var faults = XingyuanNativeAuthenticationIT.requireNativeEvidence(root, evidence, manifest, digest, "resource-biz-gateway-policy-rejection.json");
-        if (!"BIZ_GATEWAY_ORIGINAL_OWNER_SCOPE_AND_SIGNEDHASH_NACK_LKG_RECOVERY_ONLY".equals(faults.path("scope").asText()) || faults.path("faults").size() != 6
-                || !UnifiedIdentityLiveClient.sha256(initialBytes).equals(faults.path("initialOwnerReceiptSha256").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var recovered = faults.path("faults").get(5); String groupId = initial.path("gatewayGroupId").asText(), operationId = initial.path("operationId").asText();
-        var expected = ((com.fasterxml.jackson.databind.node.ObjectNode) initial).deepCopy().put("releaseId", recovered.path("recoveredReleaseId").asText());
-        var reference = client.formal("default", client.resourceForAlias("edge-yuheng"), "admin"); client.verifiedClaims(reference);
-        if (!reference.getScopes().containsAll(java.util.Set.of("yuheng:read", "yuheng:mcp:read", "yuheng:mcp:write", "yuheng:drafts:write", "yuheng:releases:write"))) {
-            throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE");
-        }
-        var scope = gatewayTaskScope(verifiedProfile(root, manifest, digest, "biz"), verifiedProfile(root, manifest, digest, "mcp"), runId);
-        var registry = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(root.resolve("secrets/runtime-registry.json"), root.resolve("secrets"), 2 * 1024 * 1024));
-        var resources = java.util.stream.StreamSupport.stream(registry.path("resources").spliterator(), false)
-                .filter(value -> reference.getResourceUri().toASCIIString().equals(value.path("resourceUri").asText()) && "ACTIVE".equals(value.path("status").asText())).toList();
-        if (resources.size() != 1 || !"stellar-enclosure-yuheng-admin".equals(resources.getFirst().path("rbacApplicationCode").asText())
-                || !runId.equals(registry.path("runId").asText()) || !digest.equals(registry.path("manifestSha256").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var mcpProfile = verifiedProfile(root, manifest, digest, "mcp");
-        if (!resources.getFirst().path("rbacApplicationCode").asText().equals(mcpProfile.getProperty("egon.cola.platform.tianquan.jianshen.system-code"))) {
-            throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE");
-        }
-        Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
-        String groupPath = "/api/v1/yuheng/admin/yuheng-groups/" + groupId, serverPath = "/api/v1/yuheng/admin/mcp/servers";
-        Path intent = evidence.resolve("mcp-publication-running.json"), output = evidence.resolve("mcp-publication.json");
-        if (Files.exists(intent, java.nio.file.LinkOption.NOFOLLOW_LINKS) || Files.exists(output, java.nio.file.LinkOption.NOFOLLOW_LINKS)) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        try (var http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
-            var owner = new NativeResourceHttpProbe("yuheng", root, manifestFile, digest, http, timeout);
-            var good = owner.request("GET", "/api/v1/yuheng/admin/releases/" + expected.path("releaseId").asText(), reference, null, null, 200);
-            if (!UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(good)).equals(recovered.path("recoveredReleaseSha256").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            expected.put("ruleContentSha256", good.path("structuredDiff").path("ruleContentSha256").asText());
-            verifyGatewayOwnerPublication(owner, reference, expected, scope, gatewayProtectedReadPolicy("yuheng:read", operationId), timeout);
-            var servers = owner.request("GET", serverPath + "?gatewayGroupId=" + groupId, reference, null, null, 200);
-            if (!servers.isArray() || !servers.isEmpty()) { throw new IllegalStateException("XINGYUAN_STATE_CONFLICT"); }
-            var draft = owner.request("GET", groupPath + "/draft", reference, null, null, 200); long revision = transactionProofLong(draft, "revision");
-            requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-            XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, intent, mapper.createObjectNode().put("schemaVersion", 1).put("runId", runId).put("manifestSha256", digest)
-                    .put("status", "RUNNING").put("previousReleaseId", good.path("releaseId").asText()).put("expectedDraftRevision", revision).put("recordedAt", Instant.now().toString()));
-            var server = owner.mcpOwnerRequest("POST", serverPath, reference, mcpTaskServerRequest(runId, groupId, reference.getResourceUri(), revision), "it-mcp-server-" + runId, 201);
-            String serverId = server.path("resourceId").asText(); requireFreshMcpMutation(server, revision); revision = transactionProofLong(server, "draftRevision");
-            var resource = owner.mcpOwnerRequest("POST", serverPath + '/' + serverId + "/resources", reference, mcpTaskCapabilityRequest(runId, groupId, serverId, operationId, revision), "it-mcp-resource-" + runId, 201);
-            String resourceId = resource.path("resourceId").asText(); requireFreshMcpMutation(resource, revision); revision = transactionProofLong(resource, "draftRevision");
-            var policy = mapper.createObjectNode().put("policyType", "SECURITY").put("policyScope", "OPERATION").put("enabled", true).put("expectedRevision", revision)
-                    .put("idempotencyKey", "it-mcp-security-" + runId).put("changeReason", "Task MCP exact published OAuth policy"); policy.set("content", mapper.valueToTree(mcpTaskReadPolicy(runId)));
-            var mutation = owner.request("PUT", groupPath + "/draft/policies/it-mcp-security", reference, policy, null, 200);
-            if (transactionProofLong(mutation, "revision") != Math.incrementExact(revision) || !"it-mcp-security".equals(mutation.path("resourceId").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            var preview = owner.request("GET", serverPath + '/' + serverId + "/capability-preview", reference, null, null, 200);
-            requireTaskMcpPreview(preview, runId, serverId, resourceId, operationId, reference.getResourceUri());
-            var release = owner.request("POST", groupPath + "/releases", reference, mapper.createObjectNode().put("expectedDraftRevision", transactionProofLong(mutation, "revision")).put("changeReason", "Task MCP protected data read"), null, 200);
-            if (!"SUCCESS".equals(release.path("status").asText()) || !groupId.equals(release.path("gatewayGroupId").asText()) || release.path("releaseId").equals(good.path("releaseId"))
-                    || !release.path("partialApplied").isBoolean() || release.path("partialApplied").booleanValue()) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            var ready = mapper.createObjectNode().put("schemaVersion", 1).put("runId", runId).put("manifestSha256", digest).put("scope", "ORIGINAL_TASK_MCP_OWNER_PUBLICATION_ONLY").put("status", "COMMITTED")
-                    .put("gatewayGroupId", groupId).put("serverId", serverId).put("serverCode", mcpTaskServerCode(runId)).put("resourceId", resourceId).put("resourceUri", reference.getResourceUri().toASCIIString())
-                    .put("rbacApplicationCode", resources.getFirst().path("rbacApplicationCode").asText()).put("operationId", operationId).put("releaseId", release.path("releaseId").asText())
-                    .put("ruleContentSha256", release.path("structuredDiff").path("ruleContentSha256").asText()).put("initialOwnerReceiptSha256", UnifiedIdentityLiveClient.sha256(initialBytes))
-                    .put("previewSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(preview))).put("recordedAt", Instant.now().toString());
-            verifyTaskMcpPublication(owner, reference, ready, scope, timeout);
-            requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-            XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, output, ready);
-        }
-    }
-
-    static void requireFreshMcpMutation(JsonNode result, long revision) {
-        if (transactionProofLong(result, "draftRevision") != Math.incrementExact(revision) || transactionProofLong(result, "resourceRevision") != 0
-                || !result.path("replayed").isBoolean() || result.path("replayed").booleanValue() || !result.path("resourceId").asText().matches("[A-Za-z0-9_-]{1,128}")) {
-            throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN");
-        }
+    void mcpFixtureRequiresItsMountedCatalogueAndApprovedCiliumEndpoint() {
+        var manifest = UnifiedIdentityLiveClient.strictJson().createObjectNode().put("runId", "01234567-89ab-cdef-0123-456789abcdef");
+        String server = mcpTaskServerCode(manifest.path("runId").textValue());
+        var target = manifest.putObject("ciliumMcp").put("endpoint", "https://public.apps.example.test/mcp/" + server)
+                .put("publicationId", "904").put("catalogSha256", "a".repeat(64)).put("bindingsSha256", "b".repeat(64))
+                .put("resourceKey", "mcp-access").put("foreignResourceKey", "tianshu-admin");
+        var fixture = CiliumMcpFixture.from(manifest);
+        var proof = target.deepCopy().put("scope", "TIANSHU_SI_AND_YUHENG_MCP_MAPPING").put("serverCode", server);
+        assertThatCode(() -> fixture.requirePublication(proof)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> fixture.requirePublication(proof.deepCopy().put("catalogSha256", "c".repeat(64))))
+                .hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        assertThatThrownBy(() -> fixture.requirePublication(proof.deepCopy().put("publicationId", "903")))
+                .hasMessage("XINGYUAN_VERIFICATION_FAILED");
+        target.put("endpoint", "https://127.0.0.1:28185/mcp/" + server);
+        assertThatThrownBy(() -> CiliumMcpFixture.from(manifest)).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreType
@@ -612,26 +456,22 @@ class XingyuanResourceAuthorizationIT {
         @Override public String toString() { return "McpHttpExchangeVO[status=" + observation.status() + ",redacted]"; }
     }
 
-    private static McpHttpExchangeVO mcpDataRequest(HttpClient http, Duration timeout, Path root, String runId, FormalReferenceDTO reference,
+    private static McpHttpExchangeVO mcpDataRequest(HttpClient http, Duration timeout, Path root, CiliumMcpFixture fixture, FormalReferenceDTO reference,
             String sessionId, String method, String tenantHeader, int expected) throws Exception {
         if (!java.util.Set.of("initialize", "resources/read").contains(method) || method.equals("resources/read") && (sessionId == null || sessionId.isBlank())) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        String code = mcpTaskServerCode(runId), trace = UUID.randomUUID().toString().replace("-", "");
+        String code = fixture.serverCode(), trace = UUID.randomUUID().toString().replace("-", "");
         var mapper = UnifiedIdentityLiveClient.strictJson(); var body = mapper.createObjectNode().put("jsonrpc", "2.0").put("id", 1).put("method", method);
         var params = body.putObject("params");
         if (method.equals("initialize")) { params.put("protocolVersion", "2025-11-25"); }
         else { params.put("uri", "egon://" + code + "/scopes"); }
-        var request = HttpRequest.newBuilder(URI.create("https://127.0.0.1:28185/mcp/" + code)).timeout(timeout).header("content-type", "application/json")
+        var request = HttpRequest.newBuilder(fixture.endpoint()).timeout(timeout).header("content-type", "application/json")
                 .header("Mcp-Protocol-Version", "2025-11-25").header("traceparent", "00-" + trace + '-' + UUID.randomUUID().toString().replace("-", "").substring(0, 16) + "-01");
         if (sessionId != null) { request.header("Mcp-Session-Id", sessionId); }
         if (tenantHeader != null) { request.header("X-Tenant-Id", tenantHeader); }
         if (reference != null) {
-            byte[] token = UnifiedIdentityLiveClient.protectedBytes(reference.getTokenFile(), root.resolve("secrets"), 128 * 1024);
-            try {
-                if (!reference.getExpiresAt().isAfter(Instant.now()) || !reference.getTokenSha256().equals(UnifiedIdentityLiveClient.sha256(token))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                request.header("Authorization", "Bearer " + new String(token, StandardCharsets.UTF_8));
-            } finally { java.util.Arrays.fill(token, (byte) 0); }
+            request.header("Authorization", "Bearer " + fixtureBearer(root, reference));
         }
         Instant started = Instant.now(); var captured = new ByteArrayOutputStream();
         var response = http.send(request.POST(HttpRequest.BodyPublishers.ofString(body.toString())).build(), boundedBody(captured));
@@ -649,12 +489,14 @@ class XingyuanResourceAuthorizationIT {
     @Test
     @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
     void actualMcpResourceReadEnforcesPublishedScopeAndExactFinePermission() throws Exception {
-        publishTaskMcpServerAndResourceThroughOriginalOwners();
         var client = UnifiedIdentityLiveClient.isolated(); var mapper = UnifiedIdentityLiveClient.strictJson();
         Path manifestFile = Path.of(System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST")));
         byte[] raw = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024); var manifest = mapper.readTree(raw);
         String digest = UnifiedIdentityLiveClient.sha256(raw), runId = manifest.path("runId").asText(); Path root = Path.of(manifest.path("runtimeRoot").asText());
         Path evidence = Path.of(System.getProperty("xingyuan.isolated.evidence-directory", root.resolve("evidence").toString())); requireEvidenceDirectory(root, evidence);
+        var fixture = CiliumMcpFixture.from(manifest);
+        var publication = requireFullPhase(root, evidence, manifest, digest, "mcp-publication.json", "COMMITTED");
+        fixture.requirePublication(publication);
         Path ownerResult = evidence.resolve("mcp-authorization-execution.json");
         var owner = new ProcessBuilder("python3", "-I", Path.of(manifest.path("repoRoot").asText()).resolve("scripts/unified-xingyuan/lib/isolated_integration.py").toString(),
                 "prepare-mcp-authorization", manifestFile.toString(), ownerResult.toString()).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
@@ -675,7 +517,7 @@ class XingyuanResourceAuthorizationIT {
                 || !"provisionTaskMcpAuthorization".equals(execution.path("execution").path("methods").get(0).asText())
                 || !root.relativize(evidence.resolve("mcp-authorization.json")).toString().equals(execution.path("proof").path("path").asText())
                 || !UnifiedIdentityLiveClient.sha256(authorityBytes).equals(execution.path("proof").path("sha256").asText())
-                || !("mcp:" + mcpTaskServerCode(runId) + ":resource:scopes:read").equals(authority.path("permissionCode").asText())) {
+                || !("mcp:" + fixture.serverCode() + ":resource:scopes:read").equals(authority.path("permissionCode").asText())) {
             throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
         }
         Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
@@ -683,12 +525,13 @@ class XingyuanResourceAuthorizationIT {
                 .put("scope", "TASK_MCP_REAL_RESOURCE_READ_SCOPE_AND_FINE_PERMISSION_ONLY"); var observations = output.putArray("observations");
         try (var http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
             for (String realm : List.of("default", "tenant-b")) {
-                var admin = client.formal(realm, client.resourceForAlias("edge-yuheng"), "admin"); var viewer = client.formal(realm, client.resourceForAlias("edge-yuheng"), "viewer");
-                var wrong = client.formal(realm, client.resourceForAlias("edge-tianshu"), "admin");
+                var admin = client.formal(realm, fixture.resourceKey(), "admin"); var viewer = client.formal(realm, fixture.resourceKey(), "viewer");
+                var wrong = client.formal(realm, fixture.foreignResourceKey(), "admin");
                 client.verifiedClaims(admin); client.verifiedClaims(viewer); client.verifiedClaims(wrong);
-                var scopeOnly = acquireIdentityOnlyProbe(client, root, evidence, manifestFile, manifest, digest, realm, client.resourceForAlias("edge-yuheng"));
-                var initialized = mcpDataRequest(http, timeout, root, runId, admin, null, "initialize", null, 200);
-                var viewerInitialized = mcpDataRequest(http, timeout, root, runId, viewer, null, "initialize", null, 200);
+                assertThat(wrong.getResourceUri()).isNotEqualTo(admin.getResourceUri());
+                var scopeOnly = acquireIdentityOnlyProbe(client, root, evidence, manifestFile, manifest, digest, realm, fixture.resourceKey());
+                var initialized = mcpDataRequest(http, timeout, root, fixture, admin, null, "initialize", null, 200);
+                var viewerInitialized = mcpDataRequest(http, timeout, root, fixture, viewer, null, "initialize", null, 200);
                 if (initialized.sessionId() == null || viewerInitialized.sessionId() == null || initialized.sessionId().equals(viewerInitialized.sessionId())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                 var requests = observations.addObject().put("realmCode", realm).put("tenantId", admin.getTenantId()).put("resourceUri", admin.getResourceUri().toASCIIString())
                         .put("adminReference", admin.getTokenSha256()).put("viewerReference", viewer.getTokenSha256()).put("identityOnlyReference", scopeOnly.getTokenSha256()).putArray("requests");
@@ -696,14 +539,14 @@ class XingyuanResourceAuthorizationIT {
                 for (int index = 0; index < 6; index++) {
                     var reference = index == 1 ? viewer : index == 2 ? scopeOnly : index == 3 ? wrong : index == 4 ? null : admin;
                     int status = index == 1 || index == 2 ? 403 : index == 3 || index == 4 ? 401 : 200;
-                    var response = mcpDataRequest(http, timeout, root, runId, reference, index == 1 ? viewerInitialized.sessionId() : initialized.sessionId(), "resources/read",
-                            index == 5 ? client.formal(realm.equals("default") ? "tenant-b" : "default", client.resourceForAlias("edge-yuheng"), "admin").getTenantId() : null, status);
+                    var response = mcpDataRequest(http, timeout, root, fixture, reference, index == 1 ? viewerInitialized.sessionId() : initialized.sessionId(), "resources/read",
+                            index == 5 ? client.formal(realm.equals("default") ? "tenant-b" : "default", fixture.resourceKey(), "admin").getTenantId() : null, status);
                     var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
                     if (status == 200) {
                         requireOneBusinessInvocation(before, after);
                         var data = mapper.readTree(response.body());
                         if (!data.path("result").path("contents").isArray() || data.path("result").path("contents").size() != 1
-                                || !("egon://" + mcpTaskServerCode(runId) + "/scopes").equals(data.path("result").path("contents").get(0).path("uri").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
+                                || !("egon://" + fixture.serverCode() + "/scopes").equals(data.path("result").path("contents").get(0).path("uri").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                     } else if (!before.equals(after)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                     var item = requests.addObject().put("kind", List.of("SUCCESS", "FINE_DENIED", "SCOPE_DENIED", "WRONG_AUDIENCE", "MISSING", "RECOVERY").get(index))
                             .put("responseSha256", UnifiedIdentityLiveClient.sha256(response.body().getBytes(StandardCharsets.UTF_8)));
@@ -717,930 +560,176 @@ class XingyuanResourceAuthorizationIT {
         observeHttpAuditOwner(root, evidence, manifestFile, manifest, digest, "mcp");
     }
 
-    static java.util.Map<String, Object> gatewayReadRouteContent(String path) {
-        if (!java.util.Set.of("/api/v1/yuheng/admin/scopes", "/api/v1/yuheng/admin/scopes/__xingyuan-required-scope").contains(path)) {
+    private static final String SCOPES_PATH = "/api/v1/yuheng/admin/scopes";
+    private static final String CILIUM_AUTHORIZATION_PROOF = "resource-cilium-http-authorization.json";
+
+    private record CiliumAuthorizationFixture(String exposureId, URI adminOrigin, URI publicUrl, String resourceKey,
+            String foreignResourceKey) {
+        static CiliumAuthorizationFixture from(JsonNode manifest) {
+            var entry = manifest.path("ciliumAuthorization");
+            var id = entry.path("exposureId").asText();
+            if (!positiveDecimal(id)) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
+            URI admin = GatewayAdminTestClient.reviewedServiceOrigin(manifest.path("managementOrigins").path("yuheng").asText());
+            if (entry.has("adminOrigin") && !admin.toASCIIString().equals(entry.path("adminOrigin").textValue())) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
+            return new CiliumAuthorizationFixture(id, admin,
+                    reviewedHttps(entry.path("publicUrl").asText(), SCOPES_PATH),
+                    XingyuanResourceAuthorizationIT.resourceKey(entry, "resourceKey"),
+                    XingyuanResourceAuthorizationIT.resourceKey(entry, "foreignResourceKey"));
+        }
+    }
+
+    private static URI reviewedHttps(String value, String path) {
+        var uri = URI.create(value);
+        if (!"https".equals(uri.getScheme()) || uri.getHost() == null
+                || !uri.getHost().matches("[a-z][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+")
+                || uri.getPort() != -1 || !path.equals(uri.getRawPath())
+                || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        return java.util.Map.of("host", "*", "httpMethod", "GET", "pathPattern", path, "priority", 0, "accessZones", List.of("PUBLIC"));
+        return uri;
     }
 
-    @Test
-    void taskReadRouteMeetsTheOriginalTransportContractBeforeAnyOwnerWrite() {
-        var validator = new top.egon.cola.component.yuheng.admin.routing.service.GatewayRouteTransportPolicyValidator();
-        for (String path : List.of("/api/v1/yuheng/admin/scopes", "/api/v1/yuheng/admin/scopes/__xingyuan-required-scope")) {
-            assertThat(validator.validate(gatewayReadRouteContent(path), top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP,
-                    top.egon.cola.component.yuheng.core.route.GatewayResponseMode.TRANSPARENT)).isEmpty();
-        }
-        assertThatThrownBy(() -> gatewayReadRouteContent("/foreign/path")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-    }
-
-    static JsonNode gatewayScopeReadNode(JsonNode catalog, String applicationId) {
-        if (!catalog.path("applicationId").asText().equals(applicationId)) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var candidates = new ArrayList<JsonNode>();
-        for (var group : catalog.findValues("operations")) {
-            if (!group.isArray() || group.size() > 2048) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            for (var node : group) {
-                if ("HTTP".equals(node.path("protocol").asText()) && "GET /api/v1/yuheng/admin/scopes".equals(node.path("methodIdentity").asText())) {
-                    if (!"OPENAPI31".equals(node.path("sourceType").asText()) || !"DISCOVERED".equals(node.path("lifecycleStatus").asText())
-                            || !node.path("externalAccessible").isBoolean() || !node.path("externalAccessible").booleanValue()
-                            || !node.path("id").asText().matches("[A-Za-z0-9_-]{1,128}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                    candidates.add(node);
-                }
-            }
-        }
-        if (candidates.size() != 1) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
-        return candidates.getFirst();
-    }
-
-    @Test
-    @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
-    void publishTaskGatewayGroupAndProtectedReadRouteThroughOriginalOwners() throws Exception {
-        var client = UnifiedIdentityLiveClient.isolated(); var mapper = UnifiedIdentityLiveClient.strictJson();
-        Path manifestFile = Path.of(System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST")));
-        byte[] raw = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024); var manifest = mapper.readTree(raw);
-        String digest = UnifiedIdentityLiveClient.sha256(raw); Path root = Path.of(manifest.path("runtimeRoot").asText());
-        Path evidence = root.resolve("evidence"); requireEvidenceDirectory(root, evidence);
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-        var scope = gatewayTaskScope(verifiedProfile(root, manifest, digest, "biz"), verifiedProfile(root, manifest, digest, "mcp"), manifest.path("runId").asText());
-        var properties = verifiedProfile(root, manifest, digest, "yuheng"); var flat = new java.util.LinkedHashMap<String, Object>(); properties.forEach((key, value) -> flat.put(key.toString(), value));
-        var owner = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(flat))
-                .bind("egon.cola.component.tianshu", top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE")); flat.clear(); properties.clear();
-        var reference = client.formal("default", client.resourceForAlias("edge-yuheng"), "admin"); client.verifiedClaims(reference);
-        if (!reference.getScopes().containsAll(java.util.Set.of("yuheng:read", "yuheng:groups:write", "yuheng:drafts:write", "yuheng:releases:write"))) {
-            throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE");
-        }
-        Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue()); String base = "/api/v1/yuheng/admin";
-        try (var transport = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
-            var api = new NativeResourceHttpProbe("yuheng", root, manifestFile, digest, transport, timeout);
-            var applications = api.request("GET", base + "/applications", reference, null, null, 200);
-            if (!applications.isArray() || applications.size() > 512) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-            var matches = java.util.stream.StreamSupport.stream(applications.spliterator(), false)
-                    .filter(value -> owner.getBizCode().equals(value.path("bizCode").asText()) && owner.getAppCode().equals(value.path("applicationCode").asText())
-                            && owner.getEnv().equals(value.path("env").asText()) && owner.getNamespace().equals(value.path("namespace").asText())).toList();
-            if (matches.size() != 1 || !matches.getFirst().path("id").asText().matches("[A-Za-z0-9_-]{1,128}")) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
-            String applicationId = matches.getFirst().path("id").asText();
-            var catalog = api.request("GET", base + "/applications/" + applicationId + "/catalog", reference, null, null, 200);
-            var node = gatewayScopeReadNode(catalog, applicationId);
-            var detail = api.request("GET", base + "/operations/" + node.path("id").asText(), reference, null, null, 200);
-            var operation = gatewayReadOperation(matches.getFirst(), detail, owner);
-            if (!node.path("id").asText().equals(operation.operationId())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            var configuration = gatewayProtectedReadPolicy("yuheng:read", operation.operationId());
-            var input = mapper.createObjectNode().put("runId", manifest.path("runId").asText()).put("manifestSha256", digest);
-            input.set("scope", mapper.valueToTree(scope)); input.set("operation", mapper.valueToTree(operation));
-            var profiles = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(evidence.resolve("profiles-ready.json"), evidence, 128 * 1024));
-            for (String role : List.of("yuheng", "biz", "mcp")) { input.put(role + "ProfileSha256", profiles.path("profiles").path(role).path("sha256").asText()); }
-            String inputHash = UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(input)); Path readyFile = evidence.resolve("gateway-publication.json");
-            if (Files.exists(readyFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                var ready = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(readyFile, evidence, 128 * 1024));
-                requireGatewayPublicationReceipt(ready, manifest, digest, inputHash);
-                verifyGatewayOwnerPublication(api, reference, ready, scope, configuration, timeout);
-                return;
-            }
-            Path intent = evidence.resolve("gateway-publication-running.json");
-            if (Files.exists(intent, java.nio.file.LinkOption.NOFOLLOW_LINKS)) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            var groups = api.request("GET", base + "/yuheng-groups", reference, null, null, 200);
-            if (!groups.isArray() || java.util.stream.StreamSupport.stream(groups.spliterator(), false).anyMatch(value -> scope.groupCode().equals(value.path("gatewayGroupCode").asText()))) {
-                throw new IllegalStateException("XINGYUAN_STATE_CONFLICT");
-            }
-            XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, intent, mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText())
-                    .put("manifestSha256", digest).put("inputSha256", inputHash).put("status", "RUNNING").put("recordedAt", Instant.now().toString()));
-            var groupBody = mapper.createObjectNode().put("gatewayGroupCode", scope.groupCode()).put("displayName", scope.groupCode()).put("env", scope.env())
-                    .put("namespace", scope.namespace()).put("description", "XINGYUAN_TASK:" + manifest.path("runId").asText());
-            var group = api.request("POST", base + "/yuheng-groups", reference, groupBody, null, 201); String groupId = group.path("id").asText();
-            if (!groupId.matches("[A-Za-z0-9_-]{1,128}") || !scope.groupCode().equals(group.path("gatewayGroupCode").asText())
-                    || !scope.env().equals(group.path("env").asText()) || !scope.namespace().equals(group.path("namespace").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            String draftPath = base + "/yuheng-groups/" + groupId + "/draft";
-            var draft = api.request("GET", draftPath, reference, null, null, 200);
-            if (!draft.path("routes").isArray() || !draft.path("routes").isEmpty() || !draft.path("policies").isArray() || !draft.path("policies").isEmpty()) {
-                throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN");
-            }
-            long version = transactionProofLong(draft, "revision");
-            var policy = mapper.createObjectNode().put("policyType", "SECURITY").put("policyScope", "OPERATION").put("enabled", true).put("expectedRevision", version)
-                    .put("idempotencyKey", "it-policy-" + manifest.path("runId").asText()).put("changeReason", "Task protected read route");
-            policy.set("content", mapper.valueToTree(configuration));
-            var policyResult = api.request("PUT", draftPath + "/policies/it-read-security", reference, policy, null, 200);
-            if (transactionProofLong(policyResult, "revision") != Math.addExact(version, 1) || !"it-read-security".equals(policyResult.path("resourceId").asText())) {
-                throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN");
-            }
-            version = transactionProofLong(policyResult, "revision");
-            var route = mapper.createObjectNode().put("operationId", operation.operationId()).put("enabled", true).put("expectedRevision", version)
-                    .put("idempotencyKey", "it-route-" + manifest.path("runId").asText()).put("changeReason", "Task protected read route");
-            route.set("content", mapper.valueToTree(gatewayReadRouteContent("/api/v1/yuheng/admin/scopes")));
-            var routeResult = api.request("PUT", draftPath + "/routes/it-protected-read", reference, route, null, 200);
-            if (transactionProofLong(routeResult, "revision") != Math.addExact(version, 1) || !"it-protected-read".equals(routeResult.path("resourceId").asText())) {
-                throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN");
-            }
-            var release = api.request("POST", base + "/yuheng-groups/" + groupId + "/releases", reference,
-                    mapper.createObjectNode().put("expectedDraftRevision", transactionProofLong(routeResult, "revision")).put("changeReason", "Task protected read route"), null, 200);
-            if (!release.path("releaseId").asText().matches("[A-Za-z0-9_-]{1,128}") || !"SUCCESS".equals(release.path("status").asText())
-                    || !release.path("partialApplied").isBoolean() || release.path("partialApplied").booleanValue()
-                    || !release.path("structuredDiff").path("ruleContentSha256").asText().matches("[0-9a-f]{64}")) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            var ready = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest).put("inputSha256", inputHash)
-                    .put("scope", "ORIGINAL_TASK_GATEWAY_OWNER_PUBLICATION_ONLY").put("status", "COMMITTED").put("gatewayGroupId", groupId).put("operationId", operation.operationId())
-                    .put("definitionId", operation.definitionId()).put("definitionSha256", operation.definitionSha256()).put("releaseId", release.path("releaseId").asText())
-                    .put("ruleContentSha256", release.path("structuredDiff").path("ruleContentSha256").asText());
-            var consistency = verifyGatewayOwnerPublication(api, reference, ready, scope, configuration, timeout);
-            ready.put("runtimeProjectionSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(consistency))).put("recordedAt", Instant.now().toString());
-            requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-            XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, readyFile, ready);
-        }
-    }
-
-    @Test
-    @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
-    void actualBizGatewayRejectsInvalidPublishedScopesAndRecoversThroughTheOriginalOwners() throws Exception {
-        var client = UnifiedIdentityLiveClient.isolated(); var mapper = UnifiedIdentityLiveClient.strictJson();
-        Path manifestFile = Path.of(System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST")));
-        byte[] raw = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024); var manifest = mapper.readTree(raw);
-        String digest = UnifiedIdentityLiveClient.sha256(raw); Path root = Path.of(manifest.path("runtimeRoot").asText());
-        Path evidence = Path.of(System.getProperty("xingyuan.isolated.evidence-directory", root.resolve("evidence").toString())); requireEvidenceDirectory(root, evidence);
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-        var scope = gatewayTaskScope(verifiedProfile(root, manifest, digest, "biz"), verifiedProfile(root, manifest, digest, "mcp"), manifest.path("runId").asText());
-        Path receiptFile = root.resolve("evidence/gateway-publication.json"); byte[] original = UnifiedIdentityLiveClient.protectedBytes(receiptFile, root.resolve("evidence"), 128 * 1024);
-        var receipt = mapper.readTree(original); requireGatewayPublicationReceipt(receipt, manifest, digest, receipt.path("inputSha256").asText());
-        var configuration = gatewayProtectedReadPolicy("yuheng:read", receipt.path("operationId").asText());
-        Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
-        var reference = client.formal("default", client.resourceForAlias("edge-yuheng"), "admin"); client.verifiedClaims(reference);
-        String path = "/api/v1/yuheng/admin/scopes", candidatePath = path + "/__xingyuan-required-scope", groupId = receipt.path("gatewayGroupId").asText();
-        String groupPath = "/api/v1/yuheng/admin/yuheng-groups/" + groupId;
-        var output = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
-                .put("scope", "BIZ_GATEWAY_ORIGINAL_OWNER_SCOPE_AND_SIGNEDHASH_NACK_LKG_RECOVERY_ONLY").put("initialOwnerReceiptSha256", UnifiedIdentityLiveClient.sha256(original));
-        var identities = output.putArray("identities"); var faults = output.putArray("faults");
-        try (var http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
-            var owner = new NativeResourceHttpProbe("yuheng", root, manifestFile, digest, http, timeout); var gateway = new NativeResourceHttpProbe("biz", root, manifestFile, digest, http, timeout);
-            var active = verifyGatewayOwnerPublication(owner, reference, receipt, scope, configuration, timeout);
-            for (String realm : List.of("default", "tenant-b")) {
-                var admin = client.formal(realm, client.resourceForAlias("edge-yuheng"), "admin"); client.verifiedClaims(admin);
-                var viewer = client.formal(realm, client.resourceForAlias("edge-yuheng"), "viewer"); client.verifiedClaims(viewer);
-                var identityOnly = acquireIdentityOnlyProbe(client, root, evidence, manifestFile, manifest, digest, realm, admin.getResourceKey());
-                var foreign = client.formal(realm, client.resourceForAlias("edge-shoubing"), "admin"); client.verifiedClaims(foreign);
-                var before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
-                var expected = gateway.request("GET", path, admin, null, null, 200);
-                var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null); requireOneBusinessInvocation(before, after);
-                var proof = identities.addObject().put("realmCode", realm).put("validStatus", 200); proof.set("before", before); proof.set("after", after);
-                var denials = proof.putArray("denials");
-                for (int failure = 0; failure < 4; failure++) {
-                    var denied = failure == 0 ? null : failure == 1 ? identityOnly : failure == 2 ? viewer : foreign;
-                    before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
-                    int status = failure == 0 || failure == 3 ? 401 : 403;
-                    var rejection = gateway.request("GET", path, denied, null, null, status);
-                    after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
-                    if (!before.equals(after)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                    var denial = denials.addObject().put("kind", List.of("MISSING_TOKEN", "IDENTITY_ONLY_SCOPE", "VIEWER_PDP", "FOREIGN_AUDIENCE").get(failure))
-                            .put("status", status).put("responseSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(rejection)));
-                    denial.set("before", before); denial.set("after", after);
-                }
-                before = after;
-                assertThat(gateway.request("GET", path, admin, null, client.formal(realm.equals("default") ? "tenant-b" : "default", admin.getResourceKey(), "admin").getTenantId(), 200)).isEqualTo(expected);
-                after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null); requireOneBusinessInvocation(before, after);
-                proof.put("deniedBusinessInvocations", 0).put("forgedTenantHeaderIgnored", true).put("subsequentNormalRead", true);
-                proof.set("subsequentBefore", before); proof.set("subsequentAfter", after);
-            }
-            Path intent = evidence.resolve("resource-biz-gateway-policy-running.json");
-            if (Files.exists(intent, java.nio.file.LinkOption.NOFOLLOW_LINKS)) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-            XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, intent, mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText())
-                    .put("manifestSha256", digest).put("status", "RUNNING").put("initialOwnerReceiptSha256", UnifiedIdentityLiveClient.sha256(original)).put("recordedAt", Instant.now().toString()));
-            for (String fault : List.of("MISSING", "STRING", "DUPLICATE", "IDENTITY_ONLY")) {
-                if (!java.util.Arrays.equals(original, UnifiedIdentityLiveClient.protectedBytes(receiptFile, root.resolve("evidence"), 128 * 1024))
-                        || !scope.equals(gatewayTaskScope(verifiedProfile(root, manifest, digest, "biz"), verifiedProfile(root, manifest, digest, "mcp"), manifest.path("runId").asText()))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                var invalid = new java.util.LinkedHashMap<>(configuration);
-                if (fault.equals("MISSING")) { invalid.remove("requiredOAuthScopes"); }
-                else { invalid.put("requiredOAuthScopes", fault.equals("STRING") ? "yuheng:read" : fault.equals("DUPLICATE") ? List.of("yuheng:read", "yuheng:read") : List.of("openid")); }
-                long revision = replaceOwnedGatewayPolicyAndRoute(owner, reference, groupId, receipt.path("operationId").asText(), invalid, candidatePath);
-                var rejected = owner.request("POST", groupPath + "/releases", reference, mapper.createObjectNode().put("expectedDraftRevision", revision).put("changeReason", "Task required scope " + fault), null, 200);
-                if (!groupId.equals(rejected.path("gatewayGroupId").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-                JsonNode observed = null; long deadline = System.nanoTime() + timeout.toNanos();
-                while (System.nanoTime() < deadline) {
-                    observed = owner.request("GET", groupPath + "/runtime-consistency", reference, null, null, 200);
-                    if (gatewayRejectedPublicationPreservesTheAppliedRules(rejected, active, observed, Instant.now())) { break; }
-                    Thread.sleep(200);
-                }
-                if (observed == null || !gatewayRejectedPublicationPreservesTheAppliedRules(rejected, active, observed, Instant.now())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
-                var denied = gateway.request("GET", candidatePath, reference, null, null, 404);
-                if (!"YUHENG_ROUTE_NOT_FOUND".equals(denied.path("code").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
-                if (!before.equals(after)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var rejectedBefore = before; var rejectedAfter = after;
-                revision = replaceOwnedGatewayPolicyAndRoute(owner, reference, groupId, receipt.path("operationId").asText(), configuration, path);
-                var recovered = owner.request("POST", groupPath + "/releases", reference, mapper.createObjectNode().put("expectedDraftRevision", revision).put("changeReason", "Task restore declared business scope"), null, 200);
-                if (!groupId.equals(recovered.path("gatewayGroupId").asText()) || recovered.path("releaseId").equals(rejected.path("releaseId")) || recovered.path("releaseId").equals(receipt.path("releaseId"))) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-                var recoveryExpectation = ((com.fasterxml.jackson.databind.node.ObjectNode) receipt).deepCopy().put("releaseId", recovered.path("releaseId").asText())
-                        .put("ruleContentSha256", recovered.path("structuredDiff").path("ruleContentSha256").asText());
-                var next = verifyGatewayOwnerPublication(owner, reference, recoveryExpectation, scope, configuration, timeout);
-                before = after; gateway.request("GET", path, reference, null, null, 200);
-                after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null); requireOneBusinessInvocation(before, after);
-                var item = faults.addObject().put("fault", fault).put("rejectedReleaseId", rejected.path("releaseId").asText()).put("recoveredReleaseId", recovered.path("releaseId").asText())
-                        .put("rejectedReleaseSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(rejected))).put("recoveredReleaseSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(recovered)))
-                        .put("partialTechnicalPublication", rejected.path("partialApplied").booleanValue())
-                        .put("unactivatedRouteStatus", 404).put("deniedBusinessInvocations", 0).put("recoveryStatus", 200);
-                item.set("beforeProjection", active); item.set("rejectedProjection", observed); item.set("recoveredProjection", next); active = next;
-                item.set("beforeRejectedRoute", rejectedBefore); item.set("afterRejectedRoute", rejectedAfter); item.set("beforeRecoveryRead", before); item.set("afterRecoveryRead", after);
-            }
-            var configOwner = new NativeResourceHttpProbe("tianshu", root, manifestFile, digest, http, timeout);
-            var configReference = client.formal("default", client.resourceForAlias("edge-tianshu"), "admin"); client.verifiedClaims(configReference);
-            for (String fault : List.of("TAMPERED", "UNSIGNED")) {
-                requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-                if (!java.util.Arrays.equals(original, UnifiedIdentityLiveClient.protectedBytes(receiptFile, root.resolve("evidence"), 128 * 1024))
-                        || !scope.equals(gatewayTaskScope(verifiedProfile(root, manifest, digest, "biz"), verifiedProfile(root, manifest, digest, "mcp"), manifest.path("runId").asText()))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                var goodRelease = owner.request("GET", "/api/v1/yuheng/admin/releases/" + active.path("targetReleaseId").asText(), reference, null, null, 200);
-                var expectation = ((com.fasterxml.jackson.databind.node.ObjectNode) receipt).deepCopy().put("releaseId", goodRelease.path("releaseId").asText())
-                        .put("ruleContentSha256", goodRelease.path("structuredDiff").path("ruleContentSha256").asText());
-                active = verifyGatewayOwnerPublication(owner, reference, expectation, scope, configuration, timeout);
-                var attempts = java.util.stream.StreamSupport.stream(goodRelease.path("attempts").spliterator(), false).filter(value -> "SUCCESS".equals(value.path("status").asText()))
-                        .sorted(java.util.Comparator.comparingInt((JsonNode value) -> value.path("attemptNo").intValue()).reversed()).toList();
-                var apiTargets = java.util.stream.StreamSupport.stream(attempts.getFirst().path("targets").spliterator(), false).filter(value -> "API_RPC".equals(value.path("engineRole").asText())).toList();
-                if (apiTargets.size() != 1) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                String instance = apiTargets.getFirst().path("instanceId").asText(); var draft = owner.request("GET", groupPath + "/draft", reference, null, null, 200);
-                var rejected = publishOwnedGatewayActivationFault(configOwner, configReference, evidence, verifiedProfile(root, manifest, digest, "biz"), scope, groupId,
-                        receipt.path("operationId").asText(), active, fault, timeout);
-                JsonNode observed = null; long deadline = System.nanoTime() + timeout.toNanos();
-                while (System.nanoTime() < deadline) {
-                    observed = owner.request("GET", groupPath + "/runtime-consistency", reference, null, null, 200);
-                    if (gatewayConfigFailurePreservesTheAppliedRules(active, observed, instance, Instant.now())) { break; }
-                    Thread.sleep(200);
-                }
-                if (observed == null || !gatewayConfigFailurePreservesTheAppliedRules(active, observed, instance, Instant.now())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
-                var denied = gateway.request("GET", candidatePath, reference, null, null, 404);
-                if (!"YUHENG_ROUTE_NOT_FOUND".equals(denied.path("code").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
-                if (!before.equals(after) || !draft.equals(owner.request("GET", groupPath + "/draft", reference, null, null, 200))) { throw new IllegalStateException("XINGYUAN_STATE_CONFLICT"); }
-                var recovered = owner.request("POST", groupPath + "/releases", reference, mapper.createObjectNode().put("expectedDraftRevision", transactionProofLong(draft, "revision"))
-                        .put("changeReason", "Task restore original scope integrity"), null, 200);
-                if (!groupId.equals(recovered.path("gatewayGroupId").asText()) || recovered.path("releaseId").equals(goodRelease.path("releaseId"))) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-                var recoveryExpectation = ((com.fasterxml.jackson.databind.node.ObjectNode) receipt).deepCopy().put("releaseId", recovered.path("releaseId").asText())
-                        .put("ruleContentSha256", recovered.path("structuredDiff").path("ruleContentSha256").asText());
-                var next = verifyGatewayOwnerPublication(owner, reference, recoveryExpectation, scope, configuration, timeout);
-                var item = faults.addObject().put("fault", fault).put("rejectionOwner", "TIANSHU_CONFIG").put("recoveredReleaseId", recovered.path("releaseId").asText())
-                        .put("recoveredReleaseSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(recovered))).put("unactivatedRouteStatus", 404).put("deniedBusinessInvocations", 0).put("recoveryStatus", 200);
-                item.set("publication", rejected); item.set("beforeProjection", active); item.set("rejectedProjection", observed); item.set("recoveredProjection", next);
-                item.set("beforeRejectedRoute", before); item.set("afterRejectedRoute", after); item.set("beforeRecoveryRead", after);
-                before = after; gateway.request("GET", path, reference, null, null, 200);
-                after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null); requireOneBusinessInvocation(before, after);
-                item.set("afterRecoveryRead", after); active = next;
-            }
-        }
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "biz", "mcp", "tianshu"));
-        output.put("status", "PASSED").put("recordedAt", Instant.now().toString());
-        XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve("resource-biz-gateway-policy-rejection.json"), output);
-    }
-
-    private static long replaceOwnedGatewayPolicyAndRoute(NativeResourceHttpProbe owner, FormalReferenceDTO reference, String groupId, String operationId,
-            java.util.Map<String, Object> configuration, String path) throws Exception {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); String base = "/api/v1/yuheng/admin/yuheng-groups/" + groupId + "/draft";
-        var draft = owner.request("GET", base, reference, null, null, 200);
-        if (!draft.path("routes").isArray() || draft.path("routes").size() != 1 || !draft.path("policies").isArray() || draft.path("policies").size() != 1
-                || !"it-read-security".equals(draft.path("policies").get(0).path("policyId").asText())
-                || !"it-protected-read".equals(draft.path("routes").get(0).path("routeId").asText()) || !operationId.equals(draft.path("routes").get(0).path("operationId").asText())) { throw new IllegalStateException("XINGYUAN_STATE_CONFLICT"); }
-        long revision = transactionProofLong(draft, "revision");
-        var policy = mapper.createObjectNode().put("policyType", "SECURITY").put("policyScope", "OPERATION").put("enabled", true).put("expectedRevision", revision)
-                .put("idempotencyKey", "it-scope-policy-" + UUID.randomUUID()).put("changeReason", "Task required scope verification"); policy.set("content", mapper.valueToTree(configuration));
-        var changed = owner.request("PUT", base + "/policies/it-read-security", reference, policy, null, 200);
-        if (transactionProofLong(changed, "revision") != Math.addExact(revision, 1) || !"it-read-security".equals(changed.path("resourceId").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        revision = transactionProofLong(changed, "revision");
-        var route = mapper.createObjectNode().put("operationId", operationId).put("enabled", true).put("expectedRevision", revision)
-                .put("idempotencyKey", "it-scope-route-" + UUID.randomUUID()).put("changeReason", "Task required scope verification"); route.set("content", mapper.valueToTree(gatewayReadRouteContent(path)));
-        changed = owner.request("PUT", base + "/routes/it-protected-read", reference, route, null, 200);
-        if (transactionProofLong(changed, "revision") != Math.addExact(revision, 1) || !"it-protected-read".equals(changed.path("resourceId").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        return transactionProofLong(changed, "revision");
-    }
-
-    static String mutateOwnedGatewayActivation(String json, String groupId, String releaseId, String operationId, GatewayTaskScopeVO scope, String fault) throws Exception {
-        if (json == null || json.getBytes(StandardCharsets.UTF_8).length > 128 * 1024 || !java.util.Set.of("TAMPERED", "UNSIGNED").contains(fault)) {
+    private static String resourceKey(JsonNode entry, String field) {
+        var value = entry.path(field).textValue();
+        if (value == null || !value.matches("[a-z][a-z0-9-]{2,63}")) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        var mapper = UnifiedIdentityLiveClient.strictJson(); var codec = new top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec();
-        var activation = codec.readActivation(json);
-        if (activation.mode() != top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivationMode.INLINE || !releaseId.equals(activation.releaseId())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        byte[] original = activation.inlineSnapshot().getBytes(StandardCharsets.UTF_8); var snapshot = codec.readSnapshot(original); codec.verify(snapshot);
-        if (activation.totalSize() != original.length || !activation.ruleContentSha256().equals(snapshot.ruleContentSha256()) || !activation.artifactSha256().equals(snapshot.artifactSha256())
-                || !releaseId.equals(snapshot.releaseId()) || !groupId.equals(snapshot.content().gatewayGroupId()) || !scope.groupCode().equals(snapshot.content().gatewayGroupCode())
-                || !scope.env().equals(snapshot.content().env()) || !scope.namespace().equals(snapshot.content().namespace())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var tree = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(original); var content = tree.path("content");
-        if (!content.path("securityPolicies").isArray() || content.path("securityPolicies").size() != 1 || !content.path("routes").isArray() || content.path("routes").size() != 1) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var policy = content.path("securityPolicies").get(0); var route = content.path("routes").get(0);
-        if (!"it-read-security".equals(policy.path("policyId").asText()) || !mapper.valueToTree(gatewayProtectedReadPolicy("yuheng:read", operationId)).equals(policy.path("configuration"))
-                || !"it-protected-read".equals(route.path("routeId").asText()) || !operationId.equals(route.path("operationId").asText())
-                || !"/api/v1/yuheng/admin/scopes".equals(route.path("pathPattern").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        ((com.fasterxml.jackson.databind.node.ObjectNode) route).put("pathPattern", "/api/v1/yuheng/admin/scopes/__xingyuan-required-scope");
-        var configuration = (com.fasterxml.jackson.databind.node.ObjectNode) policy.path("configuration");
-        if (fault.equals("TAMPERED")) { configuration.putArray("requiredOAuthScopes").add("yuheng:catalog:write"); }
-        else { tree.remove(List.of("ruleContentSha256", "artifactSha256")); }
-        var changed = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(json);
-        String inline = mapper.writeValueAsString(tree);
-        changed.put("inlineSnapshot", inline).put("totalSize", inline.getBytes(StandardCharsets.UTF_8).length);
-        // Retain the original digest for tampering; an unsigned activation has neither original digest.
-        if (fault.equals("UNSIGNED")) { changed.remove(List.of("ruleContentSha256", "artifactSha256")); }
-        return mapper.writeValueAsString(changed);
-    }
-
-    @Test
-    void ruleScopeMutationsRetainTheOriginalDigestOrRemoveItAndNeverCreateASignedReplacement() throws Exception {
-        var scope = new GatewayTaskScopeVO("xingyuan-it-" + UUID.randomUUID(), "local", "controlled");
-        var policy = new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy("it-read-security", "SECURITY", "OPERATION", gatewayProtectedReadPolicy("yuheng:read", "125"));
-        var route = new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeRoute("it-protected-read", "125", "*", "GET", "/api/v1/yuheng/admin/scopes",
-                java.util.Set.of(top.egon.cola.component.yuheng.contract.protocol.AccessZone.PUBLIC), 0, true);
-        var content = new top.egon.cola.component.yuheng.contract.rule.GatewayRuleContent("123", scope.groupCode(), scope.env(), scope.namespace(), List.of(), List.of(route),
-                List.of(), List.of(), List.of(policy), List.of(), List.of(), top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent.empty());
-        var canonical = new top.egon.cola.component.yuheng.admin.rule.service.GatewayRuleCanonicalizer();
-        var snapshot = canonical.snapshot("124", Instant.parse("2026-10-15T00:00:00Z"), content);
-        var codec = new top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec(); byte[] original = codec.write(snapshot);
-        var activation = new top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivation("v1", "124", top.egon.cola.component.yuheng.contract.rule.GatewayRuleActivationMode.INLINE,
-                "v1", original.length, snapshot.ruleContentSha256(), snapshot.artifactSha256(), new String(original, StandardCharsets.UTF_8), List.of());
-        String json = new String(codec.write(activation), StandardCharsets.UTF_8);
-        var changed = codec.readActivation(mutateOwnedGatewayActivation(json, "123", "124", "125", scope, "TAMPERED"));
-        assertThat(changed.artifactSha256()).isEqualTo(activation.artifactSha256()); assertThat(changed.ruleContentSha256()).isEqualTo(activation.ruleContentSha256());
-        assertThat(changed.totalSize()).isEqualTo(changed.inlineSnapshot().getBytes(StandardCharsets.UTF_8).length);
-        var invalid = codec.readSnapshot(changed.inlineSnapshot().getBytes(StandardCharsets.UTF_8));
-        assertThat(invalid.content().securityPolicies().getFirst().configuration().get("requiredOAuthScopes")).isEqualTo(List.of("yuheng:catalog:write"));
-        assertThatThrownBy(() -> codec.verify(invalid)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("CHECKSUM_MISMATCH");
-        String unsigned = mutateOwnedGatewayActivation(json, "123", "124", "125", scope, "UNSIGNED");
-        assertThatThrownBy(() -> codec.readActivation(unsigned)).isInstanceOf(IllegalArgumentException.class);
-        var unsignedTree = UnifiedIdentityLiveClient.strictJson().readTree(unsigned);
-        assertThat(unsignedTree.has("artifactSha256")).isFalse();
-        assertThat(UnifiedIdentityLiveClient.strictJson().readTree(unsignedTree.path("inlineSnapshot").asText()).path("content").path("securityPolicies").get(0)
-                .path("configuration").path("requiredOAuthScopes")).isEqualTo(UnifiedIdentityLiveClient.strictJson().valueToTree(List.of("yuheng:read")));
-        for (String fault : List.of("group", "release", "operation", "mode")) {
-            assertThatThrownBy(() -> mutateOwnedGatewayActivation(json, fault.equals("group") ? "foreign" : "123", fault.equals("release") ? "foreign" : "124",
-                    fault.equals("operation") ? "foreign" : "125", scope, fault.equals("mode") ? "UNKNOWN" : "TAMPERED")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        }
-    }
-
-    static JsonNode tianshuOwnerData(JsonNode response) {
-        if (!response.path("success").isBoolean() || !response.path("success").booleanValue() || !response.path("code").isInt()
-                || response.path("code").intValue() != top.egon.cola.component.common.core.enums.ResultCode.SUCCESS.getCode() || response.path("data").isMissingNode() || response.path("data").isNull()) {
-            throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
-        }
-        return response.path("data");
-    }
-
-    static void requireTianshuGatewayNack(JsonNode data, String changeId, long expectedVersion, String checksum) {
-        if (!changeId.equals(data.path("changeId").asText()) || !"FAILED".equals(data.path("status").asText()) || !data.path("targetVersion").isIntegralNumber()
-                || !data.path("targetVersion").canConvertToLong() || data.path("targetVersion").longValue() != expectedVersion
-                || !checksum.matches("[0-9a-f]{64}") || !checksum.equals(data.path("resourceChecksum").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-        for (var expected : java.util.Map.of("targetCount", 1, "ackCount", 0, "failedCount", 1, "ignoredCount", 0, "timeoutCount", 0).entrySet()) {
-            if (!data.path(expected.getKey()).isInt() || data.path(expected.getKey()).intValue() != expected.getValue()) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-        }
-    }
-
-    static boolean gatewayConfigFailurePreservesTheAppliedRules(JsonNode before, JsonNode after, String apiInstance, Instant now) {
-        if (!before.path("consistent").isBoolean() || !before.path("consistent").booleanValue() || !"SUCCESS".equals(before.path("targetReleaseStatus").asText())
-                || !after.path("consistent").isBoolean() || after.path("consistent").booleanValue() || !"SUCCESS".equals(after.path("targetReleaseStatus").asText())
-                || !before.path("targetReleaseId").equals(after.path("targetReleaseId")) || !after.path("readyEngineNodeCount").isInt() || after.path("readyEngineNodeCount").intValue() != 1) { return false; }
-        return gatewayActiveRulesUnchanged(gatewayBaselineNodes(before), before, after, java.util.Set.of(apiInstance), now);
-    }
-
-    static JsonNode ownedGatewayConfig(JsonNode rows, top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties expected) {
-        if (!rows.isArray() || rows.size() > 64 || !"local".equals(expected.getEnv())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var matches = java.util.stream.StreamSupport.stream(rows.spliterator(), false)
-                .filter(value -> expected.getBizCode().equals(value.path("bizCode").asText()) && expected.getAppCode().equals(value.path("appCode").asText())
-                        && expected.getEnv().equals(value.path("env").asText())
-                        && top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument.RESOURCE_NAME.equals(value.path("resourceName").asText())).toList();
-        if (matches.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var value = matches.getFirst();
-        if (!value.path("id").isTextual() || !value.path("id").asText().matches("[1-9][0-9]{0,18}") || !value.path("format").asText().equals("YAML")
-                || !value.path("enabled").isBoolean() || !value.path("enabled").booleanValue() || !value.path("deleted").isBoolean() || value.path("deleted").booleanValue()
-                || !value.path("currentVersion").isIntegralNumber() || !value.path("currentVersion").canConvertToLong() || value.path("currentVersion").longValue() <= 0
-                || !value.path("content").isTextual() || value.path("content").asText().getBytes(StandardCharsets.UTF_8).length > 128 * 1024) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         return value;
     }
 
-    static String ownedGatewayUpdateVersion(JsonNode page, String configId, long version, String original, String changed, String fault) {
-        if (!page.path("success").isBoolean() || !page.path("success").booleanValue() || !page.path("code").isInt()
-                || page.path("code").intValue() != top.egon.cola.component.common.core.enums.ResultCode.SUCCESS.getCode()
-                || !page.path("records").isArray() || page.path("records").size() != 1 || !page.path("page").path("pageNo").isInt() || page.path("page").path("pageNo").intValue() != 1
-                || !page.path("page").path("pageSize").isInt() || page.path("page").path("pageSize").intValue() != 1 || transactionProofLong(page.path("page"), "total") < 1) {
+    private static boolean positiveDecimal(String value) {
+        return value != null && value.matches("[1-9][0-9]{0,18}") && new java.math.BigInteger(value).bitLength() < 64;
+    }
+
+    static void requireCurrentCiliumExposure(JsonNode receipt, String exposureId, URI approvedUrl) {
+        String generation = receipt.path("desiredGeneration").textValue();
+        var route = receipt.path("kubernetesRoute");
+        String metadataGeneration = route.path("metadataGeneration").textValue();
+        if (!positiveDecimal(exposureId) || !positiveDecimal(generation) || !positiveDecimal(metadataGeneration)
+                || !exposureId.equals(receipt.path("exposureId").textValue())
+                || !approvedUrl.toASCIIString().equals(receipt.path("url").textValue()) || !"GET".equals(receipt.path("method").textValue())
+                || !"OPEN".equals(receipt.path("desiredState").textValue()) || !"OPEN".equals(receipt.path("observedState").textValue())
+                || !"SYNCED".equals(receipt.path("reconcileStatus").textValue()) || !generation.equals(receipt.path("observedGeneration").textValue())
+                || !"HTTPRoute".equals(route.path("kind").textValue()) || !"yuheng-routes".equals(route.path("namespace").textValue())
+                || !("yuheng-exposure-" + exposureId).equals(route.path("name").textValue())
+                || !route.path("uid").isTextual() || route.path("uid").textValue().isBlank()
+                || !route.path("attached").isBoolean() || !route.path("attached").booleanValue()
+                || !GatewayHttpRouteCompiler.CONTROLLER_NAME.equals(route.path("controllerName").textValue())
+                || !metadataGeneration.equals(route.path("conditionObservedGeneration").textValue())
+                || !receipt.path("conditions").isArray()) {
             throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
         }
-        var row = page.path("records").get(0);
-        if (!row.path("id").isTextual() || !row.path("id").asText().matches("[1-9][0-9]{0,18}") || !configId.equals(row.path("configId").asText())
-                || transactionProofLong(row, "version") != version || !"YAML".equals(row.path("format").asText()) || !"UPDATE".equals(row.path("changeType").asText())
-                || !top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument.RESOURCE_NAME.equals(row.path("resourceName").asText())
-                || !("Task scope integrity " + fault).equals(row.path("changeReason").asText()) || !original.equals(row.path("oldContent").asText()) || !changed.equals(row.path("newContent").asText())) {
-            throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
-        }
-        return row.path("id").asText();
-    }
-
-    @Test
-    void configFaultCanOnlySelectTheUniqueOwnerDocumentAndItsExactNewVersion() {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); var expected = new top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties();
-        expected.setBizCode("owned"); expected.setAppCode("owned-gateway"); expected.setEnv("local");
-        var row = mapper.createObjectNode().put("id", "123").put("bizCode", "owned").put("appCode", "owned-gateway").put("env", "local")
-                .put("resourceName", top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument.RESOURCE_NAME).put("format", "YAML")
-                .put("enabled", true).put("deleted", false).put("currentVersion", 3).put("content", "owned: original\n");
-        assertThat(ownedGatewayConfig(mapper.createArrayNode().add(row), expected)).isEqualTo(row);
-        assertThatThrownBy(() -> ownedGatewayConfig(mapper.createArrayNode().add(row).add(row), expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> ownedGatewayConfig(mapper.createArrayNode().add(row.deepCopy().put("appCode", "foreign")), expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> ownedGatewayConfig(mapper.createArrayNode().add(row.deepCopy().put("deleted", true)), expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        var version = new top.egon.cola.component.tianshu.admin.model.vo.DdcConfigVersionVO().setId("127").setConfigId("123").setVersion(4L)
-                .setResourceName(top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument.RESOURCE_NAME).setFormat("YAML").setChangeType("UPDATE")
-                .setOldContent("owned: original\n").setNewContent("owned: changed\n").setChangeReason("Task scope integrity TAMPERED");
-        var page = mapper.valueToTree(top.egon.cola.component.common.core.pojo.PageResultRecord.success(List.of(version), 8, 1, 1));
-        assertThat(ownedGatewayUpdateVersion(page, "123", 4, "owned: original\n", "owned: changed\n", "TAMPERED")).isEqualTo("127");
-        assertThatThrownBy(() -> ownedGatewayUpdateVersion(page, "foreign", 4, "owned: original\n", "owned: changed\n", "TAMPERED")).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-        assertThatThrownBy(() -> ownedGatewayUpdateVersion(page, "123", 5, "owned: original\n", "owned: changed\n", "TAMPERED")).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-        assertThatThrownBy(() -> ownedGatewayUpdateVersion(page, "123", 4, "owned: original\n", "foreign: content\n", "TAMPERED")).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-        var duplicate = page.deepCopy(); ((com.fasterxml.jackson.databind.node.ArrayNode) duplicate.path("records")).add(page.path("records").get(0));
-        assertThatThrownBy(() -> ownedGatewayUpdateVersion(duplicate, "123", 4, "owned: original\n", "owned: changed\n", "TAMPERED")).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-        var response = mapper.valueToTree(top.egon.cola.component.common.core.pojo.ResultRecord.success(row));
-        assertThat(tianshuOwnerData(response)).isEqualTo(row);
-        assertThatThrownBy(() -> tianshuOwnerData(((com.fasterxml.jackson.databind.node.ObjectNode) response).deepCopy().put("success", false))).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-    }
-
-    private static JsonNode publishOwnedGatewayActivationFault(NativeResourceHttpProbe tianshu, FormalReferenceDTO reference, Path evidence, Properties profile,
-            GatewayTaskScopeVO scope, String groupId, String operationId, JsonNode active, String fault, Duration timeout) throws Exception {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); var flat = new java.util.LinkedHashMap<String, Object>(); profile.forEach((key, value) -> flat.put(key.toString(), value)); profile.clear();
-        requireEvidenceDirectory(tianshu.root, evidence);
-        var manifest = mapper.readTree(UnifiedIdentityLiveClient.protectedBytes(tianshu.manifestFile, null, 128 * 1024));
-        if (!"tianshu".equals(tianshu.role) || !("xingyuan-it-" + manifest.path("runId").asText()).equals(scope.groupCode())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var ddc = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(flat))
-                .bind("egon.cola.component.tianshu", top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties.class)
-                .orElseThrow(() -> new IllegalArgumentException("XINGYUAN_INPUT_UNAVAILABLE")); flat.clear();
-        if (!ddc.getBizCode().matches("[A-Za-z0-9._-]{1,128}") || !ddc.getAppCode().matches("[A-Za-z0-9._-]{1,128}") || !scope.env().equals(ddc.getEnv())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        String query = "/api/v1/tianshu/configs?bizCode=" + ddc.getBizCode() + "&env=local&appCode=" + ddc.getAppCode() + "&includeDeleted=false";
-        var selected = ownedGatewayConfig(tianshuOwnerData(tianshu.request("GET", query, reference, null, null, 200)), ddc);
-        String configId = selected.path("id").asText(), original = selected.path("content").asText(); long version = transactionProofLong(selected, "currentVersion");
-        var yaml = new top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument(); String key = top.egon.cola.component.yuheng.admin.rule.service.GatewayDdcYamlDocument.ACTIVE_CONFIG_KEY;
-        String activation = yaml.leafValue(original, key).orElseThrow(() -> new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"));
-        var decoded = new top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec().readActivation(activation);
-        for (var node : active.path("nodes")) { if (!decoded.artifactSha256().equals(node.path("activeRuleChecksum").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); } }
-        String changed = yaml.putLeaf(original, key, mutateOwnedGatewayActivation(activation, groupId, active.path("targetReleaseId").asText(), operationId, scope, fault));
-        if (changed.getBytes(StandardCharsets.UTF_8).length > 120 * 1024) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        String checksum = top.egon.cola.component.tianshu.format.DdcChecksum.resource(selected.path("resourceName").asText(), "YAML", changed);
-        var update = mapper.createObjectNode().put("id", configId).put("content", changed).put("currentVersion", version).put("changeReason", "Task scope integrity " + fault);
-        if (mapper.writeValueAsBytes(update).length > 120 * 1024) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        if (mapper.writeValueAsBytes(java.util.Map.of("oldContent", original, "newContent", changed)).length > 112 * 1024) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        long targetVersion = Math.addExact(version, 2);
-        String prefix = "gateway-rule-config-fault-" + fault.toLowerCase(java.util.Locale.ROOT);
-        Path intentFile = evidence.resolve(prefix + "-running.json");
-        if (Files.exists(intentFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        var intent = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", tianshu.digest).put("status", "RUNNING")
-                .put("fault", fault).put("configId", configId).put("expectedConfigVersion", version).put("expectedPublishVersion", targetVersion)
-                .put("resourceChecksum", checksum).put("originalDocumentSha256", UnifiedIdentityLiveClient.sha256(original.getBytes(StandardCharsets.UTF_8)))
-                .put("mutatedDocumentSha256", UnifiedIdentityLiveClient.sha256(changed.getBytes(StandardCharsets.UTF_8))).put("recordedAt", Instant.now().toString());
-        XingyuanNativeAuthenticationIT.publishNewNativeEvidence(tianshu.root, intentFile, intent);
-        byte[] frozen = UnifiedIdentityLiveClient.protectedBytes(intentFile, evidence, 128 * 1024);
-        var updated = tianshuOwnerData(tianshu.request("PUT", "/api/v1/tianshu/configs/" + configId, reference, update, null, 200));
-        if (!configId.equals(updated.path("id").asText()) || transactionProofLong(updated, "currentVersion") != Math.addExact(version, 1) || !changed.equals(updated.path("content").asText())
-                || !ddc.getBizCode().equals(updated.path("bizCode").asText()) || !ddc.getAppCode().equals(updated.path("appCode").asText()) || !scope.env().equals(updated.path("env").asText())) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        if (!java.util.Arrays.equals(frozen, UnifiedIdentityLiveClient.protectedBytes(intentFile, evidence, 128 * 1024))) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        var sourceVersion = tianshu.request("GET", "/api/v1/tianshu/configs/" + configId + "/versions/page?pageNo=1&pageSize=1", reference, null, null, 200);
-        String changeId = ownedGatewayUpdateVersion(sourceVersion, configId, Math.addExact(version, 1), original, changed, fault);
-        // Correlate this publish with its exact owner-generated update version after checking that the key is unused.
-        var absent = tianshu.request("GET", "/api/v1/tianshu/publish-tasks/" + changeId, reference, null, null, 200);
-        if (!absent.path("success").isBoolean() || !absent.path("success").booleanValue() || !absent.path("code").isInt()
-                || absent.path("code").intValue() != top.egon.cola.component.common.core.enums.ResultCode.SUCCESS.getCode() || !absent.path("data").isNull()) {
-            throw new IllegalStateException("XINGYUAN_STATE_CONFLICT");
-        }
-        var publishing = intent.deepCopy().put("changeId", changeId).put("sourceVersionId", changeId)
-                .put("sourceVersionSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(sourceVersion))).put("recordedAt", Instant.now().toString());
-        Path publishingFile = evidence.resolve(prefix + "-publish-running.json"); XingyuanNativeAuthenticationIT.publishNewNativeEvidence(tianshu.root, publishingFile, publishing);
-        byte[] frozenPublish = UnifiedIdentityLiveClient.protectedBytes(publishingFile, evidence, 128 * 1024);
-        var publish = mapper.createObjectNode().put("changeId", changeId).put("content", changed).put("expectedVersion", transactionProofLong(updated, "currentVersion"))
-                .put("timeoutMs", Math.max(1000, timeout.toMillis() / 2));
-        var result = tianshuOwnerData(tianshu.request("POST", "/api/v1/tianshu/configs/" + configId + "/publish", reference, publish, null, 200));
-        requireTianshuGatewayNack(result, changeId, targetVersion, checksum);
-        var task = tianshuOwnerData(tianshu.request("GET", "/api/v1/tianshu/publish-tasks/" + changeId, reference, null, null, 200));
-        requireTianshuGatewayNack(task, changeId, targetVersion, checksum);
-        if (!configId.equals(task.path("configId").asText()) || !ddc.getBizCode().equals(task.path("bizCode").asText()) || !ddc.getAppCode().equals(task.path("appCode").asText())
-                || !scope.env().equals(task.path("env").asText()) || !selected.path("resourceName").equals(task.path("resourceName")) || !"ACK".equals(task.path("failureStage").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-        if (!java.util.Arrays.equals(frozen, UnifiedIdentityLiveClient.protectedBytes(intentFile, evidence, 128 * 1024))
-                || !java.util.Arrays.equals(frozenPublish, UnifiedIdentityLiveClient.protectedBytes(publishingFile, evidence, 128 * 1024))) { throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN"); }
-        XingyuanNativeAuthenticationIT.publishNewNativeEvidence(tianshu.root, evidence.resolve(prefix + "-confirmed.json"), publishing.deepCopy().put("status", "NACK_CONFIRMED")
-                .put("publicationSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(result))).put("taskSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(task)))
-                .put("recordedAt", Instant.now().toString()));
-        return mapper.createObjectNode().put("changeId", changeId).put("configId", configId).put("status", "FAILED").put("targetVersion", targetVersion).put("resourceChecksum", checksum)
-                .put("sourceVersionSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(sourceVersion)))
-                .put("originalDocumentSha256", UnifiedIdentityLiveClient.sha256(original.getBytes(StandardCharsets.UTF_8))).put("mutatedDocumentSha256", UnifiedIdentityLiveClient.sha256(changed.getBytes(StandardCharsets.UTF_8)))
-                .put("publicationSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(result))).put("taskSha256", UnifiedIdentityLiveClient.sha256(mapper.writeValueAsBytes(task)));
-    }
-
-    static void requireGatewayPublicationReceipt(JsonNode value, JsonNode manifest, String digest, String inputHash) {
-        var fields = new java.util.HashSet<String>(); value.fieldNames().forEachRemaining(fields::add);
-        if (!fields.equals(java.util.Set.of("schemaVersion", "runId", "manifestSha256", "inputSha256", "scope", "status", "gatewayGroupId", "operationId", "definitionId",
-                "definitionSha256", "releaseId", "ruleContentSha256", "runtimeProjectionSha256", "recordedAt"))
-                || !value.path("schemaVersion").isInt() || value.path("schemaVersion").intValue() != 1 || !manifest.path("runId").asText().equals(value.path("runId").asText())
-                || !digest.equals(value.path("manifestSha256").asText()) || !inputHash.equals(value.path("inputSha256").asText())
-                || !"ORIGINAL_TASK_GATEWAY_OWNER_PUBLICATION_ONLY".equals(value.path("scope").asText()) || !"COMMITTED".equals(value.path("status").asText())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        for (String field : List.of("gatewayGroupId", "operationId", "definitionId", "releaseId")) {
-            if (!value.path(field).isTextual() || !value.path(field).textValue().matches("[A-Za-z0-9_-]{1,128}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        }
-        for (String field : List.of("ruleContentSha256", "runtimeProjectionSha256")) {
-            if (!value.path(field).asText().matches("[0-9a-f]{64}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        }
-        if (!value.path("definitionSha256").asText().matches("(?:sha256:)?[0-9a-f]{64}")
-                || transactionProofInstant(value, "recordedAt").isAfter(Instant.now())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-    }
-
-    private static JsonNode verifyGatewayOwnerPublication(NativeResourceHttpProbe api, FormalReferenceDTO reference, JsonNode receipt,
-            GatewayTaskScopeVO scope, java.util.Map<String, Object> configuration, Duration timeout) throws Exception {
-        return verifyGatewayOwnerPublication(api, reference, receipt, scope, configuration, timeout, null);
-    }
-
-    private static JsonNode verifyGatewayOwnerPublication(NativeResourceHttpProbe api, FormalReferenceDTO reference, JsonNode receipt,
-            GatewayTaskScopeVO scope, java.util.Map<String, Object> configuration, Duration timeout, String mcpRunId) throws Exception {
-        String base = "/api/v1/yuheng/admin", groupId = receipt.path("gatewayGroupId").asText(), releaseId = receipt.path("releaseId").asText();
-        var groups = api.request("GET", base + "/yuheng-groups", reference, null, null, 200);
-        if (!groups.isArray()) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var selected = java.util.stream.StreamSupport.stream(groups.spliterator(), false).filter(value -> groupId.equals(value.path("id").asText())).toList();
-        if (selected.size() != 1 || !scope.groupCode().equals(selected.getFirst().path("gatewayGroupCode").asText())
-                || !scope.env().equals(selected.getFirst().path("env").asText()) || !scope.namespace().equals(selected.getFirst().path("namespace").asText())
-                || !("XINGYUAN_TASK:" + receipt.path("runId").asText()).equals(selected.getFirst().path("description").asText())
-                || !selected.getFirst().path("enabled").isBoolean() || !selected.getFirst().path("enabled").booleanValue()) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var draft = api.request("GET", base + "/yuheng-groups/" + groupId + "/draft", reference, null, null, 200);
-        if (!draft.path("routes").isArray() || draft.path("routes").size() != 1 || !draft.path("policies").isArray() || draft.path("policies").size() != (mcpRunId == null ? 1 : 2)
-                || !releaseId.equals(draft.path("basedOnReleaseId").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var policy = draft.path("policies").get(0); var route = draft.path("routes").get(0);
-        if (mcpRunId != null) {
-            if (!mcpRunId.equals(receipt.path("runId").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            var expectedPolicies = java.util.Map.of("it-read-security", UnifiedIdentityLiveClient.strictJson().valueToTree(configuration),
-                    "it-mcp-security", UnifiedIdentityLiveClient.strictJson().valueToTree(mcpTaskReadPolicy(mcpRunId)));
-            var seen = new java.util.HashSet<String>();
-            for (var candidate : draft.path("policies")) {
-                String id = candidate.path("policyId").asText();
-                if (!seen.add(id) || !expectedPolicies.containsKey(id) || !expectedPolicies.get(id).equals(candidate.path("content"))
-                        || !"SECURITY".equals(candidate.path("policyType").asText()) || !"OPERATION".equals(candidate.path("policyScope").asText())
-                        || !candidate.path("enabled").isBoolean() || !candidate.path("enabled").booleanValue()) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-                if (id.equals("it-read-security")) { policy = candidate; }
-            }
-            if (!seen.equals(expectedPolicies.keySet())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        }
-        if (!"it-read-security".equals(policy.path("policyId").asText()) || !"SECURITY".equals(policy.path("policyType").asText())
-                || !"OPERATION".equals(policy.path("policyScope").asText()) || !policy.path("enabled").isBoolean() || !policy.path("enabled").booleanValue()
-                || !UnifiedIdentityLiveClient.strictJson().valueToTree(configuration).equals(policy.path("content"))
-                || !"it-protected-read".equals(route.path("routeId").asText()) || !receipt.path("operationId").equals(route.path("operationId"))
-                || !route.path("enabled").isBoolean() || !route.path("enabled").booleanValue()
-                || !UnifiedIdentityLiveClient.strictJson().valueToTree(gatewayReadRouteContent("/api/v1/yuheng/admin/scopes")).equals(route.path("content"))) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var release = api.request("GET", base + "/releases/" + releaseId, reference, null, null, 200);
-        if (!groupId.equals(release.path("gatewayGroupId").asText()) || !releaseId.equals(release.path("releaseId").asText())
-                || !"SUCCESS".equals(release.path("status").asText()) || !release.path("partialApplied").isBoolean() || release.path("partialApplied").booleanValue()
-                || !receipt.path("ruleContentSha256").equals(release.path("structuredDiff").path("ruleContentSha256"))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        long deadline = System.nanoTime() + timeout.toNanos();
-        while (System.nanoTime() < deadline) {
-            var projection = api.request("GET", base + "/yuheng-groups/" + groupId + "/runtime-consistency", reference, null, null, 200);
-            if (gatewayProjectionMatches(projection, release, Instant.now())) { return projection; }
-            Thread.sleep(200);
-        }
-        throw new IllegalStateException("XINGYUAN_COMMIT_UNKNOWN");
-    }
-
-    private static JsonNode verifyTaskMcpPublication(NativeResourceHttpProbe owner, FormalReferenceDTO reference, JsonNode receipt,
-            GatewayTaskScopeVO scope, Duration timeout) throws Exception {
-        String runId = receipt.path("runId").asText(), groupId = receipt.path("gatewayGroupId").asText(), serverId = receipt.path("serverId").asText();
-        if (!mcpTaskServerCode(runId).equals(receipt.path("serverCode").asText()) || !reference.getResourceUri().toASCIIString().equals(receipt.path("resourceUri").asText())
-                || !"stellar-enclosure-yuheng-admin".equals(receipt.path("rbacApplicationCode").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        var projection = verifyGatewayOwnerPublication(owner, reference, receipt, scope, gatewayProtectedReadPolicy("yuheng:read", receipt.path("operationId").asText()), timeout, runId);
-        String serverPath = "/api/v1/yuheng/admin/mcp/servers";
-        var servers = owner.request("GET", serverPath + "?gatewayGroupId=" + groupId, reference, null, null, 200);
-        var resources = owner.request("GET", serverPath + '/' + serverId + "/resources?gatewayGroupId=" + groupId, reference, null, null, 200);
-        if (!servers.isArray() || servers.size() != 1 || !serverId.equals(servers.get(0).path("id").asText()) || !groupId.equals(servers.get(0).path("gatewayGroupId").asText())
-                || !resources.isArray() || resources.size() != 1 || !receipt.path("resourceId").equals(resources.get(0).path("id"))
-                || !serverId.equals(resources.get(0).path("serverId").asText()) || !groupId.equals(resources.get(0).path("gatewayGroupId").asText())
-                || !"RESOURCE".equals(resources.get(0).path("kind").asText()) || !"scopes".equals(resources.get(0).path("name").asText())
-                || !resources.get(0).path("enabled").isBoolean() || !resources.get(0).path("enabled").booleanValue()
-                || !UnifiedIdentityLiveClient.strictJson().valueToTree(mcpTaskResourceContent(runId, receipt.path("operationId").asText())).equals(resources.get(0).path("content"))) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var preview = owner.request("GET", serverPath + '/' + serverId + "/capability-preview", reference, null, null, 200);
-        requireTaskMcpPreview(preview, runId, serverId, receipt.path("resourceId").asText(), receipt.path("operationId").asText(), reference.getResourceUri());
-        if (!UnifiedIdentityLiveClient.sha256(UnifiedIdentityLiveClient.strictJson().writeValueAsBytes(preview)).equals(receipt.path("previewSha256").asText())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        return projection;
-    }
-
-    static boolean gatewayProjectionMatches(JsonNode value, JsonNode release, Instant now) {
-        String releaseId = release.path("releaseId").asText();
-        if (!value.path("stale").isBoolean() || value.path("stale").booleanValue() || !value.path("consistent").isBoolean() || !value.path("consistent").booleanValue()
-                || !releaseId.equals(value.path("targetReleaseId").asText()) || !"SUCCESS".equals(value.path("targetReleaseStatus").asText())
-                || !"TIANSHU_CONFIG_CLIENT".equals(value.path("source").asText()) || !"SUCCESS".equals(release.path("status").asText())
-                || !value.path("engineNodeCount").isIntegralNumber() || value.path("engineNodeCount").longValue() != 2
-                || !value.path("readyEngineNodeCount").isIntegralNumber() || value.path("readyEngineNodeCount").longValue() != 2
-                || !value.path("nodes").isArray() || value.path("nodes").size() != 2) { return false; }
-        var attempts = java.util.stream.StreamSupport.stream(release.path("attempts").spliterator(), false)
-                .filter(attempt -> "SUCCESS".equals(attempt.path("status").asText()) && attempt.path("attemptNo").isIntegralNumber()
-                        && attempt.path("attemptNo").canConvertToInt() && attempt.path("attemptNo").intValue() > 0)
-                .sorted(java.util.Comparator.comparingInt((JsonNode attempt) -> attempt.path("attemptNo").intValue()).reversed()).toList();
-        if (attempts.isEmpty() || !attempts.getFirst().path("targets").isArray() || attempts.getFirst().path("targets").size() != 2) { return false; }
-        var expectedAcks = new java.util.LinkedHashMap<String, JsonNode>(); var roles = new java.util.HashSet<String>();
-        for (var target : attempts.getFirst().path("targets")) {
-            if (!"SUCCESS".equals(target.path("status").asText()) || !roles.add(target.path("engineRole").asText())
-                    || !target.path("appliedArtifactSha256").asText().matches("[0-9a-f]{64}") || !target.path("appliedVersion").isIntegralNumber()
-                    || !target.path("appliedVersion").canConvertToLong() || target.path("appliedVersion").longValue() <= 0
-                    || !target.path("instanceId").isTextual() || target.path("instanceId").asText().isBlank()
-                    || expectedAcks.putIfAbsent(target.path("instanceId").asText(), target) != null) { return false; }
-        }
-        if (!roles.equals(java.util.Set.of("API_RPC", "MCP"))) { return false; }
-        var instances = new java.util.HashSet<String>(); var leases = new java.util.HashSet<String>();
-        for (var node : value.path("nodes")) {
-            var expected = expectedAcks.get(node.path("instanceId").asText());
-            if (!node.path("instanceId").isTextual() || node.path("instanceId").asText().isBlank() || !instances.add(node.path("instanceId").asText())
-                    || !node.path("leaseId").isTextual() || node.path("leaseId").asText().isBlank() || !leases.add(node.path("leaseId").asText())
-                    || !releaseId.equals(node.path("activeReleaseId").asText()) || !"CONSISTENT".equals(node.path("status").asText())
-                    || !"ACK_SUCCESS".equals(node.path("lastApplyStatus").asText()) || !node.path("activeRuleChecksum").asText().matches("[0-9a-f]{64}")
-                    || !node.path("activeRuleVersion").isIntegralNumber() || !node.path("activeRuleVersion").canConvertToLong() || node.path("activeRuleVersion").longValue() <= 0
-                    || expected == null || !expected.path("appliedArtifactSha256").equals(node.path("activeRuleChecksum"))
-                    || node.path("activeRuleVersion").longValue() < expected.path("appliedVersion").longValue()) { return false; }
-            Instant ack = transactionProofInstant(node, "lastAckAt"); if (ack.isAfter(now)) { return false; }
-        }
-        Instant observed = transactionProofInstant(value, "observedAt");
-        return !observed.isAfter(now) && !observed.isBefore(now.minusSeconds(30));
-    }
-
-    static boolean gatewayRejectedPublicationPreservesTheAppliedRules(JsonNode release, JsonNode before, JsonNode after, Instant now) {
-        if (!"FAILED".equals(release.path("status").asText()) || !release.path("partialApplied").isBoolean()
-                || !release.path("releaseId").asText().matches("[A-Za-z0-9_-]{1,128}") || release.path("releaseId").equals(before.path("targetReleaseId"))
-                || !before.path("consistent").isBoolean() || !before.path("consistent").booleanValue() || !"SUCCESS".equals(before.path("targetReleaseStatus").asText())
-                || !after.path("consistent").isBoolean() || after.path("consistent").booleanValue() || !"FAILED".equals(after.path("targetReleaseStatus").asText())
-                || !release.path("releaseId").equals(after.path("targetReleaseId")) || !after.path("readyEngineNodeCount").isIntegralNumber() || after.path("readyEngineNodeCount").longValue() != 0) { return false; }
-        var baselines = gatewayBaselineNodes(before); if (baselines.size() != 2) { return false; }
-        var attempts = java.util.stream.StreamSupport.stream(release.path("attempts").spliterator(), false)
-                .filter(value -> "FAILED".equals(value.path("status").asText()) && value.path("attemptNo").isIntegralNumber() && value.path("attemptNo").canConvertToInt() && value.path("attemptNo").intValue() > 0)
-                .sorted(java.util.Comparator.comparingInt((JsonNode value) -> value.path("attemptNo").intValue()).reversed()).toList();
-        if (attempts.isEmpty() || !attempts.getFirst().path("targets").isArray() || attempts.getFirst().path("targets").size() != 1) { return false; }
-        var targets = new java.util.HashSet<String>(); var roles = new java.util.HashSet<String>();
-        for (var target : attempts.getFirst().path("targets")) {
-            if (!"FAILED".equals(target.path("status").asText()) || !targets.add(target.path("instanceId").asText()) || !baselines.containsKey(target.path("instanceId").asText())
-                    || !roles.add(target.path("engineRole").asText()) || !"TIANSHU_TARGET_ERROR".equals(target.path("errorCode").asText())
-                    || !baselines.get(target.path("instanceId").asText()).path("leaseId").equals(target.path("leaseId"))
-                    || !(target.path("appliedArtifactSha256").isNull() || target.path("appliedArtifactSha256").isMissingNode())) { return false; }
-        }
-        if (!roles.equals(java.util.Set.of("API_RPC"))) { return false; }
-        return gatewayActiveRulesUnchanged(baselines, before, after, targets, now);
-    }
-
-    private static java.util.Map<String, JsonNode> gatewayBaselineNodes(JsonNode before) {
-        if (!before.path("nodes").isArray() || before.path("nodes").size() != 2) { return java.util.Map.of(); }
-        var baselines = new java.util.LinkedHashMap<String, JsonNode>();
-        for (var node : before.path("nodes")) {
-            if (!node.path("instanceId").isTextual() || node.path("instanceId").asText().isBlank() || baselines.putIfAbsent(node.path("instanceId").asText(), node) != null
-                    || !node.path("leaseId").isTextual() || node.path("leaseId").asText().isBlank() || !"ACK_SUCCESS".equals(node.path("lastApplyStatus").asText())
-                    || !before.path("targetReleaseId").equals(node.path("activeReleaseId")) || !node.path("activeRuleVersion").isIntegralNumber()
-                    || !node.path("activeRuleVersion").canConvertToLong() || node.path("activeRuleVersion").longValue() <= 0 || !node.path("activeRuleChecksum").asText().matches("[0-9a-f]{64}")) { return java.util.Map.of(); }
-        }
-        return baselines;
-    }
-
-    private static boolean gatewayActiveRulesUnchanged(java.util.Map<String, JsonNode> baselines, JsonNode before, JsonNode after,
-            java.util.Set<String> targets, Instant now) {
-        if (baselines.size() != 2 || targets.size() != 1 || !baselines.keySet().containsAll(targets)) { return false; }
-        for (var value : List.of(before, after)) {
-            if (!"TIANSHU_CONFIG_CLIENT".equals(value.path("source").asText()) || !value.path("stale").isBoolean() || value.path("stale").booleanValue()
-                    || !value.path("engineNodeCount").isInt() || value.path("engineNodeCount").intValue() != 2 || !value.path("nodes").isArray() || value.path("nodes").size() != 2) { return false; }
-        }
-        var seen = new java.util.HashSet<String>();
-        for (var node : after.path("nodes")) {
-            String instance = node.path("instanceId").asText(); var prior = baselines.get(instance);
-            if (prior == null || !seen.add(instance) || !(targets.contains(instance) ? "FAILED" : "ACK_SUCCESS").equals(node.path("lastApplyStatus").asText())) { return false; }
-            for (String field : List.of("leaseId", "activeReleaseId", "activeRuleVersion", "activeRuleChecksum")) { if (!prior.path(field).equals(node.path(field))) { return false; } }
-            Instant ack = transactionProofInstant(node, "lastAckAt");
-            if (ack.isBefore(transactionProofInstant(prior, "lastAckAt")) || ack.isAfter(now)) { return false; }
-        }
-        Instant observed = transactionProofInstant(after, "observedAt");
-        return !observed.isAfter(now) && !observed.isBefore(now.minusSeconds(30)) && !observed.isBefore(transactionProofInstant(before, "observedAt"));
-    }
-
-    @Test
-    void rejectedGatewayReleaseRequiresTheOriginalFirstRoleNackAndUnchangedActiveRules() {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); Instant now = Instant.parse("2026-10-15T00:00:30Z");
-        var before = mapper.createObjectNode().put("targetReleaseId", "good-release").put("targetReleaseStatus", "SUCCESS").put("consistent", true)
-                .put("source", "TIANSHU_CONFIG_CLIENT").put("stale", false).put("engineNodeCount", 2).put("readyEngineNodeCount", 2).put("observedAt", now.minusSeconds(2).toString());
-        var nodes = before.putArray("nodes");
-        for (String instance : List.of("api-node", "mcp-node")) {
-            nodes.addObject().put("instanceId", instance).put("leaseId", instance + "-lease").put("activeReleaseId", "good-release").put("activeRuleVersion", 3)
-                    .put("activeRuleChecksum", "a".repeat(64)).put("lastApplyStatus", "ACK_SUCCESS").put("lastAckAt", now.minusSeconds(2).toString());
-        }
-        var after = before.deepCopy().put("targetReleaseId", "bad-release").put("targetReleaseStatus", "FAILED").put("consistent", false).put("readyEngineNodeCount", 0).put("observedAt", now.toString());
-        ((com.fasterxml.jackson.databind.node.ObjectNode) after.path("nodes").get(0)).put("lastApplyStatus", "FAILED").put("lastAckAt", now.toString());
-        var release = mapper.createObjectNode().put("releaseId", "bad-release").put("status", "FAILED").put("partialApplied", false);
-        var acknowledgements = release.putArray("attempts").addObject().put("attemptNo", 1).put("status", "FAILED").putArray("targets");
-        for (String role : List.of("API_RPC")) {
-            String instance = role.equals("MCP") ? "mcp-node" : "api-node";
-            acknowledgements.addObject().put("instanceId", instance).put("leaseId", instance + "-lease").put("engineRole", role).put("status", "FAILED").put("errorCode", "TIANSHU_TARGET_ERROR").putNull("appliedArtifactSha256");
-        }
-        assertThat(gatewayRejectedPublicationPreservesTheAppliedRules(release, before, after, now)).isTrue();
-        var configProjection = after.deepCopy().put("targetReleaseId", "good-release").put("targetReleaseStatus", "SUCCESS").put("readyEngineNodeCount", 1);
-        assertThat(gatewayConfigFailurePreservesTheAppliedRules(before, configProjection, "api-node", now)).isTrue();
-        assertThat(gatewayConfigFailurePreservesTheAppliedRules(before, configProjection, "mcp-node", now)).isFalse();
-        var result = mapper.createObjectNode().put("changeId", "127").put("status", "FAILED").put("targetVersion", 9).put("resourceChecksum", "c".repeat(64))
-                .put("targetCount", 1).put("ackCount", 0).put("failedCount", 1).put("ignoredCount", 0).put("timeoutCount", 0);
-        assertThatCode(() -> requireTianshuGatewayNack(result, "127", 9, "c".repeat(64))).doesNotThrowAnyException();
-        for (String field : List.of("targetCount", "ackCount", "failedCount", "ignoredCount", "timeoutCount", "targetVersion", "resourceChecksum", "changeId", "status")) {
-            var invalid = result.deepCopy(); invalid.remove(field);
-            assertThatThrownBy(() -> requireTianshuGatewayNack(invalid, "127", 9, "c".repeat(64))).hasMessage("XINGYUAN_VERIFICATION_FAILED");
-        }
-        // Chunk publication can be partial while neither engine has activated the rejected rule.
-        assertThat(gatewayRejectedPublicationPreservesTheAppliedRules(release.deepCopy().put("partialApplied", true), before, after, now)).isTrue();
-        for (String fault : List.of("partial", "timeout", "ack", "version", "hash", "lease", "success", "stale", "role", "futureAck")) {
-            var bad = release.deepCopy(); var projection = after.deepCopy(); var first = (com.fasterxml.jackson.databind.node.ObjectNode) projection.path("nodes").get(0);
-            if (fault.equals("partial")) { bad.put("partialApplied", "true"); }
-            else if (fault.equals("timeout")) { bad.put("status", "TIMEOUT"); }
-            else if (fault.equals("ack")) { ((com.fasterxml.jackson.databind.node.ObjectNode) bad.path("attempts").get(0).path("targets").get(0)).put("status", "SUCCESS"); }
-            else if (fault.equals("version")) { first.put("activeRuleVersion", 4); }
-            else if (fault.equals("hash")) { first.put("activeRuleChecksum", "b".repeat(64)); }
-            else if (fault.equals("lease")) { first.put("leaseId", "replacement-lease"); }
-            else if (fault.equals("success")) { first.put("lastApplyStatus", "ACK_SUCCESS"); }
-            else if (fault.equals("stale")) { projection.put("stale", true); }
-            else if (fault.equals("futureAck")) { first.put("lastAckAt", now.plusSeconds(1).toString()); }
-            else { ((com.fasterxml.jackson.databind.node.ObjectNode) bad.path("attempts").get(0).path("targets").get(0)).put("engineRole", "MCP"); }
-            assertThat(gatewayRejectedPublicationPreservesTheAppliedRules(bad, before, projection, now)).as(fault).isFalse();
-        }
-    }
-
-    @Test
-    void gatewayProjectionMatchesOriginalPerRoleArtifactAcksRatherThanContentHashesOrOlderVersions() {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); Instant now = Instant.parse("2026-10-15T00:00:30Z");
-        var release = mapper.createObjectNode().put("releaseId", "123").put("status", "SUCCESS");
-        release.putObject("structuredDiff").put("ruleContentSha256", "a".repeat(64));
-        var targets = release.putArray("attempts").addObject().put("status", "SUCCESS").put("attemptNo", 1).putArray("targets");
-        var projection = mapper.createObjectNode().put("stale", false).put("consistent", true).put("targetReleaseId", "123").put("targetReleaseStatus", "SUCCESS")
-                .put("source", "TIANSHU_CONFIG_CLIENT").put("engineNodeCount", 2).put("readyEngineNodeCount", 2).put("observedAt", now.minusSeconds(1).toString());
-        var nodes = projection.putArray("nodes");
-        for (String role : List.of("API_RPC", "MCP")) {
-            String instance = role.equals("MCP") ? "mcp" : "biz", checksum = (role.equals("MCP") ? "c" : "b").repeat(64); int version = role.equals("MCP") ? 3 : 2;
-            targets.addObject().put("engineRole", role).put("instanceId", instance).put("leaseId", instance + "-lease").put("status", "SUCCESS").put("appliedVersion", version).put("appliedArtifactSha256", checksum);
-            nodes.addObject().put("instanceId", instance).put("leaseId", instance + "-lease").put("activeReleaseId", "123").put("status", "CONSISTENT")
-                    .put("lastApplyStatus", "ACK_SUCCESS").put("activeRuleChecksum", checksum).put("activeRuleVersion", version).put("lastAckAt", now.minusSeconds(2).toString());
-        }
-        assertThat(gatewayProjectionMatches(projection, release, now)).isTrue();
-        var wrongHash = projection.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) wrongHash.path("nodes").get(0)).put("activeRuleChecksum", "a".repeat(64));
-        assertThat(gatewayProjectionMatches(wrongHash, release, now)).isFalse();
-        var older = projection.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) older.path("nodes").get(0)).put("activeRuleVersion", 1);
-        assertThat(gatewayProjectionMatches(older, release, now)).isFalse();
-        var duplicate = projection.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) duplicate.path("nodes").get(1)).put("leaseId", "biz-lease");
-        assertThat(gatewayProjectionMatches(duplicate, release, now)).isFalse();
-        assertThat(gatewayProjectionMatches(projection.deepCopy().put("stale", true), release, now)).isFalse();
-        assertThat(gatewayProjectionMatches(projection.deepCopy().put("observedAt", now.minusSeconds(31).toString()), release, now)).isFalse();
-        var future = projection.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) future.path("nodes").get(0)).put("lastAckAt", now.plusSeconds(1).toString());
-        assertThat(gatewayProjectionMatches(future, release, now)).isFalse();
-    }
-
-    static GatewayReadOperationVO gatewayReadOperation(JsonNode application, JsonNode detail,
-            top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties expected) {
-        var operation = detail.path("operation"); var provider = operation.path("providerServiceIdentity");
-        if (!application.path("id").asText().matches("[A-Za-z0-9_-]{1,128}") || !application.path("ddcMatched").isBoolean() || !application.path("ddcMatched").booleanValue()
-                || !expected.getBizCode().equals(application.path("bizCode").asText()) || !expected.getAppCode().equals(application.path("applicationCode").asText())
-                || !expected.getEnv().equals(application.path("env").asText()) || !expected.getNamespace().equals(application.path("namespace").asText())
-                || !application.path("id").equals(operation.path("applicationId")) || !operation.path("id").asText().matches("[A-Za-z0-9_-]{1,128}")
-                || !"HTTP".equals(operation.path("protocol").asText()) || !"GET /api/v1/yuheng/admin/scopes".equals(operation.path("methodIdentity").asText())
-                || !"OPENAPI31".equals(operation.path("sourceType").asText()) || !"DISCOVERED".equals(operation.path("lifecycleStatus").asText())
-                || !operation.path("externalAccessible").isBoolean() || !operation.path("externalAccessible").booleanValue()
-                || !operation.path("currentDefinitionId").asText().matches("[A-Za-z0-9_-]{1,128}") || !detail.path("definitions").isArray()
-                || !expected.getBizCode().equals(provider.path("bizCode").asText()) || !expected.getAppCode().equals(provider.path("appCode").asText())
-                || !expected.getEnv().equals(provider.path("env").asText()) || !expected.getNamespace().equals(provider.path("namespace").asText())) {
-            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-        }
-        var selected = java.util.stream.StreamSupport.stream(detail.path("definitions").spliterator(), false)
-                .filter(value -> operation.path("currentDefinitionId").equals(value.path("id"))).toList();
-        if (selected.size() != 1 || !operation.path("id").equals(selected.getFirst().path("operationId"))
-                || !selected.getFirst().path("definitionSha256").asText().matches("(?:sha256:)?[0-9a-f]{64}")
-                || transactionProofLong(selected.getFirst(), "definitionVersion") <= 0) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        for (String field : List.of("serviceName", "group", "version", "transport")) {
-            if (!provider.path(field).isTextual() || !provider.path(field).textValue().matches("[A-Za-z0-9._:-]{1,128}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        }
-        return new GatewayReadOperationVO(application.path("id").asText(), operation.path("id").asText(), selected.getFirst().path("id").asText(),
-                transactionProofLong(selected.getFirst(), "definitionVersion"), selected.getFirst().path("definitionSha256").asText(),
-                new top.egon.cola.component.yuheng.contract.rule.GatewayProviderServiceRef(expected.getBizCode(), expected.getAppCode(), expected.getEnv(), expected.getNamespace(),
-                        top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP, provider.path("serviceName").asText(), provider.path("group").asText(),
-                        provider.path("version").asText(), provider.path("transport").asText()));
-    }
-
-    @Test
-    void gatewayReadSelectionRequiresTheActualExternalOpenApiDefinitionAndProviderTuple() {
-        var mapper = UnifiedIdentityLiveClient.strictJson(); var expected = new top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties();
-        expected.setBizCode("reviewed-biz"); expected.setAppCode("reviewed-app"); expected.setEnv("reviewed-env"); expected.setNamespace("reviewed-namespace");
-        var application = mapper.createObjectNode().put("id", "123").put("ddcMatched", true).put("bizCode", expected.getBizCode()).put("applicationCode", expected.getAppCode())
-                .put("env", expected.getEnv()).put("namespace", expected.getNamespace());
-        var detail = mapper.createObjectNode(); var operation = detail.putObject("operation").put("id", "124").put("applicationId", "123").put("protocol", "HTTP")
-                .put("methodIdentity", "GET /api/v1/yuheng/admin/scopes").put("sourceType", "OPENAPI31").put("lifecycleStatus", "DISCOVERED").put("externalAccessible", true).put("currentDefinitionId", "125");
-        operation.putObject("providerServiceIdentity").put("bizCode", expected.getBizCode()).put("appCode", expected.getAppCode()).put("env", expected.getEnv()).put("namespace", expected.getNamespace())
-                .put("serviceName", "reviewed-http").put("group", "default").put("version", "v1").put("transport", "http");
-        detail.putArray("definitions").addObject().put("id", "125").put("operationId", "124").put("definitionVersion", 1).put("definitionSha256", "a".repeat(64));
-        assertThat(gatewayReadOperation(application, detail, expected).operationId()).isEqualTo("124");
-        for (String field : List.of("sourceType", "lifecycleStatus", "methodIdentity", "applicationId", "currentDefinitionId")) {
-            var wrong = detail.deepCopy(); wrong.withObject("operation").put(field, "unreviewed");
-            assertThatThrownBy(() -> gatewayReadOperation(application, wrong, expected)).isInstanceOf(IllegalArgumentException.class);
-        }
-        var internal = detail.deepCopy(); internal.withObject("operation").put("externalAccessible", false);
-        assertThatThrownBy(() -> gatewayReadOperation(application, internal, expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        var foreign = detail.deepCopy(); foreign.withObject("operation").withObject("providerServiceIdentity").put("appCode", "another-app");
-        assertThatThrownBy(() -> gatewayReadOperation(application, foreign, expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        var duplicate = detail.deepCopy(); duplicate.withArray("definitions").add(detail.path("definitions").get(0));
-        assertThatThrownBy(() -> gatewayReadOperation(application, duplicate, expected)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-    }
-
-    @Test
-    void taskGatewayPolicyUsesOriginalMandatoryScopeAndFineProvidersAndSignedConfiguration() throws Exception {
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            var extractor = top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpUserCookieCredentialExtractor.createConfigured(
-                    new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpReservedHeaderSanitizer());
-            var authentication = top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpIdentityAuthenticationProvider.createConfigured(
-                    (context, token) -> { throw new AssertionError("Configuration compilation must not authenticate"); }, validators.getValidator());
-            var mandatory = new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpOAuthScopeAuthorizationProvider(null,
-                    top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder.NOOP, validators.getValidator());
-            var ordinary = new top.egon.cola.platform.tianquan.jianshen.yuheng.security.Rbac3BizAppScopeAuthorizationProvider(
-                    context -> { throw new AssertionError("Configuration compilation must not evaluate PDP"); });
-            var registry = new top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityCapabilityRegistry(List.of(extractor), List.of(authentication),
-                    List.of(mandatory, ordinary), List.of(new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpTrustedIdentityMapper()));
-            var compiler = new top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityPolicyCompiler(registry);
-            var configuration = gatewayProtectedReadPolicy("yuheng:read", "123");
-            var source = new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy("it-light-security", "SECURITY", "OPERATION", configuration);
-            var compiled = compiler.compile(List.of(source), java.util.Map.of(source.policyId(), java.util.Set.of(top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP))).get(source.policyId());
-            assertThat(compiled.requiredOAuthScopes()).containsExactly("yuheng:read");
-            assertThat(registry.requiredAuthorizations(compiled)).containsExactly(mandatory.providerId());
-            assertThat(compiled.authorizationProviderIds()).containsExactly(ordinary.providerId());
-            assertThat(compiled.credentialForwardingMode()).isEqualTo(top.egon.cola.component.yuheng.core.security.CredentialForwardingMode.ORIGINAL_BEARER);
-            for (String fault : List.of("missing", "string", "duplicate", "identity")) {
-                var changed = new java.util.LinkedHashMap<>(configuration);
-                if (fault.equals("missing")) { changed.remove("requiredOAuthScopes"); }
-                else { changed.put("requiredOAuthScopes", fault.equals("string") ? "yuheng:read" : fault.equals("duplicate")
-                        ? List.of("yuheng:read", "yuheng:read") : List.of("openid")); }
-                var invalid = new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy(source.policyId(), source.type(), source.scope(), changed);
-                assertThatThrownBy(() -> compiler.compile(List.of(invalid), java.util.Map.of())).isInstanceOf(IllegalArgumentException.class);
-            }
-            var codec = new top.egon.cola.component.yuheng.runtime.rule.adapter.json.GatewayRuleJsonCodec();
-            var changed = new java.util.LinkedHashMap<>(configuration); changed.put("requiredOAuthScopes", List.of("yuheng:catalog:write"));
-            assertThat(UnifiedIdentityLiveClient.sha256(codec.write(source))).isNotEqualTo(UnifiedIdentityLiveClient.sha256(codec.write(
-                    new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy(source.policyId(), source.type(), source.scope(), changed))));
-        }
-    }
-
-    @Test
-    void taskUserGatewayReadRelaysTheOriginalBearerWithoutServiceIdentityHeaders() throws Exception {
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            var now = Instant.now();
-            var user = new top.egon.cola.platform.tianquan.shoubing.contract.IdentityPrincipal("user-1", "1001", "jti-1", java.util.Set.of("yuheng"),
-                    now.minusSeconds(1), now.plusSeconds(300), top.egon.cola.platform.tianquan.shoubing.contract.AuthenticationContext.password());
-            var proof = new top.egon.cola.platform.tianquan.shoubing.starter.security.domain.TokenAuditProofBO(
-                    URI.create("https://idp.example/tenants/1001"), URI.create("https://resource.example/yuheng"), null, "a".repeat(64), "b".repeat(64));
-            var extractor = top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpUserCookieCredentialExtractor.createConfigured(
-                    new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpReservedHeaderSanitizer());
-            var authentication = top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpIdentityAuthenticationProvider.createConfigured(
-                    (context, token) -> new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpGatewayJwtVerifier.Verification(
-                            user, top.egon.cola.component.yuheng.core.security.AuthenticationFailure.NONE, null, java.util.Set.of("yuheng:read"), proof), validators.getValidator());
-            var mandatory = new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpOAuthScopeAuthorizationProvider(null,
-                    top.egon.cola.platform.tianquan.shoubing.core.observability.IdpSecurityMetricsRecorder.NOOP, validators.getValidator());
-            var ordinary = new top.egon.cola.platform.tianquan.jianshen.yuheng.security.Rbac3BizAppScopeAuthorizationProvider(
-                    context -> top.egon.cola.component.yuheng.core.security.AuthorizationDecision.allow());
-            var registry = new top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityCapabilityRegistry(List.of(extractor), List.of(authentication),
-                    List.of(mandatory, ordinary), List.of(new top.egon.cola.platform.tianquan.shoubing.yuheng.security.IdpTrustedIdentityMapper()));
-            var source = new top.egon.cola.component.yuheng.contract.rule.GatewayRuntimePolicy("task-read", "SECURITY", "OPERATION", gatewayProtectedReadPolicy("yuheng:read", "123"));
-            var policy = new top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityPolicyCompiler(registry)
-                    .compile(List.of(source), java.util.Map.of(source.policyId(), java.util.Set.of(top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP))).get(source.policyId());
-            var exchange = org.mockito.Mockito.mock(top.egon.cola.component.yuheng.core.exchange.GatewayExchange.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
-            org.mockito.Mockito.when(exchange.request().headers()).thenReturn(new top.egon.cola.component.yuheng.core.exchange.ImmutableGatewayHeaders(
-                    java.util.Map.of("authorization", List.of("Bearer original-user-bearer"))));
-            var context = new top.egon.cola.component.yuheng.core.security.GatewayAuthContext(top.egon.cola.component.yuheng.contract.protocol.AccessZone.PUBLIC,
-                    top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP, "123", null, source.policyId(), "/api/v1/yuheng/admin/scopes", "GET", java.util.Set.of(),
-                    top.egon.cola.component.yuheng.core.context.GatewayPrincipal.anonymous(), "127.0.0.1", UUID.randomUUID().toString(), UUID.randomUUID().toString(),
-                    Instant.now().plusSeconds(5), "task-release", java.util.Map.of());
-            var result = new top.egon.cola.component.yuheng.runtime.security.service.GatewaySecurityChain(registry)
-                    .execute(exchange, context, policy, top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol.HTTP).block(Duration.ofSeconds(5));
-            assertThat(result.context().principal().principalType()).isEqualTo("USER");
-            assertThat(result.forwardingCredential().tokenReference()).isEqualTo("original-user-bearer");
-            assertThat(result.trustedIdentity().httpHeaders()).isEmpty();
-        }
-    }
-
-    @Test
-    void gatewayPublicationScopeBindsBothOriginalModelsToTheExactTask() throws Exception {
-        String runId = UUID.randomUUID().toString(), expected = "xingyuan-it-" + runId;
-        var biz = new Properties(); var mcp = new Properties();
-        String engine = "egon.cola.component.yuheng.engine.", protocol = "egon.cola.component.yuheng.mcp-engine.";
-        biz.setProperty(engine + "gateway-group-code", expected); biz.setProperty(engine + "env", "local"); biz.setProperty(engine + "namespace", expected);
-        mcp.setProperty(protocol + "yuheng-group-code", expected); mcp.setProperty(protocol + "env", "local"); mcp.setProperty(protocol + "namespace", expected);
-        mcp.setProperty(protocol + "node-id", "controlled-mcp"); mcp.setProperty(protocol + "instance-id", "controlled-mcp"); mcp.setProperty(protocol + "data-directory", "./controlled");
-        biz.setProperty("egon.cola.component.tianshu.env", "local"); mcp.setProperty("egon.cola.component.tianshu.env", "local");
-        var scope = gatewayTaskScope(biz, mcp, runId);
-        assertThat(scope).isEqualTo(new GatewayTaskScopeVO(expected, "local", expected));
-        try (var validators = Validation.buildDefaultValidatorFactory()) {
-            assertThat(validators.getValidator().validate(top.egon.cola.component.tianshu.admin.model.dto.DdcConfigQueryRequest.builder().env(scope.env()).build())).isEmpty();
-        }
-        for (var profile : List.of(biz, mcp)) {
-            String prefix = profile == biz ? engine : protocol;
-            for (String field : List.of(profile == biz ? "gateway-group-code" : "yuheng-group-code", "env", "namespace")) {
-                profile.setProperty(prefix + field, "default");
-                assertThatThrownBy(() -> gatewayTaskScope(biz, mcp, runId)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-                profile.setProperty(prefix + field, field.equals("env") ? "local" : expected);
+        for (String kind : List.of("Accepted", "ResolvedRefs", "Programmed", "DataplaneConverged")) {
+            var matches = receipt.path("conditions").valueStream().filter(value -> kind.equals(value.path("type").textValue())).toList();
+            if (matches.size() != 1 || !"True".equals(matches.getFirst().path("status").textValue())
+                    || !generation.equals(matches.getFirst().path("observedGeneration").textValue())) {
+                throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED");
             }
         }
-        mcp.setProperty("egon.cola.component.tianshu.env", "foreign");
-        assertThatThrownBy(() -> gatewayTaskScope(biz, mcp, runId)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        mcp.setProperty("egon.cola.component.tianshu.env", "local");
-        assertThatThrownBy(() -> gatewayTaskScope(biz, mcp, UUID.randomUUID().toString())).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> gatewayTaskScope(biz, mcp, "unreviewed")).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
+
+    private static String fixtureBearer(Path root, FormalReferenceDTO reference) throws IOException {
+        byte[] bytes = UnifiedIdentityLiveClient.protectedBytes(reference.getTokenFile(), root.resolve("secrets"), 128 * 1024);
+        try {
+            if (!reference.getExpiresAt().isAfter(Instant.now()) || !reference.getTokenSha256().equals(UnifiedIdentityLiveClient.sha256(bytes))) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
+            return new String(bytes, StandardCharsets.UTF_8);
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
+    private static JsonNode scopesRequest(HttpClient http, Duration timeout, Path root, URI url, FormalReferenceDTO reference,
+            String tenantHeader, int expected) throws Exception {
+        var request = HttpRequest.newBuilder(url).timeout(timeout).GET();
+        if (reference != null) {
+            request.header("Authorization", "Bearer " + fixtureBearer(root, reference));
+        }
+        if (tenantHeader != null) {
+            request.header("X-Tenant-Id", tenantHeader);
+        }
+        var captured = new ByteArrayOutputStream();
+        var response = http.send(request.build(), boundedBody(captured));
+        assertThat(response.statusCode()).isEqualTo(expected);
+        var body = UnifiedIdentityLiveClient.strictJson().readTree(captured.toByteArray());
+        assertThat(body).isNotNull();
+        if (expected == 200) {
+            assertThat(body.isArray()).isTrue();
+        }
+        return body;
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "XINGYUAN_ISOLATED_INTEGRATION", matches = "true")
+    void actualCiliumReadRequiresTheOriginalApplicationAuthorization() throws Exception {
+        var client = UnifiedIdentityLiveClient.isolated();
+        var mapper = UnifiedIdentityLiveClient.strictJson();
+        Path manifestFile = Path.of(System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST")));
+        byte[] raw = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024);
+        var manifest = mapper.readTree(raw);
+        String digest = UnifiedIdentityLiveClient.sha256(raw);
+        Path root = Path.of(manifest.path("runtimeRoot").asText());
+        Path evidence = Path.of(System.getProperty("xingyuan.isolated.evidence-directory", root.resolve("evidence").toString()));
+        requireEvidenceDirectory(root, evidence);
+        var fixture = CiliumAuthorizationFixture.from(manifest);
+        var owner = client.formal("default", fixture.resourceKey(), "admin");
+        var control = new GatewayAdminTestClient(fixture.adminOrigin(), fixtureBearer(root, owner));
+        var exposure = control.getExposure(fixture.exposureId());
+        assertThat(exposure.status()).isEqualTo(200);
+        requireCurrentCiliumExposure(exposure.body(), fixture.exposureId(), fixture.publicUrl());
+
+        var output = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
+                .put("scope", "CILIUM_HTTP_ROUTE_AND_APPLICATION_AUTHORIZATION")
+                .put("exposureId", fixture.exposureId()).put("desiredGeneration", exposure.body().path("desiredGeneration").textValue())
+                .put("routeUid", exposure.body().path("kubernetesRoute").path("uid").textValue());
+        var identities = output.putArray("identities");
+        Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
+        try (var http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
+            for (String realm : List.of("default", "tenant-b")) {
+                var admin = client.formal(realm, fixture.resourceKey(), "admin");
+                var viewer = client.formal(realm, fixture.resourceKey(), "viewer");
+                var foreign = client.formal(realm, fixture.foreignResourceKey(), "admin");
+                var identityOnly = acquireIdentityOnlyProbe(client, root, evidence, manifestFile, manifest, digest, realm, fixture.resourceKey());
+                assertThat(foreign.getResourceUri()).isNotEqualTo(admin.getResourceUri());
+                var before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
+                var allowed = scopesRequest(http, timeout, root, fixture.publicUrl(), admin, null, 200);
+                var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
+                requireOneBusinessInvocation(before, after);
+                var observation = identities.addObject().put("realmCode", realm).put("allowedStatus", 200);
+                observation.set("before", before);
+                observation.set("after", after);
+                var denials = observation.putArray("denials");
+                for (var denial : List.of(new ReadDenial("MISSING_TOKEN", null, 401), new ReadDenial("IDENTITY_ONLY_SCOPE", identityOnly, 403),
+                        new ReadDenial("VIEWER_PDP", viewer, 403), new ReadDenial("FOREIGN_AUDIENCE", foreign, 401))) {
+                    before = after;
+                    scopesRequest(http, timeout, root, fixture.publicUrl(), denial.reference(), null, denial.status());
+                    after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
+                    assertThat(after).isEqualTo(before);
+                    denials.addObject().put("kind", denial.kind()).put("status", denial.status()).set("businessCounts", after);
+                }
+                var other = client.formal("default".equals(realm) ? "tenant-b" : "default", fixture.resourceKey(), "admin");
+                var selected = scopesRequest(http, timeout, root, fixture.publicUrl(), admin, other.getTenantId(), 200);
+                assertThat(selected).isEqualTo(allowed);
+                var verified = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", realm, "BUSINESS_COUNTS", null);
+                requireOneBusinessInvocation(after, verified);
+                observation.put("originalTenantStatus", 200).set("originalTenantCounts", verified);
+            }
+        }
+        var latest = control.getExposure(fixture.exposureId());
+        assertThat(latest.status()).isEqualTo(200);
+        requireCurrentCiliumExposure(latest.body(), fixture.exposureId(), fixture.publicUrl());
+        assertThat(latest.body().path("desiredGeneration")).isEqualTo(exposure.body().path("desiredGeneration"));
+        assertThat(latest.body().path("kubernetesRoute").path("uid")).isEqualTo(exposure.body().path("kubernetesRoute").path("uid"));
+        output.put("status", "PASSED").put("recordedAt", Instant.now().toString());
+        XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve(CILIUM_AUTHORIZATION_PROOF), output);
+    }
+
+    private record ReadDenial(String kind, FormalReferenceDTO reference, int status) { }
 
     private static final java.util.Map<String, String> PLATFORM_READ_PATHS = java.util.Map.of(
             "shoubing", "/api/v1/tianquan-shoubing/clients", "jianshen", "/api/tianquan-jianshen/v1/iam/roles",
@@ -1738,7 +827,7 @@ class XingyuanResourceAuthorizationIT {
                     api.request("GET", PLATFORM_READ_PATHS.get(role), foreign, null, null, 401, calls::add);
                     api.request("GET", PLATFORM_READ_PATHS.get(role), null, null, null, 401, calls::add);
                     for (String mutation : List.of("SIGNATURE", "ISSUER", "TYPE", "DUPLICATE")) {
-                        calls.add(platformTamperedRequest(http, timeout, root, reference, nativeResourceEndpoint(role, "GET", PLATFORM_READ_PATHS.get(role)), mutation));
+                        calls.add(platformTamperedRequest(http, timeout, root, reference, nativeResourceEndpoint(manifest, role, "GET", PLATFORM_READ_PATHS.get(role)), mutation));
                     }
                     var denied = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, role, realm, "BUSINESS_COUNTS", null);
                     if (!successful.equals(denied)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
@@ -1931,11 +1020,11 @@ class XingyuanResourceAuthorizationIT {
         Path registryFile = root.resolve("secrets/runtime-registry.json");
         byte[] registryBytes = UnifiedIdentityLiveClient.protectedBytes(registryFile, root.resolve("secrets"), 2 * 1024 * 1024);
         var registry = mapper.readTree(registryBytes);
-        String origin = manifest.path("publicOrigin").asText();
-        if (!"https://127.0.0.1:28443".equals(origin) || !origin.equals(registry.path("publicOrigin").asText())
+        String origin = UnifiedIdentityLiveClient.ciliumOrigin(manifest, "shoubing").toASCIIString();
+        if (!origin.equals(registry.path("publicOrigin").asText())
                 || !digest.equals(registry.path("manifestSha256").asText()) || !manifest.path("runId").asText().equals(registry.path("runId").asText())
                 || registry.path("realms").size() != 3 || registry.path("tenantIds").size() != 2) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("shoubing", "edge"));
+        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("shoubing"));
         var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText())
                 .put("manifestSha256", digest).put("scope", "THREE_ISSUER_PROTOCOL_ONLY");
         var observations = proof.putArray("issuers");
@@ -2443,7 +1532,7 @@ class XingyuanResourceAuthorizationIT {
     }
 
     static void requireRunningProcesses(Path root, Path manifestFile, JsonNode manifest, String digest, Path evidence, java.util.Set<String> expected) throws Exception {
-        if (expected.isEmpty() || !java.util.Set.of("shoubing", "jianshen", "edge", "tianshu", "yuheng", "biz", "mcp", "llm", "native-light", "native-web", "native-service", "native-agent").containsAll(expected)) {
+        if (expected.isEmpty() || !java.util.Set.of("shoubing", "jianshen", "tianshu", "yuheng", "mcp", "llm", "native-light", "native-web", "native-service", "native-agent").containsAll(expected)) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
         Path output = evidence.resolve("native-sql-status-" + UUID.randomUUID() + ".json");
@@ -2491,24 +1580,15 @@ class XingyuanResourceAuthorizationIT {
             return request(method, path, reference, body, tenantHeader, expected, null);
         }
 
-        JsonNode mcpOwnerRequest(String method, String path, FormalReferenceDTO reference, JsonNode body, String idempotencyKey, int expected) throws Exception {
-            if (!"yuheng".equals(role) || !mcpOwnerPath(method, path) || idempotencyKey == null || !idempotencyKey.matches("[A-Za-z0-9._:-]{1,128}")) {
-                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
-            }
-            return request(method, path, reference, body, null, expected, null, idempotencyKey);
-        }
-
         JsonNode request(String method, String path, FormalReferenceDTO reference, JsonNode body, String tenantHeader, int expected,
                 java.util.function.Consumer<HttpAuditObservationVO> observations) throws Exception {
-            return request(method, path, reference, body, tenantHeader, expected, observations, null);
-        }
-
-        private JsonNode request(String method, String path, FormalReferenceDTO reference, JsonNode body, String tenantHeader, int expected,
-                java.util.function.Consumer<HttpAuditObservationVO> observations, String idempotencyKey) throws Exception {
-            if (!digest.equals(UnifiedIdentityLiveClient.sha256(UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024)))) {
+            byte[] manifestBytes = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024);
+            if (!digest.equals(UnifiedIdentityLiveClient.sha256(manifestBytes))) {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
-            var builder = HttpRequest.newBuilder(nativeResourceEndpoint(role, method, path)).timeout(timeout).header("X-Request-Id", UUID.randomUUID().toString());
+            JsonNode manifest = UnifiedIdentityLiveClient.strictJson().readTree(manifestBytes);
+            var builder = HttpRequest.newBuilder(nativeResourceEndpoint(manifest, role, method, path)).timeout(timeout)
+                    .header("X-Request-Id", UUID.randomUUID().toString());
             String trace = UUID.randomUUID().toString().replace("-", ""); Instant started = Instant.now();
             if (observations != null) { builder.header("traceparent", "00-" + trace + '-' + UUID.randomUUID().toString().replace("-", "").substring(0, 16) + "-01"); }
             if (reference != null) {
@@ -2519,7 +1599,6 @@ class XingyuanResourceAuthorizationIT {
                 } finally { java.util.Arrays.fill(bytes, (byte) 0); }
             }
             if (tenantHeader != null) { builder.header("X-Tenant-Id", tenantHeader); }
-            if (idempotencyKey != null) { builder.header("Idempotency-Key", idempotencyKey); }
             if (method.equals("POST")) { builder.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body.toString())); }
             else if (method.equals("PUT")) { builder.header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofString(body.toString())); }
             else { builder.GET(); }
@@ -2584,22 +1663,25 @@ class XingyuanResourceAuthorizationIT {
         assertThatCode(() -> requireGraphQlAsyncDelta(before, denied, 2, 0)).doesNotThrowAnyException();
     }
 
-    static URI nativeResourceEndpoint(String role, String method, String path) {
-        if ("tianshu".equals(role) && tianshuConfigOwnerPath(method, path)) { return URI.create("https://127.0.0.1:28150" + path); }
-        if ("biz".equals(role) && "GET".equals(method) && java.util.Set.of("/api/v1/yuheng/admin/scopes", "/api/v1/yuheng/admin/scopes/__xingyuan-required-scope").contains(path)) {
-            return URI.create("https://127.0.0.1:28180" + path);
+    private static JsonNode testOrigins() {
+        var manifest = UnifiedIdentityLiveClient.strictJson().createObjectNode();
+        var origins = manifest.putObject("ciliumOrigins");
+        for (String role : List.of("llm", "native-web", "native-light", "native-agent")) {
+            origins.put(role, "https://" + role + ".apps.example.test");
         }
-        if ("yuheng".equals(role) && mcpOwnerPath(method, path)) { return URI.create("https://127.0.0.1:28140" + path); }
-        if ("yuheng".equals(role) && knowledgeManagementPath(method, path)) { return URI.create("https://127.0.0.1:28140" + path); }
-        if ("yuheng".equals(role) && gatewayOwnerPath(method, path)) { return URI.create("https://127.0.0.1:28140" + path); }
+        return manifest;
+    }
+
+    static URI nativeResourceEndpoint(JsonNode manifest, String role, String method, String path) {
+        URI origin = UnifiedIdentityLiveClient.ciliumOrigin(manifest, role);
+        if ("yuheng".equals(role) && knowledgeManagementPath(method, path)) { return origin.resolve(path); }
         if ("llm".equals(role)) {
             if (!("GET".equals(method) && "/v1/models".equals(path) || "POST".equals(method)
                     && java.util.Set.of("/v1/chat/completions", "/v1/embeddings", "/v1/responses", "/v1/messages").contains(path))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            return URI.create("https://127.0.0.1:28190" + path);
+            return origin.resolve(path);
         }
         if (PLATFORM_READ_PATHS.containsKey(role) && "GET".equals(method) && PLATFORM_READ_PATHS.get(role).equals(path)) {
-            int port = switch (role) { case "shoubing" -> 28120; case "jianshen" -> 28130; case "yuheng" -> 28140; case "tianshu" -> 28150; default -> throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); };
-            return URI.create("https://127.0.0.1:" + port + path);
+            return origin.resolve(path);
         }
         if ("native-agent".equals(role)) {
             String prefix = "/api/v1/knowledge-bases";
@@ -2607,56 +1689,16 @@ class XingyuanResourceAuthorizationIT {
                     && (path.matches(prefix + "/[1-9][0-9]{0,18}") || path.matches(prefix + "\\?page=1&size=100&keyword=[A-Za-z0-9._-]{2,64}")))) {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
-            return URI.create("https://127.0.0.1:28313" + path);
+            return origin.resolve(path);
         }
-        String prefix; int port;
-        if ("native-light".equals(role)) { prefix = "/api/users"; port = 28310; }
-        else if ("native-web".equals(role)) { prefix = "/api/v1/users"; port = 28311; }
+        String prefix;
+        if ("native-light".equals(role)) { prefix = "/api/users"; }
+        else if ("native-web".equals(role)) { prefix = "/api/v1/users"; }
         else { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         if (!("POST".equals(method) && (prefix.equals(path) || "/graphql".equals(path)) || "GET".equals(method) && path.matches(prefix + "/[1-9][0-9]{0,18}"))) {
             throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
         }
-        return URI.create("https://127.0.0.1:" + port + path);
-    }
-
-    static boolean gatewayOwnerPath(String method, String path) {
-        if (path == null || path.length() > 1024 || path.contains("..") || path.contains("\\") || path.contains("#")) { return false; }
-        String base = "/api/v1/yuheng/admin", id = "[A-Za-z0-9_-]{1,128}";
-        if (method.equals("GET")) {
-            return path.equals(base + "/yuheng-groups") || path.equals(base + "/applications")
-                    || path.matches(base + "/applications/" + id + "/catalog") || path.matches(base + "/operations/" + id)
-                    || path.matches(base + "/releases/" + id) || path.matches(base + "/yuheng-groups/" + id + "/(?:draft|runtime-consistency|engine-nodes)");
-        }
-        if (method.equals("POST")) { return path.equals(base + "/yuheng-groups") || path.matches(base + "/yuheng-groups/" + id + "/releases"); }
-        return method.equals("PUT") && path.matches(base + "/yuheng-groups/" + id + "/draft/(?:policies/it-(?:read|mcp)-security|routes/it-protected-read)");
-    }
-
-    static boolean mcpOwnerPath(String method, String path) {
-        if (path == null || path.length() > 1024 || path.contains("..") || path.contains("\\") || path.contains("#")) { return false; }
-        String base = "/api/v1/yuheng/admin/mcp", id = "[A-Za-z0-9_-]{1,128}";
-        if ("GET".equals(method)) { return path.matches(base + "/servers\\?gatewayGroupId=" + id) || path.matches(base + "/servers/" + id)
-                || path.matches(base + "/servers/" + id + "/resources\\?gatewayGroupId=" + id) || path.matches(base + "/servers/" + id + "/capability-preview"); }
-        if ("POST".equals(method)) { return path.equals(base + "/servers") || path.matches(base + "/servers/" + id + "/resources"); }
-        return "PUT".equals(method) && (path.matches(base + "/servers/" + id) || path.matches(base + "/resources/" + id));
-    }
-
-    @Test
-    void mcpOwnerBoundaryOnlyAllowsTheOriginalServerAndResourceMethods() {
-        assertThat(mcpOwnerPath("GET", "/api/v1/yuheng/admin/mcp/servers?gatewayGroupId=group-1")).isTrue();
-        assertThat(mcpOwnerPath("POST", "/api/v1/yuheng/admin/mcp/servers")).isTrue();
-        assertThat(mcpOwnerPath("POST", "/api/v1/yuheng/admin/mcp/servers/server-1/resources")).isTrue();
-        for (String path : List.of("/api/v1/yuheng/admin/mcp/servers?gatewayGroupId=group-1&foreign=true", "/api/v1/yuheng/admin/mcp/servers/server-1/tools", "/api/v1/yuheng/admin/mcp/servers/../foreign")) {
-            assertThat(mcpOwnerPath("POST", path)).isFalse(); assertThat(mcpOwnerPath("GET", path)).isFalse();
-        }
-        assertThat(mcpOwnerPath("DELETE", "/api/v1/yuheng/admin/mcp/servers/server-1")).isFalse();
-    }
-
-    static boolean tianshuConfigOwnerPath(String method, String path) {
-        if (path == null || path.length() > 1024 || path.contains("..") || path.contains("\\") || path.contains("#")) { return false; }
-        String base = "/api/v1/tianshu", id = "[1-9][0-9]{0,18}", code = "[A-Za-z0-9._-]{1,128}";
-        return "GET".equals(method) && (path.matches(base + "/configs\\?bizCode=" + code + "&env=local&appCode=" + code + "&includeDeleted=false") || path.matches(base + "/publish-tasks/" + id)
-                || path.matches(base + "/configs/" + id + "/versions/page\\?pageNo=1&pageSize=1"))
-                || "PUT".equals(method) && path.matches(base + "/configs/" + id) || "POST".equals(method) && path.matches(base + "/configs/" + id + "/publish");
+        return origin.resolve(path);
     }
 
     static boolean knowledgeManagementPath(String method, String path) {
@@ -2664,27 +1706,6 @@ class XingyuanResourceAuthorizationIT {
         String base = "/api/v1/yuheng/admin/knowledge-bases";
         return method.equals("GET") && (path.equals(base + "?page=1&size=100") || path.matches(base + "/[1-9][0-9]{0,18}") || path.equals("/api/v1/yuheng/admin/llm/models"))
                 || method.equals("POST") && path.equals(base);
-    }
-
-    @Test
-    void gatewayOwnerCallsStayOnTheOriginalTaskManagementMethodsAndPaths() {
-        String base = "/api/v1/yuheng/admin";
-        assertThat(nativeResourceEndpoint("yuheng", "GET", base + "/applications/123/catalog").toASCIIString()).isEqualTo("https://127.0.0.1:28140" + base + "/applications/123/catalog");
-        assertThat(nativeResourceEndpoint("yuheng", "PUT", base + "/yuheng-groups/123/draft/policies/it-read-security").getPort()).isEqualTo(28140);
-        assertThat(nativeResourceEndpoint("yuheng", "POST", base + "/yuheng-groups/123/releases").getHost()).isEqualTo("127.0.0.1");
-        for (String path : List.of("https://foreign.invalid" + base, base + "/yuheng-groups/../draft", base + "/yuheng-groups/123/draft/policies/other-policy", base + "/operations/123/manual-definition")) {
-            assertThatThrownBy(() -> nativeResourceEndpoint("yuheng", "PUT", path)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        }
-        assertThatThrownBy(() -> nativeResourceEndpoint("yuheng", "DELETE", base + "/yuheng-groups/123")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        String config = "/api/v1/tianshu/configs";
-        assertThat(nativeResourceEndpoint("tianshu", "GET", config + "?bizCode=owned&env=local&appCode=owned-gateway&includeDeleted=false").getPort()).isEqualTo(28150);
-        assertThat(nativeResourceEndpoint("tianshu", "PUT", config + "/123").getPort()).isEqualTo(28150);
-        assertThat(nativeResourceEndpoint("tianshu", "POST", config + "/123/publish").getPort()).isEqualTo(28150);
-        assertThat(nativeResourceEndpoint("tianshu", "GET", config + "/123/versions/page?pageNo=1&pageSize=1").getPort()).isEqualTo(28150);
-        for (String path : List.of(config, config + "/123/rollback", config + "?bizCode=owned&env=prod&appCode=owned&includeDeleted=false", config + "/../other", "/api/v1/tianshu/publish-tasks/123/retry")) {
-            assertThatThrownBy(() -> nativeResourceEndpoint("tianshu", "POST", path)).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        }
-        assertThatThrownBy(() -> nativeResourceEndpoint("tianshu", "DELETE", config + "/123")).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
     static void requireLlmSecurityEnvelope(JsonNode response, String path, int status) {
@@ -2733,7 +1754,7 @@ class XingyuanResourceAuthorizationIT {
         byte[] bytes = UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024); var manifest = mapper.readTree(bytes);
         Path root = Path.of(manifest.path("runtimeRoot").asText()); String digest = UnifiedIdentityLiveClient.sha256(bytes);
         Path evidence = Path.of(System.getProperty("xingyuan.isolated.evidence-directory", root.resolve("evidence").toString())); requireEvidenceDirectory(root, evidence);
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("llm", "shoubing", "edge"));
+        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("llm", "shoubing"));
         Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
         var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
                 .put("scope", "ACTUAL_LLM_PROTOCOL_IDENTITY_SCOPE_GUARDS_ONLY"); var observations = proof.putArray("observations");
@@ -2775,9 +1796,9 @@ class XingyuanResourceAuthorizationIT {
     @Test
     void llmTargetsAndErrorsPreserveAllFiveOriginalProtocolPaths() {
         var mapper = UnifiedIdentityLiveClient.strictJson();
-        assertThat(nativeResourceEndpoint("llm", "GET", "/v1/models").toASCIIString()).isEqualTo("https://127.0.0.1:28190/v1/models");
-        assertThatThrownBy(() -> nativeResourceEndpoint("llm", "POST", "/v1/models")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> nativeResourceEndpoint("llm", "GET", "https://foreign.invalid/v1/models")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThat(nativeResourceEndpoint(testOrigins(), "llm", "GET", "/v1/models").toASCIIString()).isEqualTo("https://llm.apps.example.test/v1/models");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "llm", "POST", "/v1/models")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "llm", "GET", "https://foreign.invalid/v1/models")).hasMessage("XINGYUAN_TARGET_UNSAFE");
         var error = mapper.createObjectNode().put("type", "error"); error.putObject("error").put("type", "permission_error").put("message", "Denied").put("code", "permission_denied");
         assertThatCode(() -> requireLlmSecurityEnvelope(error, "/v1/messages", 403)).doesNotThrowAnyException();
         error.remove("type"); assertThatThrownBy(() -> requireLlmSecurityEnvelope(error, "/v1/messages", 403)).hasMessage("XINGYUAN_VERIFICATION_FAILED");
@@ -2838,7 +1859,7 @@ class XingyuanResourceAuthorizationIT {
         }
         requirePrivateSpoolDirectory(root, audit.spoolDirectory());
         var reference = client.formal("default", client.resourceForAlias("edge-yuheng"), "admin"); client.verifiedClaims(reference);
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing", "edge"));
+        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing"));
         Duration timeout = Duration.ofSeconds(manifest.path("deadlines").path("httpSeconds").intValue());
         var proof = mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
                 .put("scope", "YUHENG_TASK_SPOOL_IO_READINESS_AND_RECOVERY").put("tokenReference", reference.getTokenSha256())
@@ -2846,7 +1867,7 @@ class XingyuanResourceAuthorizationIT {
         try (var http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build()) {
             var api = new NativeResourceHttpProbe("yuheng", root, manifestFile, digest, http, timeout);
             for (String kind : List.of("DEAD", "CAPACITY")) {
-                awaitYuhengReadiness(http, timeout, true);
+                awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), timeout, true);
                 var before = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
                 api.request("GET", "/api/v1/yuheng/admin/scopes", reference, null, null, 200);
                 var baseline = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
@@ -2858,7 +1879,7 @@ class XingyuanResourceAuthorizationIT {
                     XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve("resource-spool-fault-" + UUID.randomUUID() + ".json"),
                             mapper.createObjectNode().put("schemaVersion", 1).put("runId", manifest.path("runId").asText()).put("manifestSha256", digest)
                                     .put("kind", kind).put("ownedFile", root.relativize(fault.path).toString()).put("logicalSize", fault.size).put("recordedAt", Instant.now().toString()));
-                    awaitYuhengReadiness(http, timeout, false);
+                    awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), timeout, false);
                     var denied = api.request("GET", "/api/v1/yuheng/admin/scopes", reference, null, null, 503);
                     if (!"OAUTH_AUDIT_DELIVERY_UNAVAILABLE".equals(denied.path("code").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                     var after = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
@@ -2866,7 +1887,7 @@ class XingyuanResourceAuthorizationIT {
                     var observation = observations.addObject().put("kind", kind).put("readinessStatus", 503).put("businessStatus", 503);
                     observation.set("before", baseline); observation.set("after", after);
                 }
-                awaitYuhengReadiness(http, timeout, true);
+                awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), timeout, true);
                 api.request("GET", "/api/v1/yuheng/admin/scopes", reference, null, null, 200);
                 var recovered = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
                 if (Math.addExact(baseline.path("counts").path("list").longValue(), 1) != recovered.path("counts").path("list").longValue()) {
@@ -2875,17 +1896,22 @@ class XingyuanResourceAuthorizationIT {
                 ((com.fasterxml.jackson.databind.node.ObjectNode) observations.get(observations.size() - 1)).put("recoveryReadinessStatus", 200).set("recovered", recovered);
             }
         }
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing", "edge"));
+        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing"));
         if (!digest.equals(UnifiedIdentityLiveClient.sha256(UnifiedIdentityLiveClient.protectedBytes(manifestFile, null, 128 * 1024)))) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         proof.put("status", "PASSED").put("recordedAt", Instant.now().toString());
         XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve("resource-spool-readiness.json"), proof);
     }
 
-    private static void awaitYuhengReadiness(HttpClient http, Duration timeout, boolean expected) throws Exception {
+    private static URI yuhengManagementReadiness(JsonNode manifest) {
+        URI origin = GatewayAdminTestClient.reviewedServiceOrigin(manifest.path("managementOrigins").path("yuheng").asText());
+        return origin.resolve("/actuator/health/readiness");
+    }
+
+    private static void awaitYuhengReadiness(HttpClient http, URI endpoint, Duration timeout, boolean expected) throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             var body = new ByteArrayOutputStream();
-            var response = http.send(HttpRequest.newBuilder(URI.create("https://127.0.0.1:28140/actuator/health/readiness"))
+            var response = http.send(HttpRequest.newBuilder(endpoint)
                     .GET().timeout(Duration.ofNanos(Math.max(1, deadline - System.nanoTime()))).build(), boundedBody(body));
             var value = UnifiedIdentityLiveClient.strictJson().readTree(body.toByteArray());
             if (response.headers().firstValue("Location").isPresent() || response.headers().firstValue("Set-Cookie").isPresent()) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
@@ -2953,9 +1979,9 @@ class XingyuanResourceAuthorizationIT {
                     || securityMetricCount(after, "jwks.cache.access", "MISS") != securityMetricCount(before, "jwks.cache.access", "MISS")
                     || securityMetricCount(after, "jwks.cache.access", "EXPIRED") != securityMetricCount(before, "jwks.cache.access", "EXPIRED")) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
             proof.set("metricsBefore", before); proof.set("metricsAfterRepeatedValidCalls", after);
-            awaitYuhengSpoolDrained(root, timeout); awaitYuhengReadiness(http, timeout, true);
+            awaitYuhengSpoolDrained(root, timeout); awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), timeout, true);
             var baseline = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
-            String trace = UUID.randomUUID().toString().replace("-", ""); var request = HttpRequest.newBuilder(nativeResourceEndpoint("yuheng", "GET", PLATFORM_READ_PATHS.get("yuheng")))
+            String trace = UUID.randomUUID().toString().replace("-", ""); var request = HttpRequest.newBuilder(nativeResourceEndpoint(manifest, "yuheng", "GET", PLATFORM_READ_PATHS.get("yuheng")))
                     .GET().timeout(timeout).header("X-Request-Id", UUID.randomUUID().toString()).header("traceparent", "00-" + trace + '-' + UUID.randomUUID().toString().replace("-", "").substring(0, 16) + "-01");
             byte[] token = UnifiedIdentityLiveClient.protectedBytes(reference.getTokenFile(), root.resolve("secrets"), 128 * 1024);
             try {
@@ -2974,7 +2000,7 @@ class XingyuanResourceAuthorizationIT {
                 if (unavailable.statusCode() != 503 || !resumesAt.isAfter(Instant.now())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
                 var error = mapper.readTree(body.toByteArray());
                 if (!java.util.Set.of("OAUTH_SECURITY_STATE_TIMEOUT", "OAUTH_SECURITY_STATE_UNAVAILABLE", "OAUTH_AUDIT_DELIVERY_UNAVAILABLE").contains(error.path("code").asText())) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-                awaitYuhengReadiness(http, Duration.ofSeconds(2), false);
+                awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), Duration.ofSeconds(2), false);
                 proof.put("unavailableCode", error.path("code").asText()).put("readinessDuringFault", 503);
             } finally {
                 if (restore) { proof.set("resume", XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "SHARED_STATE_RESUME", null)); }
@@ -2982,7 +2008,7 @@ class XingyuanResourceAuthorizationIT {
             proof.set("unavailableRequest", mapper.valueToTree(observedHttpCall(unavailable, trace, requestedAt)));
             var denied = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null);
             if (!baseline.equals(denied)) { throw new IllegalStateException("XINGYUAN_VERIFICATION_FAILED"); }
-            awaitYuhengSpoolDrained(root, timeout); awaitYuhengReadiness(http, timeout, true);
+            awaitYuhengSpoolDrained(root, timeout); awaitYuhengReadiness(http, yuhengManagementReadiness(manifest), timeout, true);
             api.request("GET", PLATFORM_READ_PATHS.get("yuheng"), reference, null, null, 200);
             var recovered = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "BUSINESS_COUNTS", null); requireOneBusinessInvocation(denied, recovered);
             var finalMetrics = XingyuanNativeAuthenticationIT.invokeApplicationProbe(root, evidence, manifestFile, manifest, digest, "yuheng", "default", "SECURITY_METRICS", null);
@@ -2990,7 +2016,7 @@ class XingyuanResourceAuthorizationIT {
             proof.set("businessBeforeFault", baseline); proof.set("businessAfterUnavailable", denied); proof.set("businessAfterRecovery", recovered); proof.set("metricsAfterRecovery", finalMetrics);
             proof.put("recoveryReadiness", 200).put("recoveryStatus", 200).put("repeatedValidRequestCount", 8);
         }
-        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing", "edge"));
+        requireRunningProcesses(root, manifestFile, manifest, digest, evidence, java.util.Set.of("yuheng", "shoubing"));
         proof.put("status", "PASSED").put("recordedAt", Instant.now().toString());
         XingyuanNativeAuthenticationIT.publishNewNativeEvidence(root, evidence.resolve("resource-shared-state-metrics.json"), proof);
     }
@@ -3062,20 +2088,20 @@ class XingyuanResourceAuthorizationIT {
 
     @Test
     void nativeUserHttpTargetsCannotChooseAnUnreviewedHostOrMutation() {
-        assertThat(nativeResourceEndpoint("native-web", "POST", "/api/v1/users").toString()).isEqualTo("https://127.0.0.1:28311/api/v1/users");
-        assertThat(nativeResourceEndpoint("native-light", "POST", "/graphql").toString()).isEqualTo("https://127.0.0.1:28310/graphql");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-light", "GET", "/graphql")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-agent", "POST", "/api/v1/users")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-web", "DELETE", "/api/v1/users/1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-web", "GET", "/api/v1/users/../1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThat(nativeResourceEndpoint(testOrigins(), "native-web", "POST", "/api/v1/users").toString()).isEqualTo("https://native-web.apps.example.test/api/v1/users");
+        assertThat(nativeResourceEndpoint(testOrigins(), "native-light", "POST", "/graphql").toString()).isEqualTo("https://native-light.apps.example.test/graphql");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-light", "GET", "/graphql")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-agent", "POST", "/api/v1/users")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-web", "DELETE", "/api/v1/users/1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-web", "GET", "/api/v1/users/../1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
     @Test
     void nativeAgentKnowledgeTargetsUseOnlyTheOriginalFrozenPaths() {
-        assertThat(nativeResourceEndpoint("native-agent", "POST", "/api/v1/knowledge-bases").toString())
-                .isEqualTo("https://127.0.0.1:28313/api/v1/knowledge-bases");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-agent", "DELETE", "/api/v1/knowledge-bases/1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
-        assertThatThrownBy(() -> nativeResourceEndpoint("native-agent", "GET", "/api/v1/knowledge-bases/../secrets")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThat(nativeResourceEndpoint(testOrigins(), "native-agent", "POST", "/api/v1/knowledge-bases").toString())
+                .isEqualTo("https://native-agent.apps.example.test/api/v1/knowledge-bases");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-agent", "DELETE", "/api/v1/knowledge-bases/1")).hasMessage("XINGYUAN_TARGET_UNSAFE");
+        assertThatThrownBy(() -> nativeResourceEndpoint(testOrigins(), "native-agent", "GET", "/api/v1/knowledge-bases/../secrets")).hasMessage("XINGYUAN_TARGET_UNSAFE");
     }
 
     @Test

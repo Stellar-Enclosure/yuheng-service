@@ -18,7 +18,7 @@
   ],
   "tools": [
     {
-      "toolId": "tool-http",
+      "toolId": "1111111111111111111111111111111111111111111111111111111111111111",
       "serverCode": "commerce",
       "name": "http_query",
       "description": "Queries an order over local HTTP",
@@ -34,7 +34,7 @@
       "enabled": true
     },
     {
-      "toolId": "tool-rpc",
+      "toolId": "2222222222222222222222222222222222222222222222222222222222222222",
       "serverCode": "commerce",
       "name": "rpc_export",
       "description": "Starts a durable export over local RPC",

@@ -1,17 +1,12 @@
 package top.egon.cola.component.yuheng.admin.rule.service;
 
 import org.junit.jupiter.api.Test;
-import top.egon.cola.component.yuheng.admin.rule.domain.vo.CompiledGatewayRelease;
 import top.egon.cola.component.yuheng.contract.mcp.protocol.McpProtocolDialect;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuleContent;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeServer;
 import top.egon.cola.component.yuheng.contract.mcp.rule.McpRuntimeTool;
-import top.egon.cola.component.yuheng.contract.protocol.GatewayProtocol;
-import top.egon.cola.component.yuheng.contract.rule.GatewayProviderServiceRef;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuleContent;
-import top.egon.cola.component.yuheng.contract.rule.GatewayRuntimeOperation;
+import top.egon.cola.component.yuheng.mcp.rule.service.McpRuleCompiler;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,80 +17,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GatewayMcpRuleCompilerTest {
 
-    private final GatewayRuleCompiler compiler = new GatewayRuleCompiler(
-            new GatewayRuleCanonicalizer()
-    );
+    private final McpRuleCompiler compiler = new McpRuleCompiler();
 
     @Test
-    void publishesMcpInsideTheCanonicalGatewaySnapshot() {
-        McpRuleContent mcp = mcp("orders");
+    void exposesThePinnedLocalOperationThroughTheIndependentMcpCatalogue() {
+        var catalogue = compiler.compile(mcp("orders"), Set.of("orders"));
 
-        CompiledGatewayRelease release = compiler.compile(
-                "release-mcp",
-                Instant.parse("2026-08-02T00:00:00Z"),
-                content(mcp)
-        );
-
-        assertEquals(mcp, release.snapshot().content().mcp());
-        assertTrue(release.snapshotJson().contains("\"mcp\""));
-        assertTrue(release.snapshotJson().contains("\"orders.get\""));
+        assertEquals("orders", catalogue.server("orders").orElseThrow().serverCode());
+        assertEquals("orders", catalogue.tool("orders", "orders.get").orElseThrow().operationId());
     }
 
     @Test
     void rejectsLocalMcpToolThatReferencesAnUnknownOperation() {
         IllegalArgumentException failure = assertThrows(
                 IllegalArgumentException.class,
-                () -> compiler.compile(
-                        "release-invalid",
-                        Instant.parse("2026-08-02T00:00:00Z"),
-                        content(mcp("missing-operation"))
-                )
+                () -> compiler.compile(mcp("missing-operation"), Set.of("orders"))
         );
 
-        assertTrue(failure.getMessage().contains(
-                "MCP tool references unknown operation"
-        ));
-    }
-
-    private GatewayRuleContent content(McpRuleContent mcp) {
-        GatewayRuntimeOperation operation = new GatewayRuntimeOperation(
-                "orders",
-                "orders",
-                GatewayProtocol.HTTP,
-                "GET /orders",
-                "{}",
-                "{}",
-                true,
-                new GatewayProviderServiceRef(
-                        "test-biz",
-                        "test-app",
-                        "local",
-                        "default",
-                        GatewayProtocol.HTTP,
-                        "orders",
-                        "default",
-                        "v1",
-                        "http"
-                ),
-                "TRANSPARENT",
-                Set.of(),
-                Map.of(),
-                false
-        );
-        return new GatewayRuleContent(
-                "group-1",
-                "orders",
-                "local",
-                "default",
-                List.of(operation),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                mcp
-        );
+        assertTrue(failure.getMessage().contains("references unknown operation"));
     }
 
     private McpRuleContent mcp(String operationId) {

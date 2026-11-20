@@ -51,58 +51,12 @@ springdoc:
 
 egon:
   cola:
-    platform:
-      tianquan:
-        shoubing:
-          service-client:
-            app-id: ${YUHENG_TEST_TIANSHU_APP_ID:stellar-enclosure-yuheng-test-http-provider}
-            registration-id: ${YUHENG_TEST_TIANSHU_REGISTRATION_ID:stellar-enclosure-yuheng-test-http-provider}
     component:
       id:
         enabled: false
-      tianshu:
-        tenant-id: ${TIANSHU_TENANT_ID:}
-        redis:
-          username: ${TIANSHU_REDIS_USERNAME:}
-        enabled: false
-        registration-resource-uri: ${TIANSHU_REGISTRATION_RESOURCE_URI:https://tianshu.egon.internal/local}
-        biz-code: ${TIANSHU_BIZ_CODE:test-biz}
-        app-code: ${TIANSHU_APP_CODE:stellar-enclosure-yuheng-test-http-provider}
-        env: ${TIANSHU_ENV:test}
-        namespace: ${TIANSHU_NAMESPACE:stellar-enclosure-yuheng-test}
-        rpc:
-          target: ${TIANSHU_RPC_TARGET:dns:///127.0.0.1:19080}
-          load-balancing-policy: round_robin
-          tls:
-            development-plaintext: ${TIANSHU_RPC_DEVELOPMENT_PLAINTEXT:true}
-          auth:
-            runtime:
-              access-key: ${TIANSHU_RPC_RUNTIME_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_RUNTIME_SECRET_KEY:}
-            registry:
-              access-key: ${TIANSHU_RPC_REGISTRY_ACCESS_KEY:}
-              secret-key: ${TIANSHU_RPC_REGISTRY_SECRET_KEY:}
-        registry:
-          enabled: false
-          http:
-            enabled: true
-            instance-id: ${YUHENG_TEST_TIANSHU_INSTANCE_ID:${yuheng.test.provider-id:http-provider-default}}
-            service-name: ${YUHENG_TEST_SERVICE_NAME:stellar-enclosure-yuheng-test-http-provider}
-            group: default
-            version: ${yuheng.test.service-version}
-            protocol: http
-            advertised-host: ${yuheng.test.advertised-host:127.0.0.1}
-            port: ${yuheng.test.advertised-port:0}
-            lease-seconds: 30
-            heartbeat-interval-seconds: 10
-            fail-fast: true
-            metadata:
-              yuheng.zone: ${yuheng.test.zone:zone-a}
-              yuheng.weight: ${yuheng.test.weight:100}
       yuheng:
         openapi:
           enabled: true
-          publish-to-tianshu: true
           published-groups:
             - orders
             - inventory

@@ -34,14 +34,13 @@ public final class UnifiedIdentityLiveClient {
         return new UnifiedIdentityLiveClient();
     }
 
-    int get(String baseUrl, String path, String accessToken)
+    int get(URI endpoint, String accessToken)
             throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(
-                        URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(5))
-                .header("Authorization", "Bearer " + accessToken)
-                .GET()
-                .build();
+        var builder = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(5)).GET();
+        if (accessToken != null) {
+            builder.header("Authorization", "Bearer " + accessToken);
+        }
+        HttpRequest request = builder.build();
         return http.send(request, HttpResponse.BodyHandlers.discarding())
                 .statusCode();
     }
@@ -55,8 +54,16 @@ public final class UnifiedIdentityLiveClient {
     }
 
     String token(String envName) throws IOException {
-        return Files.readString(Path.of(requiredEnv(envName)), StandardCharsets.UTF_8)
-                .trim();
+        byte[] bytes = protectedBytes(Path.of(requiredEnv(envName)), null, 16_384);
+        try {
+            String value = new String(bytes, StandardCharsets.UTF_8).strip();
+            if (!value.matches("[A-Za-z0-9._~+/=-]+")) {
+                throw new IllegalArgumentException("Invalid OAuth test credential");
+            }
+            return value;
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     JsonNode claims(String token) throws IOException {
@@ -67,6 +74,26 @@ public final class UnifiedIdentityLiveClient {
         byte[] payload = Base64.getUrlDecoder().decode(segments[1]);
         return JSON.readTree(payload);
     }
+    public static URI ciliumOrigin(String value) {
+        URI uri = URI.create(value);
+        String host = uri.getHost();
+        if (!"https".equals(uri.getScheme()) || host == null || host.endsWith(".svc.cluster.local")
+                || !host.matches("[a-z][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+")
+                || uri.getPort() != -1 || !"".equals(uri.getRawPath())
+                || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        }
+        return uri;
+    }
+
+    public static URI ciliumOrigin(JsonNode manifest, String role) {
+        if (!Set.of("shoubing", "jianshen", "tianshu", "yuheng", "mcp", "llm", "native-light", "native-web",
+                "native-service", "native-agent").contains(role)) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        }
+        return ciliumOrigin(manifest.path("ciliumOrigins").path(role).asText());
+    }
+
     public static IsolatedResourceProbe isolated() throws Exception {
         if (!"true".equals(System.getenv("XINGYUAN_ISOLATED_INTEGRATION"))) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
         String manifestValue = System.getProperty("xingyuan.isolated.manifest-file", System.getenv("XINGYUAN_INTEGRATION_MANIFEST"));
@@ -199,6 +226,26 @@ public final class UnifiedIdentityLiveClient {
         if (!manifest.path("runId").asText().equals(ready.path("runId").asText()) || !digest.equals(ready.path("manifestSha256").asText())
                 || !exclusions.isObject() || exclusions.size() != 1 || !hash.equals(exclusions.path("native-agent").asText())) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
         return all.subList(0, 3);
+    }
+
+    public static String nativeRpcBindingReference(JsonNode binding) {
+        var fields = new java.util.HashSet<String>();
+        binding.fieldNames().forEachRemaining(fields::add);
+        String id = binding.path("bindingId").textValue();
+        String namespace = binding.path("namespace").textValue();
+        String service = binding.path("service").textValue();
+        JsonNode version = binding.path("bindingVersion");
+        JsonNode port = binding.path("port");
+        if (!fields.equals(java.util.Set.of("bindingId", "bindingVersion", "namespace", "service", "port"))
+                || id == null || !id.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+                || namespace == null || !namespace.matches("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+                || service == null || !service.matches("[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+                || !version.isIntegralNumber() || !version.canConvertToLong() || version.longValue() < 1
+                || !port.isIntegralNumber() || !port.canConvertToInt() || port.intValue() < 1 || port.intValue() > 65535) {
+            throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+        }
+        String material = String.join("\n", "xingyuan-native-rpc-binding-v2", id, version.asText(), namespace, service, port.asText());
+        return sha256(material.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public static String sha256(byte[] value) {
@@ -417,14 +464,13 @@ public final class UnifiedIdentityLiveClient {
         public String resourceForAlias(String alias) { return registryResourceForAlias(registry, alias); }
 
         public String resourceForLlm() {
-            var resources = java.util.stream.StreamSupport.stream(registry.path("resources").spliterator(), false)
-                    .filter(value -> "https://127.0.0.1:28190".equals(value.path("resourceUri").asText()) && "ACTIVE".equals(value.path("status").asText())).toList();
-            if (resources.size() != 1 || resources.getFirst().path("resourceServerId").asText().isBlank()) { throw new IllegalStateException("XINGYUAN_INPUT_UNAVAILABLE"); }
-            String id = resources.getFirst().path("resourceServerId").asText();
-            var bindings = java.util.stream.StreamSupport.stream(registry.path("cliResources").spliterator(), false)
-                    .filter(value -> id.equals(value.path("resourceServerId").asText())).toList();
-            if (bindings.size() != 1 || !bindings.getFirst().path("resourceKey").asText().matches("[a-z][a-z0-9-]{2,63}")) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
-            return bindings.getFirst().path("resourceKey").asText();
+            var matches = registry.path("cliResources").valueStream()
+                    .filter(value -> "llm".equals(value.path("targetRole").textValue())
+                            && "/v1/models".equals(value.path("readPath").textValue())).toList();
+            if (matches.size() != 1 || !matches.getFirst().path("resourceKey").asText().matches("[a-z][a-z0-9-]{2,63}")) {
+                throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
+            }
+            return matches.getFirst().path("resourceKey").textValue();
         }
 
         public FormalReferenceDTO identityOnly(String realm, String resourceKey, Path metadataFile) throws Exception {
@@ -495,7 +541,7 @@ public final class UnifiedIdentityLiveClient {
             if (clients.size() != 1) { throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE"); }
             var client = clients.getFirst();
             String tenant = registry.path("tenantIds").path(realm).asText();
-            String issuer = manifest.path("publicOrigin").asText() + "/tenants/" + tenant;
+            String issuer = ciliumOrigin(manifest, "shoubing") + "/tenants/" + tenant;
             if (!"PUBLIC".equals(client.path("clientType").asText()) || !"USER".equals(client.path("purpose").asText())
                     || !"ACTIVE".equals(client.path("status").asText()) || !issuer.equals(client.path("issuer").asText())
                     || !tenant.equals(token.path("tenantId").asText()) || !issuer.equals(token.path("issuer").asText())
@@ -507,8 +553,10 @@ public final class UnifiedIdentityLiveClient {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
             String path = binding.path("readPath").asText();
-            boolean llmModels = "https://127.0.0.1:28190".equals(token.path("resourceUri").asText()) && "/v1/models".equals(path);
-            if (!path.startsWith("/api/") && !llmModels || path.contains("..") || path.contains("\\") || path.contains("#")) {
+            String targetRole = binding.path("targetRole").asText();
+            URI targetOrigin = ciliumOrigin(manifest, targetRole);
+            boolean llmModels = "llm".equals(targetRole) && "/v1/models".equals(path);
+            if (!path.matches("/api/[A-Za-z0-9_./-]+") && !llmModels || path.contains("..") || path.contains("//")) {
                 throw new IllegalArgumentException("XINGYUAN_TARGET_UNSAFE");
             }
             var scopes = scopeSet(token.path("scopes"));
@@ -522,7 +570,7 @@ public final class UnifiedIdentityLiveClient {
             }
             var reference = FormalReferenceDTO.builder().realmCode(realm).resourceKey(resourceKey).tenantId(tenant).subject(registry.path("subjects").path(user).asText())
                     .clientId(id).clientPk(client.path("clientPk").asText()).issuer(URI.create(issuer)).resourceUri(URI.create(token.path("resourceUri").asText()))
-                    .readEndpoint(URI.create(manifest.path("publicOrigin").asText() + path)).tokenFile(Path.of(token.path("tokenFile").asText()))
+                    .readEndpoint(targetOrigin.resolve(path)).tokenFile(Path.of(token.path("tokenFile").asText()))
                     .tokenSha256(token.path("tokenSha256").asText()).expiresAt(java.time.Instant.parse(token.path("expiresAt").asText())).scopes(java.util.Set.copyOf(scopes)).build();
             try (var validators = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
                 new top.egon.cola.component.common.core.validation.ValidationUtils(validators.getValidator()).validate(reference);
@@ -625,8 +673,8 @@ public final class UnifiedIdentityLiveClient {
             validateNativeTenantIsolationProof(proof, manifest.path("runId").asText(), digest, first, second,
                     java.time.Instant.now(), Duration.ofSeconds(manifest.path("deadlines").path("operationSeconds").intValue()));
             // A by-ID API has different real rows per tenant; one static registry path cannot select both.
-            first.setReadEndpoint(URI.create("https://127.0.0.1:28310/api/users/" + proof.path("tenantARowId").asText()));
-            second.setReadEndpoint(URI.create("https://127.0.0.1:28310/api/users/" + proof.path("tenantBRowId").asText()));
+            first.setReadEndpoint(ciliumOrigin(manifest, "native-light").resolve("/api/users/" + proof.path("tenantARowId").asText()));
+            second.setReadEndpoint(ciliumOrigin(manifest, "native-light").resolve("/api/users/" + proof.path("tenantBRowId").asText()));
             try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
                 var validation = new top.egon.cola.component.common.core.validation.ValidationUtils(factory.getValidator());
                 validation.validate(first); validation.validate(second);
@@ -736,7 +784,7 @@ public final class UnifiedIdentityLiveClient {
             var expectedFields = new java.util.HashSet<>(java.util.Set.of("schemaVersion", "runId", "manifestSha256", "status", "scope", "recordedAt", "proofs"));
             if (userData) { expectedFields.add("crossTenantIsolationConfirmed"); }
             if (!fields.equals(expectedFields)
-                    || !proof.path("schemaVersion").isInt() || proof.path("schemaVersion").intValue() != 1
+                    || !proof.path("schemaVersion").isInt() || proof.path("schemaVersion").intValue() != 2
                     || !manifest.path("runId").asText().equals(proof.path("runId").asText()) || !digest.equals(proof.path("manifestSha256").asText())
                     || !"PASSED".equals(proof.path("status").asText()) || !userData && !"STANDALONE_NOT_FOUND_PROTOCOL".equals(proof.path("scope").asText())
                     || userData && (!proof.path("crossTenantIsolationConfirmed").isBoolean() || !proof.path("crossTenantIsolationConfirmed").booleanValue())
@@ -756,8 +804,8 @@ public final class UnifiedIdentityLiveClient {
             for (var item : proof.path("proofs")) {
                 var itemFields = new java.util.HashSet<String>(); item.fieldNames().forEachRemaining(itemFields::add);
                 String caller = item.path("consumerRole").asText(), peer = item.path("providerRole").asText(), tenant = item.path("tenantId").asText();
-                var expectedItemFields = new java.util.HashSet<>(java.util.Set.of("consumerRole", "providerRole", "tenantId", "methodReference", "descriptorReference", "leaseReference",
-                        "leaseRevision", "leaseExpiresAt", "businessStatus", "missingTokenStatus", "responseReference",
+                var expectedItemFields = new java.util.HashSet<>(java.util.Set.of("consumerRole", "providerRole", "tenantId", "methodReference", "descriptorReference", "bindingReference",
+                        "bindingVersion", "businessStatus", "missingTokenStatus", "responseReference",
                         "beforeBusiness", "successfulBusiness", "beforeMissingToken", "afterMissingToken", "successfulRequest", "missingTokenRequest"));
                 if (userData) { expectedItemFields.add("httpReference"); }
                 else { expectedItemFields.add("serviceSecurity"); }
@@ -767,9 +815,13 @@ public final class UnifiedIdentityLiveClient {
                         || userData && (!"native-service".equals(caller) || !"native-web".equals(peer) || !item.path("httpReference").asText().matches("[0-9a-f]{64}"))
                         || !registry.path("tenantIds").path("default").asText().equals(tenant) && !registry.path("tenantIds").path("tenant-b").asText().equals(tenant)
                         || !tuples.add(caller + ":" + peer + ":" + tenant) || !"UNAUTHENTICATED".equals(item.path("missingTokenStatus").asText())
-                        || !item.path("leaseRevision").isIntegralNumber() || !item.path("leaseRevision").canConvertToLong() || item.path("leaseRevision").longValue() < 1
-                        || !item.path("leaseExpiresAt").isTextual() || !item.path("leaseExpiresAt").textValue().endsWith("Z")
                         || !(userData ? "USER_DATA_MATCHED" : peer.equals("native-service") ? "COURSE_NOT_FOUND" : "ORG_NOT_FOUND").equals(item.path("businessStatus").asText())) {
+                    throw new IllegalArgumentException("XINGYUAN_VERIFICATION_FAILED");
+                }
+                JsonNode approved = manifest.path("nativeRpcServices").path(peer);
+                if (!item.path("bindingVersion").isIntegralNumber() || !item.path("bindingVersion").canConvertToLong()
+                        || item.path("bindingVersion").longValue() != approved.path("bindingVersion").longValue()
+                        || !nativeRpcBindingReference(approved).equals(item.path("bindingReference").asText())) {
                     throw new IllegalArgumentException("XINGYUAN_VERIFICATION_FAILED");
                 }
                 validateRpcProviderCounterProofs(item, peer, userData && registry.path("tenantIds").path("tenant-b").asText().equals(tenant) ? 1 : 0);
@@ -783,7 +835,7 @@ public final class UnifiedIdentityLiveClient {
                     if (!requestTraces.add(validateRpcAuditObservation(security.path("scopeDeniedRequest"), "PERMISSION_DENIED", recorded, maximumAge))
                             || !requestTraces.add(validateRpcAuditObservation(security.path("revokedRequest"), "UNAUTHENTICATED", recorded, maximumAge))) { throw new IllegalArgumentException("XINGYUAN_VERIFICATION_FAILED"); }
                 }
-                for (String reference : java.util.List.of("methodReference", "descriptorReference", "leaseReference", "responseReference")) {
+                for (String reference : java.util.List.of("methodReference", "descriptorReference", "responseReference")) {
                     if (!item.path(reference).asText().matches("[0-9a-f]{64}")) { throw new IllegalArgumentException("XINGYUAN_VERIFICATION_FAILED"); }
                 }
             }

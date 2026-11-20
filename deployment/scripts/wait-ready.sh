@@ -1,27 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${1:-}" == "--engines" ]]; then
-  for port in 18083 18183 18085 18185; do
-    "${BASH_SOURCE[0]}" "http://127.0.0.1:${port}/actuator/health/readiness" "${2:-120}"
-  done
-  exit 0
+url="${1:-}"
+timeout_seconds="${2:-120}"
+pattern='^https?://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]{1,5})?/actuator/health/readiness$'
+if [[ $# -gt 2 || ! "$url" =~ $pattern || ! "$timeout_seconds" =~ ^[1-9][0-9]{0,3}$ ]]; then
+  printf '%s\n' 'Provide the explicit management readiness URL and optional timeout in seconds.' >&2
+  exit 2
 fi
 
-url="${1:?readiness URL is required}"
-timeout_seconds="${2:-120}"
-[[ "${url}" == http://* || "${url}" == https://* ]] || { echo "expected HTTP(S) readiness URL" >&2; exit 2; }
-[[ "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || { echo "timeout must be a positive integer" >&2; exit 2; }
-args=(--fail --silent --show-error --max-time 3)
-[[ -z "${YUHENG_HEALTH_CA:-}" ]] || args+=(--cacert "${YUHENG_HEALTH_CA}")
-if [[ -n "${YUHENG_HEALTH_CERT:-}" || -n "${YUHENG_HEALTH_KEY:-}" ]]; then
-  args+=(--cert "${YUHENG_HEALTH_CERT:?both health certificate and key are required}" --key "${YUHENG_HEALTH_KEY:?both health certificate and key are required}")
-fi
 deadline="$((SECONDS + timeout_seconds))"
-until curl "${args[@]}" "${url}" >/dev/null; do
-  if ((SECONDS >= deadline)); then
-    echo "timed out waiting for ${url}" >&2
-    exit 1
+while ((SECONDS < deadline)); do
+  if status="$(curl --disable --proto '=http,https' --silent --max-time 3 --output /dev/null --write-out '%{http_code}' --url "$url")" && [[ "$status" == 200 ]]; then
+    exit 0
   fi
   sleep 1
 done
+printf '%s\n' 'Timed out waiting for the management readiness endpoint.' >&2
+exit 1

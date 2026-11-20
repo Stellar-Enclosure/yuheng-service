@@ -20,7 +20,7 @@ public record GatewayTestScope(
                 "yuheng-" + suffix,
                 "test-" + suffix,
                 "yuheng-call-" + suffix,
-                baseDirectory.resolve("engine-" + suffix)
+                baseDirectory.resolve("fixture-" + suffix)
         );
     }
 

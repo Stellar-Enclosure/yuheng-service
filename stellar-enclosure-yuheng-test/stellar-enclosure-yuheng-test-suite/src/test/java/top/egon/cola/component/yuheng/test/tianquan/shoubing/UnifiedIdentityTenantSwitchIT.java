@@ -133,7 +133,10 @@ class UnifiedIdentityTenantSwitchIT {
         client.bindNativeTenantReadEndpoints(first, second);
         var firstJwt = client.verifiedClaims(first);
         var secondJwt = client.verifiedClaims(second);
-        // These are independently acquired PUBLIC families; the BFF A/B proof remains a separate browser journey.
+        // Each tenant has its own PUBLIC family and its own approved row behind the Cilium listener.
+        assertThat(first.getReadEndpoint().getScheme()).isEqualTo("https");
+        assertThat(first.getReadEndpoint().getAuthority()).isEqualTo(second.getReadEndpoint().getAuthority());
+        assertThat(first.getReadEndpoint().getPath()).isNotEqualTo(second.getReadEndpoint().getPath());
         assertThat(firstJwt.getSubject().equals(secondJwt.getSubject())).isTrue();
         assertThat(!firstJwt.getClaimAsString("tenant_id").equals(secondJwt.getClaimAsString("tenant_id"))).isTrue();
         assertThat(!firstJwt.getIssuer().equals(secondJwt.getIssuer())).isTrue();

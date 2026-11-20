@@ -4,7 +4,7 @@ import java.net.URI;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class StableMcpTestClient {
+public final class StableMcpTestClient implements AutoCloseable {
 
     private static final String VERSION = "2025-11-25";
 
@@ -84,5 +84,9 @@ public final class StableMcpTestClient {
                     "stable MCP request failed: " + response.status()
             );
         }
+    }
+    @Override
+    public void close() {
+        http.close();
     }
 }

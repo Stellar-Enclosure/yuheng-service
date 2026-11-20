@@ -6,8 +6,14 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 class GatewayHttpProvidersLiveIT {
 
     @Test
-    @EnabledIfSystemProperty(named = "yuheng.live.test", matches = "true")
-    void verifiesMvcAndWebFluxProviderLifecycle() throws Exception {
+    @EnabledIfSystemProperty(named = GatewayLiveEnvironment.ENABLED, matches = "true")
+    void verifiesMvcAndWebFluxThroughCilium() throws Exception {
         new GatewayLiveTopologyIT().verifyHttpProvidersLifecycle();
     }
+    @Test
+    @EnabledIfSystemProperty(named = "yuheng.live.cilium.gamma-http-enabled", matches = "true")
+    void verifiesInternalAndNorthboundHttpRequestWeights() throws Exception {
+        new GatewayLiveTopologyIT().verifyHttpWeightLifecycle();
+    }
+
 }

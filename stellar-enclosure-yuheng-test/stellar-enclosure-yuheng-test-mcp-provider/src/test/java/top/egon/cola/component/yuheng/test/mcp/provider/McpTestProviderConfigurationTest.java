@@ -1,11 +1,8 @@
 package top.egon.cola.component.yuheng.test.mcp.provider;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import top.egon.cola.component.tianshu.autoconfigure.properties.DdcProperties;
-import top.egon.cola.component.rpc.tianshu.autoconfigure.DdcRpcProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,42 +10,30 @@ class McpTestProviderConfigurationTest {
 
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
-                    .withInitializer(
-                            new ConfigDataApplicationContextInitializer()
-                    )
-                    .withUserConfiguration(TestConfiguration.class);
+                    .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
-    void bindsHostLocalDdcEnvironment() {
-        contextRunner.withSystemProperties(
-                        "TIANSHU_RPC_TARGET=dns:///127.0.0.1:19110",
-                        "TIANSHU_RPC_RUNTIME_ACCESS_KEY=tianshu-access",
-                        "TIANSHU_RPC_RUNTIME_SECRET_KEY=tianshu-secret",
-                        "TIANSHU_REGISTRY_REDIS_PASSWORD=redis-secret",
-                        "MCP_TEST_PROVIDER_INSTANCE_ID=mcp-provider-local-1"
+    void keepsBearerAuthenticationIndependentFromTheRetiredDdcSwitch() {
+        contextRunner.withPropertyValues(
+                        "TIANSHU_ENABLED=false",
+                        "TIANQUAN_SHOUBING_OAUTH_ISSUER=https://issuer.example.test",
+                        "TIANQUAN_SHOUBING_JWK_SET_URI=https://issuer.example.test/jwks",
+                        "MCP_TEST_PROVIDER_PORT=18152"
                 )
                 .run(context -> {
-                    DdcProperties ddc = context.getBean(DdcProperties.class);
-                    DdcRpcProperties rpc = context.getBean(
-                            DdcRpcProperties.class
-                    );
-                    assertThat(rpc.getTarget())
-                            .isEqualTo("dns:///127.0.0.1:19110");
-                    assertThat(rpc.getAuth().getRuntime().getAccessKey())
-                            .isEqualTo("tianshu-access");
-                    assertThat(rpc.getAuth().getRuntime().getSecretKey())
-                            .isEqualTo("tianshu-secret");
-                    assertThat(ddc.getRedis().getPassword())
-                            .isEqualTo("redis-secret");
-                    assertThat(ddc.getInstance().getId())
-                            .isEqualTo("mcp-provider-local-1");
+                    assertThat(context).hasNotFailed();
+                    var environment = context.getEnvironment();
+                    assertThat(environment.getProperty("server.port")).isEqualTo("18152");
+                    assertThat(environment.getProperty("egon.cola.platform.tianquan.shoubing.enabled"))
+                            .isEqualTo("true");
+                    assertThat(environment.getProperty("egon.cola.platform.tianquan.shoubing.issuer"))
+                            .isEqualTo("https://issuer.example.test");
+                    assertThat(environment.getProperty("egon.cola.component.tianshu.registry.enabled")).isNull();
+                    assertThat(environment.getProperty("egon.cola.component.tianshu.rpc.target")).isNull();
+                    assertThat(environment.getProperty("egon.cola.component.yuheng.openapi.publish-to-tianshu"))
+                            .isNull();
+                    assertThat(environment.getProperty("spring.config.import[0]")).doesNotContain("tianshu:");
+                    assertThat(environment.getProperty("spring.config.import[1]")).isNull();
                 });
-    }
-
-    @EnableConfigurationProperties({
-            DdcProperties.class,
-            DdcRpcProperties.class
-    })
-    static class TestConfiguration {
     }
 }

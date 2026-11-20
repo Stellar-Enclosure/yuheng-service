@@ -14,13 +14,20 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 
-public final class GatewayWebSocketTestClient {
+public final class GatewayWebSocketTestClient implements AutoCloseable {
+
+    @FunctionalInterface
+    interface EstablishedFlowCheck {
+        void verify() throws Exception;
+    }
 
     private final HttpClient httpClient;
 
     public GatewayWebSocketTestClient() {
         this(HttpClient.newBuilder()
+                .proxy(HttpClient.Builder.NO_PROXY)
                 .connectTimeout(Duration.ofSeconds(3))
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build());
     }
 
@@ -35,16 +42,29 @@ public final class GatewayWebSocketTestClient {
             byte[] binary,
             byte[] ping,
             Duration timeout) throws Exception {
+        return exchange(uri, headers, text, binary, ping, timeout, () -> { });
+    }
+
+    Transcript exchange(URI uri, Map<String, String> headers, String text, byte[] binary, byte[] ping,
+            Duration timeout, EstablishedFlowCheck established) throws Exception {
         RecordingListener listener = new RecordingListener();
         WebSocket.Builder builder = httpClient.newWebSocketBuilder()
                 .connectTimeout(timeout);
         headers.forEach(builder::header);
-        WebSocket socket = builder.buildAsync(uri, listener)
-                .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        var handshake = builder.buildAsync(uri, listener);
+        WebSocket socket;
+        try {
+            socket = handshake.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException | InterruptedException failure) {
+            handshake.thenAccept(WebSocket::abort);
+            handshake.cancel(true);
+            throw failure;
+        }
         try {
             socket.sendText(text, true)
                     .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             listener.text.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            established.verify();
             socket.sendBinary(ByteBuffer.wrap(binary), true)
                     .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
             listener.binary.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
@@ -58,10 +78,14 @@ public final class GatewayWebSocketTestClient {
                     TimeUnit.MILLISECONDS
             );
             return listener.transcript();
-        } catch (Exception failure) {
+        } finally {
             socket.abort();
-            throw failure;
         }
+    }
+
+    @Override
+    public void close() {
+        httpClient.close();
     }
 
     public record Transcript(
